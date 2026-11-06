@@ -1,0 +1,71 @@
+---
+description: Mọi lần fix bug phải ghi markdown recheck (docs/fixes/) trước khi coi xong
+alwaysApply: true
+---
+
+# Fix log bắt buộc (markdown recheck)
+
+Mỗi lần **sửa bug / hotfix / regression** (không áp dụng refactor thuần hoặc chỉnh UI nhỏ không đổi hành vi), agent **BẮT BUỘC**:
+
+1. Tạo hoặc cập nhật file markdown trong `docs/fixes/`.
+2. Điền đủ mục trong template dưới đây — đặc biệt **Recheck** (lệnh/bước tái hiện + dấu hiệu pass/fail).
+3. Trong chat chỉ cần 1 dòng trỏ file: `Fix log: docs/fixes/YYYY-MM-DD-<slug>.md`.
+
+## Đặt tên file
+
+```
+docs/fixes/YYYY-MM-DD-<slug-ngan>.md
+```
+
+- Ngày = ngày sửa (local).
+- Slug = 3–6 từ kebab, vd `hardsub-green-bar`, `run-all-stale-mux`.
+- Một bug/cluster liên quan → **một file**. Fix follow-up cùng bug → **append** section `## Follow-up` vào file cũ, không tạo file mới trừ khi bug khác.
+
+## Template (copy nguyên)
+
+```markdown
+# <Tiêu đề ngắn — triệu chứng người dùng thấy>
+
+- **Date:** YYYY-MM-DD
+- **Job / khu vực:** (job id, stage, file…)
+- **Status:** fixed | partial | wontfix
+
+## Triệu chứng
+
+(1–3 câu: user thấy gì, khi nào)
+
+## Root cause
+
+(Lỗi nằm ở đâu — file/hàm/dòng hoặc cơ chế. Không đoán nếu chưa chứng minh.)
+
+## Evidence
+
+- Lệnh / frame / log chứng minh (trước fix)
+- So sánh source vs output nếu có
+
+## Fix
+
+- File đổi + ý chính (không paste diff dài)
+- Hành vi mới
+
+## Recheck
+
+1. Bước tái hiện (click / API / remux job X…)
+2. Lệnh kiểm tra (ffmpeg frame, grep filter, API status…)
+3. **Pass nếu:** …
+4. **Fail nếu:** …
+
+## Liên quan
+
+- Job ids, config keys, PR/commit (nếu có)
+```
+
+## Khi nào được bỏ qua
+
+- Đổi wording / comment / format không đổi runtime.
+- User bảo rõ “không cần log”.
+
+## Không được
+
+- Coi task xong mà chưa có file fix log (trừ ngoại lệ trên).
+- Log chỉ ghi “đã fix” mà thiếu **Root cause** hoặc **Recheck**.

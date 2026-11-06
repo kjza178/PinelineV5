@@ -1,0 +1,10 @@
+Z:\PinelineV5\src-tauri\target\debug\deps\tauri_runtime-e69bf366b0341d31.d: C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\lib.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\dpi.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\monitor.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\webview.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\webview_permissions.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\window.rs
+
+Z:\PinelineV5\src-tauri\target\debug\deps\libtauri_runtime-e69bf366b0341d31.rmeta: C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\lib.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\dpi.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\monitor.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\webview.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\webview_permissions.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\window.rs
+
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\lib.rs:
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\dpi.rs:
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\monitor.rs:
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\webview.rs:
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\webview_permissions.rs:
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-runtime-2.12.2\src\window.rs:

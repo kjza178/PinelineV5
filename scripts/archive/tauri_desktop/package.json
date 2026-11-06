@@ -1,0 +1,13 @@
+{
+  "name": "pineline-studio-v4",
+  "version": "4.0.0",
+  "description": "PineLine Studio V4 Desktop App",
+  "scripts": {
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

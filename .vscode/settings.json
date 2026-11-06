@@ -1,0 +1,8 @@
+{
+  "python.analysis.extraPaths": [
+    "Z:/yt_uploader"
+  ],
+  "python.autoComplete.extraPaths": [
+    "Z:/yt_uploader"
+  ]
+}

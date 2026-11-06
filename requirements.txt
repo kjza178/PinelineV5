@@ -1,0 +1,11 @@
+yt-dlp
+faster-whisper
+requests
+fastapi
+uvicorn[standard]
+python-multipart
+soundfile
+vieneu          # TTS tiếng Việt (VieNeu-TTS). GPU: cần torch/torchaudio khớp + transformers 4.57.x
+psutil>=5.9      # server/sidecar: kill engine, kiem tien trinh
+rapidocr-onnxruntime>=1.3
+pytest>=8         # pytest -q (xem pytest.ini)

@@ -1,0 +1,7 @@
+Z:\PinelineV5\src-tauri\target\debug\deps\open-c40c542ba065f06f.d: C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\lib.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\windows.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\powershell.ps1
+
+Z:\PinelineV5\src-tauri\target\debug\deps\libopen-c40c542ba065f06f.rmeta: C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\lib.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\windows.rs C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\powershell.ps1
+
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\lib.rs:
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\windows.rs:
+C:\Users\MyPC\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\open-5.4.5\src\powershell.ps1:

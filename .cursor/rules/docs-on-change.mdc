@@ -1,0 +1,32 @@
+---
+description: Mọi thay đổi code/config/vận hành của PinelineV2 phải được ghi vào hệ thống markdown docs/ trước khi coi xong
+alwaysApply: true
+---
+
+# Docs bắt buộc mỗi lần thay đổi
+
+Project không dùng git → `docs/` là lịch sử duy nhất. Mục lục + quy ước: `docs/README.md`.
+
+## Trước khi sửa (user yêu cầu: luôn backup)
+
+- Zip toàn project: `python D:\PinelineV2_tmp\snapshot.py` → `Z:\PinelineV2_backup_<ngày>_<giờ>.zip`.
+- Chép bản gốc từng file sắp sửa vào `Z:\PinelineV2_codebak\<YYYY-MM-DD>_<đợt/slug>\` (giữ đường dẫn tương đối).
+- Ghi hai đường dẫn backup vào CHANGELOG và fix log.
+
+## Mỗi lần sửa code / config / script / quy trình (trước khi báo xong)
+
+1. **`docs/CHANGELOG.md`** — thêm dòng dưới mục ngày hôm nay (tạo mục nếu chưa có, mới nhất trên cùng): file + hàm, thay đổi, **cần restart gì** (server :8801 / sidecar :8802 / không).
+2. **`docs/worklog/YYYY-MM-DD.md`** — thêm mục: giờ, yêu cầu user (tóm tắt), đã làm, kết quả / còn treo. Tạo file nếu chưa có và thêm dòng vào `docs/worklog/README.md`.
+3. **`docs/STATE.md`** — cập nhật nếu trạng thái đổi: dịch vụ/PID, job, cấu hình mặc định, mục *Chờ restart*, việc treo. Sửa dòng "Cập nhật:".
+4. **`docs/DECISIONS.md`** — khi user chọn/bác một phương án.
+5. **`docs/ARCHITECTURE.md`** / **`docs/RUNBOOK.md`** — khi thêm module, đổi luồng, đổi cách khởi động, có script/lệnh mới.
+6. Sửa bug → thêm `docs/fixes/YYYY-MM-DD-slug.md` theo rule `fix-log-markdown.mdc` và thêm dòng vào `docs/fixes/README.md`.
+7. Review code → `docs/reviews/YYYY-MM-DD-*.md`.
+
+Chỉ hỏi/chẩn đoán, không đổi gì → chỉ cần worklog nếu kết luận có giá trị tra lại sau này.
+
+## Không được
+
+- Ghi secret (API key, OAuth client id/secret, token, cookie, mật khẩu proxy) — chỉ ghi tên biến/tên file.
+- Báo "xong" khi CHANGELOG + worklog chưa cập nhật.
+- Ghi đè file trạng thái cũ mà không giữ bản cũ (đưa vào `docs/archive_*` nếu thay cấu trúc).

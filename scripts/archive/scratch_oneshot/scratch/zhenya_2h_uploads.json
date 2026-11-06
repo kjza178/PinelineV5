@@ -1,0 +1,172 @@
+{
+  "[01] 1.mp4___Mốc 0h (phút thứ 2)": {
+    "file": "[01] 1.mp4",
+    "label": "Mốc 0h (phút thứ 2)",
+    "start_s": 120,
+    "ok": true,
+    "video_id": "GN5DItXDKUg",
+    "yt_url": "https://youtu.be/GN5DItXDKUg",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:16:18"
+  },
+  "[01] 1.mp4___Mốc 2h": {
+    "file": "[01] 1.mp4",
+    "label": "Mốc 2h",
+    "start_s": 7200,
+    "ok": true,
+    "video_id": "zh2mqXvB9aU",
+    "yt_url": "https://youtu.be/zh2mqXvB9aU",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:38:54"
+  },
+  "[01] 1.mp4___Mốc 4h": {
+    "file": "[01] 1.mp4",
+    "label": "Mốc 4h",
+    "start_s": 14400,
+    "ok": true,
+    "video_id": "-Sa24paSXuo",
+    "yt_url": "https://youtu.be/-Sa24paSXuo",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:39:14"
+  },
+  "[01] 1.mp4___Mốc 6h": {
+    "file": "[01] 1.mp4",
+    "label": "Mốc 6h",
+    "start_s": 21600,
+    "ok": true,
+    "video_id": "M5Q2_5zwTI4",
+    "yt_url": "https://youtu.be/M5Q2_5zwTI4",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:39:42"
+  },
+  "[01] 1.mp4___Mốc 8h": {
+    "file": "[01] 1.mp4",
+    "label": "Mốc 8h",
+    "start_s": 28800,
+    "ok": true,
+    "video_id": "AZJKsVSPvaQ",
+    "yt_url": "https://youtu.be/AZJKsVSPvaQ",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:40:00"
+  },
+  "[02] 2.mp4___Mốc 0h (phút thứ 2)": {
+    "file": "[02] 2.mp4",
+    "label": "Mốc 0h (phút thứ 2)",
+    "start_s": 120,
+    "ok": true,
+    "video_id": "Ol8Ck8-ReJ4",
+    "yt_url": "https://youtu.be/Ol8Ck8-ReJ4",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:40:29"
+  },
+  "[02] 2.mp4___Mốc 2h": {
+    "file": "[02] 2.mp4",
+    "label": "Mốc 2h",
+    "start_s": 7200,
+    "ok": true,
+    "video_id": "KTSnilUbS14",
+    "yt_url": "https://youtu.be/KTSnilUbS14",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:40:54"
+  },
+  "[02] 2.mp4___Mốc 4h": {
+    "file": "[02] 2.mp4",
+    "label": "Mốc 4h",
+    "start_s": 14400,
+    "ok": true,
+    "video_id": "h7Z0pP3sr1A",
+    "yt_url": "https://youtu.be/h7Z0pP3sr1A",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:41:25"
+  },
+  "[02] 2.mp4___Mốc 6h": {
+    "file": "[02] 2.mp4",
+    "label": "Mốc 6h",
+    "start_s": 21600,
+    "ok": true,
+    "video_id": "3lvLv0y94L0",
+    "yt_url": "https://youtu.be/3lvLv0y94L0",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:41:56"
+  },
+  "[02] 2.mp4___Mốc 8h": {
+    "file": "[02] 2.mp4",
+    "label": "Mốc 8h",
+    "start_s": 28800,
+    "ok": true,
+    "video_id": "0x3uA6rzSzk",
+    "yt_url": "https://youtu.be/0x3uA6rzSzk",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:42:23"
+  },
+  "[03] 3.mp4___Mốc 0h (phút thứ 2)": {
+    "file": "[03] 3.mp4",
+    "label": "Mốc 0h (phút thứ 2)",
+    "start_s": 120,
+    "ok": true,
+    "video_id": "UyALZFinjns",
+    "yt_url": "https://youtu.be/UyALZFinjns",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:42:56"
+  },
+  "[04] 4.mp4___Mốc 0h (phút thứ 2)": {
+    "file": "[04] 4.mp4",
+    "label": "Mốc 0h (phút thứ 2)",
+    "start_s": 120,
+    "ok": true,
+    "video_id": "zfoKiHsgrGQ",
+    "yt_url": "https://youtu.be/zfoKiHsgrGQ",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:43:24"
+  },
+  "[05] 第九.mp4___Mốc 0h (phút thứ 2)": {
+    "file": "[05] 第九.mp4",
+    "label": "Mốc 0h (phút thứ 2)",
+    "start_s": 120,
+    "ok": true,
+    "video_id": "PGrlmY-78Hs",
+    "yt_url": "https://youtu.be/PGrlmY-78Hs",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:43:54"
+  },
+  "[05] 第九.mp4___Mốc 2h": {
+    "file": "[05] 第九.mp4",
+    "label": "Mốc 2h",
+    "start_s": 7200,
+    "ok": true,
+    "video_id": "FeZCCuHJ4QI",
+    "yt_url": "https://youtu.be/FeZCCuHJ4QI",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:44:24"
+  },
+  "[06] 第十.mp4___Mốc 0h (phút thứ 2)": {
+    "file": "[06] 第十.mp4",
+    "label": "Mốc 0h (phút thứ 2)",
+    "start_s": 120,
+    "ok": true,
+    "video_id": "5FcKhfjrOEg",
+    "yt_url": "https://youtu.be/5FcKhfjrOEg",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:44:44"
+  },
+  "[06] 第十.mp4___Mốc 2h": {
+    "file": "[06] 第十.mp4",
+    "label": "Mốc 2h",
+    "start_s": 7200,
+    "ok": true,
+    "video_id": "Epxd787BuGs",
+    "yt_url": "https://youtu.be/Epxd787BuGs",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:45:08"
+  },
+  "[06] 第十.mp4___Mốc 4h": {
+    "file": "[06] 第十.mp4",
+    "label": "Mốc 4h",
+    "start_s": 14400,
+    "ok": true,
+    "video_id": "P1n7tMNmiFA",
+    "yt_url": "https://youtu.be/P1n7tMNmiFA",
+    "project_id": "proj_1",
+    "uploaded_at": "2026-10-16 01:45:29"
+  }
+}

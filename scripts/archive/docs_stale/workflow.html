@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Pineline V2 — workflow toàn hệ thống</title>
+<style>
+  :root{--bg:#121214;--side:#18181b;--raise:#202024;--line:#2c2c31;--line2:#3a3a41;--text:#e8e6e1;--text2:#b9b6ae;--muted:#86837c;--accent:#d4a04a;--accent-dim:rgba(212,160,74,.16)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif;padding:20px 24px 40px}
+  h1{font-size:22px;margin:0 0 4px;font-weight:600}
+  h2{font-size:17px;margin:0;font-weight:600}
+  h3{font-size:14px;margin:0 0 8px;font-weight:600}
+  .sub{color:var(--text2);margin:0 0 14px}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;align-items:center;margin-bottom:12px;color:var(--text2);font-size:12.5px}
+  .legend span{display:flex;gap:8px;align-items:center}
+  .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--side)}
+  svg text{font-family:"Segoe UI",system-ui,sans-serif}
+  .node{cursor:pointer}
+  .node:focus{outline:none}
+  .detail{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:28px;margin-top:18px}
+  .head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .pill{font-size:11.5px;padding:2px 9px;border-radius:999px;border:1px solid var(--line2);color:var(--text2)}
+  .pill.on{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+  .muted{color:var(--muted)}
+  ul{margin:0;padding-left:18px} li{margin:4px 0}
+  .files{font-size:12px;color:var(--muted);margin-top:10px}
+  .links h4{font-size:12px;color:var(--muted);margin:0 0 6px;font-weight:600}
+  .links div{margin-bottom:14px}
+  .lk{display:block;cursor:pointer;font-size:13px;color:var(--text2);margin:3px 0}
+  .lk b{color:var(--accent);font-weight:500}
+  hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  @media (max-width:900px){.detail,.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>Pineline V2 — workflow toàn hệ thống</h1>
+<p class="sub">Từ chọn phim trên Hongguo đến đăng YouTube, gồm cả AI agent, Telegram, Auto-pilot, Feeder, Watcher và heal. Bấm vào một khối để xem nó làm gì và nối với đâu.</p>
+<div class="legend">
+  <span><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#b9b6ae" stroke-width="1.5"/></svg>Luồng phim / dữ liệu</span>
+  <span><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#b9b6ae" stroke-width="1.5" stroke-dasharray="6 4"/></svg>Điều khiển (người, agent, tự động)</span>
+  <span><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#b9b6ae" stroke-width="1.5" stroke-dasharray="2 4"/></svg>Dùng tài nguyên (LLM, GPU)</span>
+  <span><svg width="26" height="14"><rect x="1" y="1" width="24" height="12" rx="3" fill="none" stroke="#b9b6ae" stroke-dasharray="4 3"/></svg>Khối viền đứt: đang tắt hoặc tuỳ chọn</span>
+</div>
+<div class="wrap"><svg id="dg" role="img" aria-label="Sơ đồ toàn bộ workflow Pineline V2 theo 7 tầng"></svg></div>
+<div class="detail" id="detail"></div>
+<hr>
+<div class="two">
+  <div>
+    <h3>Ba cách điều khiển hệ thống</h3>
+    <table>
+      <tr><th>Cách</th><th>Qua đâu</th><th>Làm được gì</th></tr>
+      <tr><td>Bằng tay</td><td>/hongguo, UI3, UI4</td><td>Tải, gộp, tạo job, chỉnh config, chạy / dừng, sửa script</td></tr>
+      <tr><td>Bằng lời</td><td>Telegram, panel Agent</td><td>Agent gọi tool: tạo job, xếp hàng, heal, hg_auto_flow, sửa dịch</td></tr>
+      <tr><td>Tự động</td><td>Auto-pilot + Feeder, Watcher</td><td>Giữ hàng đợi có việc, tự thêm phim, tự heal (Auto-pilot đang tắt)</td></tr>
+    </table>
+  </div>
+  <div>
+    <h3>Chốt an toàn đang áp dụng</h3>
+    <table>
+      <tr><th>Việc</th><th>Điều kiện</th></tr>
+      <tr><td>Restart server :8801</td><td>Chỉ khi hàng đợi job và hàng đợi gộp đều rảnh, hoặc mày đồng ý</td></tr>
+      <tr><td>Tool phá huỷ từ Telegram</td><td>Phải bấm xác nhận, hết hạn 15 phút</td></tr>
+      <tr><td>Upload YouTube</td><td>Chỉ khi mày cho phép</td></tr>
+      <tr><td>Auto-pilot</td><td>Để tắt, không tự bật lại</td></tr>
+      <tr><td>Mọi lần sửa code</td><td>Backup zip + codebak mới, ghi docs, quét secret, git local</td></tr>
+    </table>
+  </div>
+</div>
+<script>
+const LANES=["Giao diện & lệnh","AI agent","Nguồn phim","Job & hàng đợi","Pipeline 1 job","Đầu ra & dữ liệu","Hạ tầng"];
+const NODES=[
+ {id:"ui_hg",lane:0,col:0,title:"/hongguo",sub:"tìm · tải · gộp · tạo job",mode:"bằng tay",points:["Tab Bảng hot / Catalog / Tìm: chọn phim rồi bấm Tải đã chọn.","Tab Hàng đợi gộp: hàng đợi gộp bên trái, thư viện D:\\Lib bên phải (nhãn đang gộp / chờ #n).","Nút ＋ Job / ＋ Job đã chọn (tick «chạy luôn» để xếp hàng theo CONFIG BATCH); bộ đã có job hiện ↗ UI3.","Một log chung ở đáy: dòng [tải], [gộp], [job]."],files:["hongguo.html","routes_hg.py","hongguo_bridge.py"]},
+ {id:"ui3",lane:0,col:3,title:"UI3",sub:"/ui3 · làm việc với job",mode:"bằng tay",points:["Thêm video từ file / folder, xem và sửa script, chọn ASR / giọng TTS / chế độ âm thanh.","Chạy tự động toàn bộ hoặc từng bước; quản lý hàng chờ (gom nhóm, chạy, dừng).","Có panel Agent để chat với AI agent ngay trong trang.","Mở thẳng một job bằng /ui3?job=<id>."],files:["index3.html","server.py"]},
+ {id:"ui4",lane:0,col:5,title:"UI4 Ops",sub:"/ui4 · vận hành",mode:"bằng tay",points:["Trang vận hành: theo dõi hàng đợi và chỉnh cấu hình batch dùng chung."],files:["index4.html"]},
+ {id:"tg",lane:0,col:7,title:"Telegram bot",sub:"sidecar :8802",mode:"bằng tay",points:["Lệnh: /status /jobs /running /lib /hg /feed /set /config /heal /stopqueue /on /off /autopilot /films /restartserver …","Nhắn tự do → chuyển cho AI agent (/agent, /chat).","Tool nguy hiểm do agent gọi từ Telegram phải bấm nút xác nhận có / không (hết hạn 15 phút).","Chỉ chạy 1 instance qua run_tele_cmd.bat."],files:["agent_tele_cmd.py","run_tele_cmd.bat"]},
+ {id:"agent",lane:1,col:3,title:"Agent core",sub:"LLM gọi tool",mode:"bằng tay",points:["Nhận lệnh bằng lời từ Telegram hoặc panel UI3, gọi LLM qua 9router rồi chạy tool.","Khoảng 43 tool pineline_*: job, hàng đợi, config, đọc / sửa script, chạy bước, OCR, TTS, heal, AV sync, films, soạn nháp YouTube.","Tool hg_*: hg_library, hg_merge, hg_auto_flow (tìm → tải → gộp → tạo job chạy nền), bảng hot / catalog / preview.","Quyền 3 cấp read / mutate / confirm; từ Telegram tool phá huỷ phải chờ xác nhận."],files:["agent_core.py","agent_hongguo.py","routes_agent.py"]},
+ {id:"watch",lane:1,col:5,title:"Watcher",sub:"scan 5 phút · AGENT_WATCH=1",mode:"tuỳ chọn",points:["Định kỳ quét job lỗi → heal mức safe, ghi log, báo Telegram.","Nhường GPU khi hàng đợi đang chạy; không heal lại cùng lỗi trong 30 phút."],files:["agent_watch.py"]},
+ {id:"autopilot",lane:1,col:6,title:"Auto-pilot",sub:"đang TẮT · tick ~90 s",mode:"đang tắt",points:["Khi bật: giữ hàng đợi luôn có việc và heal safe, hết việc thì gọi Feeder.","Bật / tắt bằng /on /off hoặc /autopilot trên Telegram. Hiện để TẮT, chỉ bật lại khi mày cho phép."],files:["agent_autopilot.py"]},
+ {id:"feeder",lane:1,col:7,title:"Feeder",sub:"tự thêm phim khi rảnh",mode:"đang tắt",points:["lib_merged: lấy file (merged) trong thư viện chưa có job.","auto_merge: gộp các folder đã tải đủ tập. hongguo: tải bộ mới từ bảng hot / từ khoá.","Tải + gộp trước khi job đang chạy xong để luôn có phim kế tiếp.","/feed <câu> → LLM dịch yêu cầu thành spec. Run-watch theo dõi job đang chạy."],files:["agent_feeder.py"]},
+ {id:"heal",lane:1,col:8,title:"Heal + AV sync",sub:"chẩn đoán · vá lỗi",mode:"tự động",points:["Safe: gỡ trạng thái running treo, vá dòng dịch trống, TTS thiếu clip, mux lại.","Aggressive (phải cho phép): chạy lại ASR / TTS bắt buộc.","Báo no_source / source_changed khi file nguồn D:\\Lib mất hoặc đổi.","AV sync: quét và vá lệch tiếng – hình; phân loại lỗi theo agent_error_class."],files:["agent_heal.py","agent_av_sync.py","agent_error_class.py"]},
+ {id:"hgd",lane:2,col:0,title:"Hongguo Downloader",sub:"app ngoài :8000",mode:"tự động",points:["Tải từng tập từ Hongguo, bỏ qua tập đã có; cung cấp bảng hot, catalog, preview.","Gộp nhanh (copy) khi các tập cùng độ phân giải."],files:["/dl/* qua hongguo_bridge"]},
+ {id:"lib",lane:2,col:1,title:"D:\\Lib",sub:"tập lẻ theo bộ / mùa",mode:"dữ liệu",points:["Mỗi bộ một folder D:\\Lib\\<tên bộ>[第N季]\\ chứa tập lẻ, sau khi gộp có thêm file (merged)."]},
+ {id:"mergeq",lane:2,col:2,title:"Hàng đợi gộp",sub:"hongguo_bridge worker",mode:"tự động",points:["Lưu work/logs/hg_merge_state.json — restart server vẫn chạy tiếp, bộ dở làm lại từ đầu.","Cùng độ phân giải → Hongguo gộp copy. Lệch → gộp + chuẩn hoá 1920×1080 (re-encode, chậm).","restart_server.py từ chối restart khi đang gộp (ép bằng --ignore-hg)."],files:["hongguo_bridge.py","work/logs/hg_merge_state.json"]},
+ {id:"merged",lane:2,col:3,title:"(merged).mp4",sub:"1 file / bộ",mode:"dữ liệu",points:["File phim hoàn chỉnh trong folder bộ phim, là nguồn để tạo job."]},
+ {id:"trash",lane:2,col:4,title:"D:\\Lib_trash",sub:"tập lẻ · giữ 7 ngày",mode:"dữ liệu",points:["Tập lẻ sau khi gộp xong được chuyển vào D:\\Lib_trash\\<bộ>\\<thời gian>\\, tự xoá sau 7 ngày."]},
+ {id:"mkjob",lane:3,col:3,title:"Tạo job",sub:"đọc thẳng D:\\Lib",mode:"bằng tay",points:["POST /api/jobs/local-path, tên job = tên folder bộ phim.","File trong SOURCE_DIRECT_ROOTS (D:\\Lib) → không copy, job trỏ thẳng file (source_mode=direct). Ngoài thư viện → hard link hoặc copy.","Nguồn gọi: ＋ Job trên /hongguo, Thêm video trên UI3, agent hg_auto_flow, Feeder."],files:["server.py · _place_source"]},
+ {id:"queue",lane:3,col:4,title:"Hàng đợi :8801",sub:"1 job mỗi lần",mode:"tự động",points:["job_queue worker trong server.py, lưu work/logs/queue.json, restart tự xếp lại.","Chỉ restart server khi hàng đợi và hàng đợi gộp đều rảnh (hoặc --after-current)."],files:["server.py","work/logs/queue.json"]},
+ {id:"batch",lane:3,col:5,title:"CONFIG BATCH",sub:"batch_config.json",mode:"dữ liệu",points:["Cấu hình dùng chung cho UI3, UI4, Agent, Telegram, Auto-pilot: audio_mode (đang sfx_lib), giọng, model dịch, hardsub, bitrate…","Được chụp vào manifest (queue_opts) lúc xếp hàng — đổi config sau không ảnh hưởng job đã xếp."],files:["work/logs/batch_config.json","batch_config.py"]},
+ {id:"asr",lane:4,col:0,title:"ASR",sub:"giọng Trung → chữ",mode:"tự động",points:["Fun-ASR-Nano / hybrid / FireRed / Paraformer / SenseVoice.","→ audio.wav, asr.json, sub.zh.srt (bám mốc AUDIO_TS_FIX)."],files:["asr.py","fun_asr_nano.py","hybrid_asr.py"]},
+ {id:"ocr",lane:4,col:1,title:"OCR hardsub",sub:"tuỳ chọn",mode:"tuỳ chọn",points:["Dò dải chữ cứng trên hình (~300 khung) → hardsub_track.json để che khi render."]},
+ {id:"tr",lane:4,col:2,title:"Dịch Trung → Việt",sub:"LLM + glossary",mode:"tự động",points:["Glossary theo bộ phim, context studio, review theo lô → script.json (zh + vi)."],files:["translate.py","context_studio/","series_glossary.py"]},
+ {id:"qa",lane:4,col:3,title:"QA gate",sub:"rà tên · chặn dịch kém",mode:"tự động",points:["agent_name_pass rà tên riêng và văn phong; agent_qa_gate chặn TTS khi dịch kém.","Không đạt → dừng chờ heal / dịch lại. Có thể dừng sau dịch để người duyệt (hold_after_translate)."],files:["agent_qa_gate.py","agent_name_pass.py"]},
+ {id:"tts",lane:4,col:4,title:"TTS lồng tiếng",sub:"VieNeu clone giọng",mode:"tự động",points:["→ seg_*.wav, tts.json."],files:["clone_tts.py","rvc_bridge/vieneu_batch.py"]},
+ {id:"fit",lane:4,col:5,title:"Khớp thời gian",sub:"tăng tốc 1,12–1,30×",mode:"tự động",points:["assemble.py chạy ngầm trước render → dub_fit.wav, tts_fit.json."]},
+ {id:"mix",lane:4,col:6,title:"Trộn âm (pass 1)",sub:"audio_mode = sfx_lib",mode:"tự động",points:["sfx_lib: CDX23 tách thoại / tiếng động / nhạc; nhạc kho YouTube Audio Library chọn theo mức none / calm / mid / intense.","Tiếng động ×0,62 · nhạc kho ×0,25 · giọng ×1,55×1,25 · sidechain theo giọng · limiter 0,89.","→ mixed_audio.wav (WAV trung gian, không nằm trong video).","Chế độ khác: voice_only, voice_bgm, duck, duck_bgm, demucs_keep, demucs_clean."],files:["render.py","sfx_lib.py","separate.py"]},
+ {id:"render",lane:4,col:7,title:"Render (pass 2)",sub:"NVENC · 300 s × 3",mode:"tự động",points:["Che hardsub track + stretch, đệm 15 / 13 px; phụ đề Việt; logo, Ken Burns, LUT tuỳ chọn.","Chia khúc 300 s chạy 3 song song; tiếng AAC 192 kbps (128 kbps khi video 2M)."],files:["render.py","render_fx.py","subs.py","mux.py"]},
+ {id:"out",lane:4,col:8,title:"output.mp4",sub:"trong thư mục job",mode:"dữ liệu",points:["D:\\PinelineV2_work\\<job_id>\\output.mp4."]},
+ {id:"filmdb",lane:5,col:6,title:"films.db",sub:"database phim · /films/ui",mode:"dữ liệu",points:["film_db sync 2 phút / lần từ manifest; giữ cả job đã xoá thư mục.","Lưu tên gốc + tên Việt, mùa, trạng thái, output, config lồng tiếng, link YouTube, lịch sử sự kiện."],files:["film_db.py","data/films.db"]},
+ {id:"yt",lane:5,col:7,title:"YT uploader",sub:"app riêng · đa tài khoản",mode:"bằng tay",points:["Z:\\yt_uploader — chỉ upload khi mày cho phép; restart app mất danh sách nên phải hỏi trước.","Khoá IP proxy theo tài khoản cần đồng ý; token Google là secret, không gửi bên thứ ba.","Agent có tool pineline_yt_draft để soạn nháp."],files:["Z:\\yt_uploader\\yt_uploader.py"]},
+ {id:"youtube",lane:5,col:8,title:"YouTube",sub:"kênh đăng phim",mode:"dữ liệu",points:["Video đã đăng, link đồng bộ ngược vào films.db."]},
+ {id:"llm",lane:6,col:2,title:"9router",sub:"gemma4:31b-cloud :20128",mode:"tài nguyên",points:["LLM cho dịch, review, QA và AI agent. Key LLM đọc từ pineline.config.json trước env."]},
+ {id:"llama",lane:6,col:3,title:"llama-server :8083",sub:"LLM local · dự phòng",mode:"tài nguyên",points:["Hiện không dùng cho dịch. Không tắt khi chưa được phép."]},
+ {id:"gpu",lane:6,col:5,title:"RTX 3060 12 GB",sub:"ASR · TTS · CDX23 · NVENC",mode:"tài nguyên",points:["Một GPU dùng chung nên hàng đợi chạy 1 job mỗi lần; Watcher nhường GPU khi hàng đợi chạy."]},
+ {id:"backup",lane:6,col:8,title:"Backup · docs · git",sub:"trước mỗi lần sửa",mode:"tài nguyên",points:["Zip snapshot + thư mục Z:\\PinelineV2_codebak\\<ngày>_<đợt>\\ mới cho mỗi đợt sửa.","docs/: CHANGELOG, worklog, fixes, STATE, RUNBOOK. Git local, không push, quét secret trước commit."]},
+];
+const EDGES=[
+ ["ui_hg","hgd","control","Tải đã chọn"],["hgd","lib","flow","tập lẻ"],["lib","mergeq","flow","xếp gộp"],
+ ["ui_hg","mergeq","control","Gộp đã chọn / Tất cả chưa gộp"],["mergeq","merged","flow","file gộp"],["mergeq","trash","flow","dọn tập lẻ"],
+ ["merged","mkjob","flow","nguồn job"],["ui_hg","mkjob","control","＋ Job"],["ui3","mkjob","control","Thêm video"],
+ ["mkjob","queue","flow","xếp hàng"],["batch","queue","flow","opts lúc xếp hàng"],["ui3","queue","control","chạy / dừng hàng chờ"],
+ ["ui3","batch","control","chỉnh config"],["ui4","batch","control","chỉnh config"],["ui3","agent","control","panel Agent"],
+ ["tg","agent","control","chat tự do"],["tg","autopilot","control","/on /off"],["tg","batch","control","/set /config"],["tg","filmdb","control","/films"],
+ ["agent","hgd","control","hg_auto_flow"],["agent","queue","control","queue_add / stop"],["agent","batch","control","config_set"],
+ ["agent","heal","control","heal_job / av_sync"],["agent","llm","use","LLM"],
+ ["autopilot","feeder","control","hết việc"],["autopilot","queue","control","giữ có việc"],["autopilot","heal","control","heal safe"],
+ ["feeder","hgd","control","tải bộ mới"],["feeder","mergeq","control","auto_merge"],["feeder","mkjob","control","lib_merged"],
+ ["watch","heal","control","heal safe"],["watch","tg","control","báo lỗi"],["heal","queue","control","chạy lại bước"],
+ ["queue","asr","flow","bắt đầu job"],["asr","ocr","flow",""],["ocr","tr","flow",""],["tr","qa","flow",""],["qa","tts","flow","đạt"],
+ ["qa","heal","control","dịch kém → dừng"],["tts","fit","flow",""],["fit","mix","flow",""],["mix","render","flow","mixed_audio.wav"],["render","out","flow",""],
+ ["tr","llm","use","LLM"],["qa","llm","use","LLM"],["tr","llama","use","tuỳ chọn"],
+ ["asr","gpu","use","GPU"],["tts","gpu","use","GPU"],["mix","gpu","use","GPU"],["render","gpu","use","NVENC"],
+ ["out","filmdb","flow","sync 2 phút"],["out","yt","flow","upload khi cho phép"],["yt","youtube","flow","đăng"],["yt","filmdb","use","link YouTube"],
+];
+const C={bg:"#18181b",band:"#1d1d21",node:"#202024",nodeSel:"#2a2620",stroke:"#3a3a41",text:"#e8e6e1",text2:"#b9b6ae",muted:"#86837c",edge:"#6b6963",accent:"#d4a04a"};
+const LABEL_W=118,NODE_W=148,NODE_H=46,COL_W=168,LANE_H=92;
+const SVG_W=LABEL_W+12+8*COL_W+NODE_W+14,SVG_H=LANES.length*LANE_H;
+const byId=Object.fromEntries(NODES.map(n=>[n.id,n]));
+const nx=n=>LABEL_W+12+n.col*COL_W, ny=n=>n.lane*LANE_H+(LANE_H-NODE_H)/2;
+const esc=s=>String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+function edgePath(a,b){
+  const ax=nx(a),ay=ny(a),bx=nx(b),by=ny(b);
+  if(a.lane===b.lane){
+    const right=bx>ax, sx=right?ax+NODE_W:ax, tx=right?bx:bx+NODE_W, y=ay+NODE_H/2;
+    if(Math.abs(a.col-b.col)===1) return `M${sx},${y} L${tx},${y}`;
+    const lift=ay+NODE_H+14;
+    return `M${ax+NODE_W/2},${ay+NODE_H} C${ax+NODE_W/2},${lift} ${bx+NODE_W/2},${lift} ${bx+NODE_W/2},${by+NODE_H}`;
+  }
+  const down=b.lane>a.lane, sx=ax+NODE_W/2+(b.col-a.col)*6, sy=down?ay+NODE_H:ay;
+  const tx=bx+NODE_W/2-(b.col-a.col)*6, ty=down?by:by+NODE_H, mid=(sy+ty)/2;
+  return `M${sx},${sy} C${sx},${mid} ${tx},${mid} ${tx},${ty}`;
+}
+let selected="agent";
+function draw(){
+  const linked=new Set([selected]);
+  EDGES.forEach(([f,t])=>{ if(f===selected) linked.add(t); if(t===selected) linked.add(f); });
+  const dash=k=>k==="control"?"6 4":k==="use"?"2 4":"";
+  let h=`<defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${C.edge}"/></marker>
+    <marker id="arrHi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${C.accent}"/></marker></defs>`;
+  LANES.forEach((l,i)=>{ h+=`<rect x="0" y="${i*LANE_H}" width="${SVG_W}" height="${LANE_H}" fill="${i%2?C.bg:C.band}"/><text x="12" y="${i*LANE_H+LANE_H/2+4}" font-size="12" font-weight="600" fill="${C.text2}">${esc(l)}</text>`; });
+  h+=`<line x1="${LABEL_W}" y1="0" x2="${LABEL_W}" y2="${SVG_H}" stroke="${C.stroke}"/>`;
+  EDGES.forEach(([f,t,k])=>{
+    const hi=f===selected||t===selected;
+    h+=`<path d="${edgePath(byId[f],byId[t])}" fill="none" stroke="${hi?C.accent:C.edge}" stroke-width="${hi?1.8:1}" stroke-dasharray="${dash(k)}" opacity="${hi?1:.35}" marker-end="url(#${hi?"arrHi":"arr"})"/>`;
+  });
+  NODES.forEach(n=>{
+    const sel=n.id===selected, dim=!linked.has(n.id), dashed=n.mode==="đang tắt"||n.mode==="tuỳ chọn";
+    h+=`<g class="node" data-id="${n.id}" tabindex="0" role="button" aria-label="${esc(n.title+': '+n.sub)}" transform="translate(${nx(n)},${ny(n)})" opacity="${dim?.5:1}">
+      <rect width="${NODE_W}" height="${NODE_H}" rx="6" fill="${sel?C.nodeSel:C.node}" stroke="${sel?C.accent:C.stroke}" stroke-width="${sel?1.6:1}" ${dashed?'stroke-dasharray="4 3"':''}/>
+      <text x="10" y="19" font-size="12" font-weight="600" fill="${C.text}">${esc(n.title)}</text>
+      <text x="10" y="35" font-size="10.5" fill="${C.muted}">${esc(n.sub)}</text></g>`;
+  });
+  const svg=document.getElementById("dg");
+  svg.setAttribute("width",SVG_W); svg.setAttribute("height",SVG_H); svg.innerHTML=h;
+  drawDetail();
+}
+function drawDetail(){
+  const n=byId[selected];
+  const kindText=k=>k==="flow"?"luồng":k==="control"?"điều khiển":"dùng";
+  const list=(title,items)=>items.length?`<div><h4>${title}</h4>${items.map(([id,k,l])=>`<span class="lk" data-go="${id}"><b>${esc(byId[id].title)}</b> <span class="muted">· ${kindText(k)}${l?' · '+esc(l):''}</span></span>`).join("")}</div>`:"";
+  const inc=EDGES.filter(e=>e[1]===selected).map(([f,,k,l])=>[f,k,l]);
+  const out=EDGES.filter(e=>e[0]===selected).map(([,t,k,l])=>[t,k,l]);
+  document.getElementById("detail").innerHTML=`
+    <div><div class="head"><h2>${esc(n.title)}</h2><span class="pill ${n.mode==="tự động"?"on":""}">${esc(n.mode)}</span><span class="muted" style="font-size:12.5px">${esc(LANES[n.lane])} · ${esc(n.sub)}</span></div>
+    <ul>${n.points.map(p=>`<li>${esc(p)}</li>`).join("")}</ul>
+    ${n.files?`<div class="files">File: ${n.files.map(esc).join(" · ")}</div>`:""}</div>
+    <div class="links">${list("Nhận từ",inc)}${list("Đi tới",out)}</div>`;
+}
+document.getElementById("dg").addEventListener("click",e=>{ const g=e.target.closest(".node"); if(g){ selected=g.dataset.id; draw(); } });
+document.getElementById("dg").addEventListener("keydown",e=>{ const g=e.target.closest(".node"); if(g&&(e.key==="Enter"||e.key===" ")){ e.preventDefault(); selected=g.dataset.id; draw(); } });
+document.getElementById("detail").addEventListener("click",e=>{ const a=e.target.closest("[data-go]"); if(a){ selected=a.dataset.go; draw(); } });
+draw();
+</script>
+</body>
+</html>

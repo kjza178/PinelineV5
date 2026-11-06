@@ -1,0 +1,59 @@
+# Secret — không bao giờ commit (key/token chỉ nằm trong file local)
+pineline.config.json
+token*.json
+client_secret*.json
+cookies/
+cookies*.txt
+*.pem
+*.key
+.env
+.env.*
+.claude/settings.local.json
+
+# Dữ liệu job / runtime (work là junction sang D:\PinelineV2_work)
+work/
+data/
+voices/
+voice_samples/
+
+# Khoá / cờ / trạng thái tiến trình
+.agent_lock
+.restart_hold
+.nvenc_state.json
+.server_*.lock
+.sidecar_*.lock
+*.lock
+
+# Log / output tạm
+*.log
+*.err
+*.out
+*.partial.*
+
+# Media / model / archive nặng
+*.mp4
+*.mkv
+*.mov
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.aac
+*.zip
+*.7z
+*.tar.gz
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.bin
+*.th
+*.bak
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/

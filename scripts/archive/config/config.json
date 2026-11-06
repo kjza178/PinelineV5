@@ -1,0 +1,11 @@
+{
+  "LLM_BASE_URL": "http://127.0.0.1:8083/v1",
+  "LLM_MODEL": "local",
+  "TRANSLATE_MODEL": "local",
+  "REVIEW_MODEL": "local",
+  "TRANSLATE_MODE": "batch",
+  "LLM_ENABLE_THINKING": "0",
+  "DL_WORKERS": "2",
+  "JOB_WORKERS": "1",
+  "LLM_API_KEY": "sk-local"
+}
