@@ -103,6 +103,25 @@ CREATE TABLE IF NOT EXISTS series_glossary (
     updated_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS series_glossary_core ON series_glossary(core);
+
+CREATE TABLE IF NOT EXISTS hg_watchlist (
+    sid          TEXT PRIMARY KEY,
+    core         TEXT,
+    title        TEXT,
+    name         TEXT,
+    season       INTEGER,
+    eps          INTEGER,
+    score        TEXT,
+    album        TEXT,
+    source       TEXT,
+    on_disk      INTEGER DEFAULT 1,
+    deleted_at   TEXT,
+    seen_at      TEXT,
+    updated_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS hg_watch_core ON hg_watchlist(core);
+CREATE INDEX IF NOT EXISTS hg_watch_name ON hg_watchlist(name);
+CREATE INDEX IF NOT EXISTS hg_watch_disk ON hg_watchlist(on_disk);
 """
 
 
@@ -815,6 +834,183 @@ def delete_library_block(name: str) -> bool:
     with _lock, connect() as con:
         res = con.execute("DELETE FROM library_blocks WHERE name=?", (name,))
         return res.rowcount > 0
+
+
+# ─── Hongguo watchlist (meta sau khi xoá Lib — quét mùa mới không cần đĩa) ───
+
+_SID_RE = __import__("re").compile(r"^\d{15,20}$")
+
+
+def upsert_hg_watchlist(
+    *,
+    sid: str,
+    title: str = "",
+    name: str = "",
+    core: str = "",
+    season: int | None = None,
+    eps: int | None = None,
+    score: str = "",
+    album: str = "",
+    source: str = "library",
+    on_disk: int | None = None,
+    deleted: bool = False,
+) -> dict[str, Any]:
+    """Ghi/ cập nhật 1 series Hongguo vào watchlist (chỉ meta, không video)."""
+    sid = str(sid or "").strip()
+    if not _SID_RE.match(sid):
+        return {"ok": False, "error": "sid không hợp lệ"}
+    title = str(title or name or sid).strip()
+    name = str(name or "").strip()
+    if not core:
+        try:
+            import agents.hongguo_bridge as hg  # noqa: PLC0415
+            core = hg.franchise_core(title) or ""
+        except Exception:  # noqa: BLE001
+            core = ""
+    now = _utc()
+    with _lock, connect() as con:
+        prev = con.execute("SELECT * FROM hg_watchlist WHERE sid=?", (sid,)).fetchone()
+        if deleted:
+            on_disk_v = 0
+            deleted_at = now
+        else:
+            on_disk_v = 1 if on_disk is None else int(on_disk)
+            deleted_at = (prev["deleted_at"] if prev else None) if on_disk_v else now
+            if on_disk_v:
+                deleted_at = None
+        if prev:
+            con.execute(
+                """UPDATE hg_watchlist SET core=?, title=?, name=COALESCE(NULLIF(?,''), name),
+                   season=COALESCE(?, season), eps=COALESCE(?, eps), score=COALESCE(NULLIF(?,''), score),
+                   album=COALESCE(NULLIF(?,''), album), source=?, on_disk=?, deleted_at=?,
+                   seen_at=?, updated_at=? WHERE sid=?""",
+                (
+                    core or prev["core"], title, name,
+                    season, eps, score, album, source, on_disk_v, deleted_at,
+                    now, now, sid,
+                ),
+            )
+        else:
+            con.execute(
+                """INSERT INTO hg_watchlist
+                   (sid, core, title, name, season, eps, score, album, source, on_disk, deleted_at, seen_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (sid, core, title, name, season, eps, score, album, source, on_disk_v, deleted_at, now, now),
+            )
+        row = con.execute("SELECT * FROM hg_watchlist WHERE sid=?", (sid,)).fetchone()
+    return {"ok": True, **dict(row)}
+
+
+def upsert_hg_watchlist_many(items: list[dict[str, Any]], *, source: str = "library",
+                             on_disk: int = 1, deleted: bool = False) -> int:
+    n = 0
+    for it in items or []:
+        sid = str(it.get("sid") or it.get("series_id") or "").strip()
+        if not _SID_RE.match(sid):
+            continue
+        upsert_hg_watchlist(
+            sid=sid,
+            title=str(it.get("title") or it.get("name") or ""),
+            name=str(it.get("name") or ""),
+            core=str(it.get("core") or ""),
+            season=it.get("season") if it.get("season") is not None else None,
+            eps=it.get("eps") if it.get("eps") is not None else (
+                it.get("total") if it.get("total") is not None else None
+            ),
+            score=str(it.get("score") or ""),
+            album=str(it.get("album") or ""),
+            source=source,
+            on_disk=on_disk,
+            deleted=deleted,
+        )
+        n += 1
+    return n
+
+
+def mark_hg_watchlist_deleted_by_names(names: list[str]) -> int:
+    """Đánh dấu xoá theo tên folder Lib (giữ sid/core)."""
+    names = [str(n).strip() for n in (names or []) if str(n).strip()]
+    if not names:
+        return 0
+    now = _utc()
+    with _lock, connect() as con:
+        n = 0
+        for nm in names:
+            cur = con.execute(
+                "UPDATE hg_watchlist SET on_disk=0, deleted_at=?, updated_at=? WHERE name=? OR title=?",
+                (now, now, nm, nm),
+            )
+            n += cur.rowcount
+        return n
+
+
+def list_hg_watchlist(include_deleted: bool = True) -> list[dict[str, Any]]:
+    with _lock, connect() as con:
+        if include_deleted:
+            rows = con.execute("SELECT * FROM hg_watchlist ORDER BY updated_at DESC").fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM hg_watchlist WHERE on_disk=1 ORDER BY updated_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def known_hg_sids() -> set[str]:
+    """Mọi sid đã biết: films + watchlist."""
+    with _lock, connect() as con:
+        a = {r[0] for r in con.execute(
+            "SELECT hg_series_id FROM films WHERE hg_series_id IS NOT NULL AND hg_series_id<>''"
+        )}
+        b = {r[0] for r in con.execute("SELECT sid FROM hg_watchlist")}
+    return {s for s in (a | b) if _SID_RE.match(str(s))}
+
+
+def watchlist_cores(limit: int = 40) -> list[str]:
+    """Franchise cores để quét mùa mới (watchlist + films.series).
+
+    Chuẩn hoá qua franchise_core để bỏ 「第N季」 còn sót trong core/series.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _stem(raw: str) -> str:
+        c = str(raw or "").strip()
+        if not c:
+            return ""
+        try:
+            import agents.hongguo_bridge as hg  # noqa: PLC0415
+            return (hg.franchise_core(c) or c).strip()
+        except Exception:  # noqa: BLE001
+            try:
+                import hongguo_bridge as hg  # noqa: PLC0415
+                return (hg.franchise_core(c) or c).strip()
+            except Exception:  # noqa: BLE001
+                return c
+
+    def _add(raw: str) -> None:
+        c = _stem(raw)
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+
+    with _lock, connect() as con:
+        rows = con.execute(
+            """SELECT core, MAX(updated_at) u FROM hg_watchlist
+               WHERE core IS NOT NULL AND core<>'' GROUP BY core ORDER BY u DESC LIMIT ?""",
+            (max(1, int(limit)),),
+        ).fetchall()
+        for r in rows:
+            _add(r[0])
+        if len(out) < limit:
+            for r in con.execute(
+                """SELECT series, MAX(updated_at) u FROM films
+                   WHERE series IS NOT NULL AND series<>'' GROUP BY series ORDER BY u DESC LIMIT ?""",
+                (max(1, int(limit)),),
+            ):
+                _add(r[0])
+                if len(out) >= limit:
+                    break
+    return out
 
 
 def sync_library_blocks_from_yt_queue(check_live: bool = False) -> list[dict[str, Any]]:

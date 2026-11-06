@@ -8,23 +8,31 @@ Bug sửa sau 2026-09-26 (chưa có file riêng) được ghi trong `docs/CHANGE
 
 | Date | File | Triệu chứng |
 |------|------|-------------|
-| 2026-11-06 | [v5-enospc-port.md](./2026-11-06-v5-enospc-port.md) | V5 split thiếu ENOSPC guard / re-encode khi hết ổ; PORT/uploader default lệch |
+| 2026-11-07 | [uploader-skip-ux.md](./2026-11-07-uploader-skip-ux.md) | Skip đang upload khó tìm (chỉ tab Uploader); thiếu cảnh báo file >11.5h |
+| 2026-11-07 | [combine-part-order.md](./2026-11-07-combine-part-order.md) | Gộp job đã làm nối theo tick (Phần 4→2→3) |
+| 2026-11-07 | [hardsub-blur-toggle.md](./2026-11-07-hardsub-blur-toggle.md) | Thiếu bật/tắt che hardsub (blur) trên UI/mux |
+| 2026-11-07 | [films-combine-ui.md](./2026-11-07-films-combine-ui.md) | Films UI thiếu nút gộp ≥2 job đã làm |
+| 2026-11-07 | [uploader-settings-8802.md](./2026-11-07-uploader-settings-8802.md) | Settings/Uploader 404 trên :8802; thiếu skip upload |
+| 2026-11-07 | [films-ui-syntax.md](./2026-11-07-films-ui-syntax.md) | Films UI còn onclick `'${…}'` / `'${esc(…)}'` (SyntaxError title/id) |
+| 2026-11-07 | [films-ui-syntax.md](./2026-11-07-films-ui-syntax.md) | Films UI :8802 — `jq` cắt onclick + autopub/settings |
+| 2026-11-06 | [translate-force-wipe.md](./2026-11-06-translate-force-wipe.md) | Dịch xong / TTS → lại «force: dịch lại từ đầu» (wipe script) |
+| 2026-11-06 | [translate-stop-ghost.md](./2026-11-06-translate-stop-ghost.md) | Phần 6 translate force → trống VI / `.stop` ghost |
+| 2026-11-06 | [hongguo2-seasons-layout.md](./2026-11-06-hongguo2-seasons-layout.md) | Hongguo2 Mùa mới clip + Update 0/? + Ops chèn Discover |
 | 2026-11-06 | [pronoun-qa-413-slim.md](./2026-11-06-pronoun-qa-413-slim.md) | Pronoun-QA GPT vá đỏ Aurora 413 (full plan block) |
 | 2026-11-06 | [hongguo2-review.md](./2026-11-06-hongguo2-review.md) | Hongguo2 CTA submit nhầm + selectedIds lẫn detail / hint |
 | 2026-11-06 | [hg-new-seasons.md](./2026-11-06-hg-new-seasons.md) | `/hongguo` thiếu board Mùa mới (Gợi ý / Sắp ra / Update all) |
 | 2026-11-06 | [merge-no-dup-output.md](./2026-11-06-merge-no-dup-output.md) | Merge split tạo output + output_full nhân đôi dung lượng |
-| 2026-11-05 | [split-voice-queue-opts.md](./2026-11-05-split-voice-queue-opts.md) | Part sau split dùng sai giọng (NgayCuoi thay vì queue_opts) |
+| 2026-11-05 | [split-voice-queue-opts.md](./2026-11-05-split-voice-queue-opts.md) | Part sau split TTS sai giọng (NgayCuoi ≠ v1 config) |
 | 2026-11-05 | [autosplit-conflict-guards.md](./2026-11-05-autosplit-conflict-guards.md) | Auto-split pass 2 → parent 80% + TTS lại sau mux |
-| 2026-11-05 | [ui3-404-stages.md](./2026-11-05-ui3-404-stages.md) | UI3 404/stages — sync guards V5 → V2/V4 |
+| 2026-11-05 | [split-enospc-guard.md](./2026-11-05-split-enospc-guard.md) | Split hết ổ → re-encode phình GB + orphan `_split_parts` |
+| 2026-11-05 | [ui3-404-stages.md](./2026-11-05-ui3-404-stages.md) | UI3 TypeError khi job detail 404 / thiếu `stages` |
 | 2026-11-05 | [upload-limit-stop-queue.md](./2026-11-05-upload-limit-stop-queue.md) | YT `uploadLimitExceeded` vẫn drain queue → fail hàng loạt |
-| 2026-11-04 | [http-routes-thumb-root.md](./2026-11-04-http-routes-thumb-root.md) | `/meta/thumbnail` resolve nhầm `http_routes/data/` sau Phase B |
-| 2026-11-04 | [v5-queue-ssot.md](./2026-11-04-v5-queue-ssot.md) | V5 dual-route queue/jobs + queue_state double enrich |
-| 2026-11-04 | [film-db-queue-meta.md](./2026-11-04-film-db-queue-meta.md) | Queue poll đọc N× manifest — chuyển metadata sang films.db (V5) |
 | 2026-11-04 | [queue-sort-move.md](./2026-11-04-queue-sort-move.md) | Sort/move hàng chờ không đổi thứ tự thật (UI fallback + group_index) |
+| 2026-11-04 | [hardsub-partial-cover.md](./2026-11-04-hardsub-partial-cover.md) | Hardsub che hở 2 mép (OCR hẹp) |
+| 2026-11-03 | [split-parent-false-failed.md](./2026-11-03-split-parent-false-failed.md) | Parent sau split báo failed dù Full/part đã xong |
 | 2026-11-02 | [pronoun-consistency-abc.md](./2026-11-02-pronoun-consistency-abc.md) | Analyze+lock+ledger+QA xưng hô (V2/V4/V5) |
-| 2026-11-02 | [pronoun-xung-ho.md](./2026-11-02-pronoun-xung-ho.md) | Dịch lệch xưng hô — post-pass + agent pass (sync V4) |
-| 2026-11-02 | [longfilm-sub-drift-split.md](./2026-11-02-longfilm-sub-drift-split.md) | Phim ~12h lệch khung sub tích lũy (AAC priming + pipeline dài); port `split_parts` |
-| 2026-11-02 | [library-action-missing-api.md](./2026-11-02-library-action-missing-api.md) | `/library/action` gọi `film_db.mark_library_*` / `enqueue_library_item` không tồn tại → 500 |
+| 2026-11-02 | [pronoun-aurora-port.md](./2026-11-02-pronoun-aurora-port.md) | Port post-pass xưng hô + Aurora name/pronoun + cloud route từ V4 → V2 |
+| 2026-11-02 | [autosplit-asr-set-stage.md](./2026-11-02-autosplit-asr-set-stage.md) | Phim dài auto-split: ASR parent crash `Manifest.set_stage` → part không ASR/translate |
 | 2026-10-09 | [films-ui-delete-missing.md](./2026-10-09-films-ui-delete-missing.md) | `films/ui`: nhiều job đã xoá thư mục vẫn tồn đọng, thiếu bộ lọc thư mục và thiếu chức năng xoá film |
 | 2026-10-06 | [batch7-ui-split.md](./2026-10-06-batch7-ui-split.md) | Đợt 7: gỡ UI cũ `index1/2.html`; `server.py` 6221 dòng → tách `routes_ui/hg/agent.py` (OpenAPI giống hệt) |
 | 2026-10-08 | [queue-worker-disk-full.md](./2026-10-08-queue-worker-disk-full.md) | Ổ D: đầy → `_save()` OSError giết thread hàng đợi, job chờ đứng im (chưa sửa code, mới xử lý tay) |

@@ -1,4 +1,6 @@
-"""Trang UI chính thức V5: /, /ui3, /hongguo, /hongguo2, /workflow.
+"""Trang UI chính thức V5: /, /ui3, /hongguo, /workflow, /v5-map.
+
+/hongguo2 → 302 /hongguo (Hongguo2 đã bỏ).
 
 UI duy nhất: static/ui/index3.html.
 (index.html / static/app.js đã archive → scripts/archive/ui_legacy/)
@@ -19,6 +21,7 @@ __all__ = [
     "ui4",
     "ui_hongguo",
     "ui_hongguo2",
+    "ui_v5_map",
     "router",
 ]
 
@@ -82,12 +85,19 @@ def ui_hongguo():
     return _html_file("hongguo.html")
 
 
-@router.get("/hongguo2", response_class=HTMLResponse)
+@router.get("/hongguo2")
 def ui_hongguo2():
-    """Hongguo2 — IA 2 cột Discover | Ops (không thay hongguo.html)."""
-    return _html_file("hongguo2.html")
+    """Deprecated — redirect về Hongguo gốc (Hongguo2 bỏ dùng)."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/hongguo", status_code=302)
 
 
 @router.get("/workflow", response_class=HTMLResponse)
 def ui_workflow():
     return _html_file("workflow.html")
+
+
+@router.get("/v5-map", response_class=HTMLResponse)
+def ui_v5_map():
+    """Interactive module/call graph — curated ~40–60 nodes (not full catalog)."""
+    return _html_file("v5-map.html")

@@ -259,12 +259,13 @@
   .dock-body .log{margin-top:6px;max-height:150px}
   @media (max-width:980px){.layout{grid-template-columns:1fr;overflow:auto;height:auto} body{overflow:auto}.rank-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}}
 
-  /* Hongguo2 — 2-column IA */
+  /* Hongguo2 — 2-column IA + seasons banner */
   .page-shell{display:flex;flex-direction:column;height:100vh;min-height:0}
   .page-shell > .top{flex:none}
+  .page-shell > .seasons-banner{flex:none}
   .page-shell > .layout{flex:1;min-height:0}
   .page-shell > .dock{flex:none}
-  .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px, min(34vw, 380px));height:auto;min-height:0;gap:0}
+  .layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(360px,1fr);height:auto;min-height:0;gap:0}
   .col-discover,.col-ops{display:flex;flex-direction:column;min-height:0;min-width:0}
   .col-discover{border-right:1px solid var(--line)}
   .col-ops{background:var(--side)}
@@ -284,11 +285,34 @@
   .mode-toolbar .exgenres.expanded{max-height:none}
   .cta-row{flex:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid var(--line);background:var(--panel)}
   .cta-row #sel-count{font-variant-numeric:tabular-nums}
-  .ops-sec{display:flex;flex-direction:column;min-height:0;border-bottom:1px solid var(--line)}
-  .ops-sec.seasons{flex:0 0 auto;max-height:72px}
-  .ops-sec.seasons:has(#libSeasons:not(:empty)){max-height:120px}
-  .ops-sec.library{flex:1 1 50%;min-height:140px}
-  .ops-sec.queues{flex:0 1 32%;min-height:140px;border-bottom:0}
+  .seasons-banner{border-bottom:1px solid var(--line);background:var(--panel)}
+  .seasons-banner-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 10px;background:var(--raise);min-height:36px}
+  .seasons-banner-head h2{margin:0;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+  .seasons-banner-head .cnt{margin-left:4px;font-size:10px;padding:0 6px;border-radius:999px;background:var(--accent);color:#231a08}
+  .seasons-banner-head .cnt:empty{display:none}
+  .seasons-banner-head .collapse-btn{flex:none;min-width:28px;padding:2px 6px}
+  .seasons-banner.collapsed .seasons-banner-body{display:none}
+  .seasons-banner.busy{box-shadow:inset 0 -2px 0 var(--accent)}
+  .seasons-banner-body{padding:6px 10px 8px;max-height:min(22vh,180px);overflow:auto}
+  .seasons-banner.busy .seasons-banner-body{max-height:min(32vh,260px)}
+  .seasons-banner-head .hint-inline{font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .seasons-banner-head .btn{padding:3px 8px;font-size:11.5px}
+  .seasons-live{flex:1;min-width:180px;max-width:420px;display:flex;flex-direction:column;gap:4px}
+  .seasons-live[hidden]{display:none!important}
+  .seasons-live .sp-sub{font:600 12px/1.35 var(--mono);color:var(--text2);font-variant-numeric:tabular-nums}
+  .seasons-live .sp-bar{height:5px;border-radius:999px;background:var(--bg);overflow:hidden}
+  .seasons-live .sp-bar > i{display:block;height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .25s}
+  .seasons-progress{display:flex;flex-direction:column;gap:6px;padding:14px 16px;margin-bottom:8px;border-radius:12px;
+    border:1px solid rgba(233,169,60,.35);background:var(--accent-dim)}
+  .seasons-progress[hidden]{display:none!important}
+  .seasons-progress .sp-title{font-weight:800;font-size:13.5px;color:var(--text)}
+  .seasons-progress .sp-sub{font:600 12.5px/1.4 var(--mono);color:var(--text2);font-variant-numeric:tabular-nums}
+  .seasons-progress .sp-bar{height:6px;border-radius:999px;background:var(--raise);overflow:hidden}
+  .seasons-progress .sp-bar > i{display:block;height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .25s}
+  .ops-main-tabs{flex:none;display:flex;gap:6px;padding:8px 10px 0;align-items:center;border-bottom:1px solid var(--line);background:var(--raise)}
+  .ops-main-tabs .tab{padding:5px 14px}
+  .ops-sec{display:flex;flex-direction:column;flex:1;min-height:0;border-bottom:0}
+  .ops-sec[hidden]{display:none!important}
   .ops-sec .ops-head{flex:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;background:var(--raise)}
   .ops-sec .ops-head h2{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
   .ops-sec .ops-head .cnt{margin-left:5px;font-size:10.5px;padding:0 6px;border-radius:999px;background:var(--accent);color:#231a08}
@@ -302,7 +326,8 @@
   @media (max-width:1100px){
     .layout{grid-template-columns:1fr;overflow:auto}
     .col-discover{border-right:0;border-bottom:1px solid var(--line);min-height:55vh}
-    .ops-sec.seasons{max-height:none}
+    .seasons-banner-body{max-height:min(28vh,220px)}
+    .seasons-banner.busy .seasons-banner-body{max-height:min(40vh,320px)}
     body{overflow:auto}.page-shell{height:auto;min-height:100vh}
   }
 
@@ -316,10 +341,40 @@
     <span class="pill" id="outdir">output: —</span>
     <div class="spacer"></div>
     <a class="btn link-old" href="/hongguo">« Hongguo cũ</a>
+    <a class="btn pri" href="http://127.0.0.1:8802/films/ui?tab=seasons" title="Films UI · tab Mùa mới (:8802)">🎬 Phim / Mùa mới</a>
+    <a class="btn" href="http://127.0.0.1:8802/films/ui" title="Films UI đầy đủ (:8802)">Films UI</a>
     <a class="btn" href="/">Studio</a>
     <a class="btn" href="/ui3">UI3</a>
+    <a class="btn" href="/v5-map">Map</a>
     <button class="btn" onclick="refreshAll()">↻ Làm mới</button>
   </div>
+
+  <!-- Compact Mùa mới bar — UI đầy đủ ở Films UI ?tab=seasons -->
+  <div class="seasons-banner collapsed" id="seasonsBanner">
+    <div class="seasons-banner-head">
+      <button class="btn collapse-btn" type="button" id="seasonsCollapseBtn" onclick="lsnToggleBanner()" title="Thu gọn / mở rộng" aria-expanded="false">▸</button>
+      <h2>Mùa mới <span class="cnt" id="tab-seasons-n"></span></h2>
+      <a class="btn pri" href="http://127.0.0.1:8802/films/ui?tab=seasons" title="Bảng Mùa mới gọn trong Films UI (:8802)">↗ Phim · Mùa mới</a>
+      <button class="btn" type="button" onclick="lsnDiscoverNew()" title="Chỉ tìm mùa/series mới — KHÔNG tải">🔎 Tìm</button>
+      <button class="btn" type="button" onclick="lsnUpdateAll()" title="Hongguo Update all: quét + TẢI tập thiếu">↻ Update Lib</button>
+      <div class="seasons-live" id="seasonsLive" hidden>
+        <div class="sp-sub" id="seasonsLiveSub">—</div>
+        <div class="sp-bar" aria-hidden="true"><i id="seasonsLiveBar"></i></div>
+      </div>
+      <span class="grow"></span>
+      <span class="muted hint-inline" id="seasons-hint">Badge + Films UI · Update Lib = tải tập thiếu</span>
+    </div>
+    <div class="seasons-banner-body" id="seasonsBannerBody">
+      <div class="seasons-progress" id="seasonsProgress" hidden>
+        <div class="sp-title" id="seasonsProgressTitle">Đang quét thư viện…</div>
+        <div class="sp-sub" id="seasonsProgressSub"></div>
+        <div class="sp-bar" aria-hidden="true"><i id="seasonsProgressBar"></i></div>
+      </div>
+      <div class="libseasons" id="libSeasons" role="region" aria-label="New seasons"></div>
+      <div class="muted" id="seasons-empty" style="padding:6px 4px;font-size:12px">Mở <a href="http://127.0.0.1:8802/films/ui?tab=seasons">Films UI → Mùa mới</a> để xem gọn theo franchise. Ở đây: <b>Tìm</b>=info · <b>Update Lib</b>=tải.</div>
+    </div>
+  </div>
+
   <div class="layout">
     <!-- LEFT: Discover -->
     <div class="col col-discover">
@@ -384,23 +439,14 @@
       </div>
     </div>
 
-    <!-- RIGHT: Ops -->
+    <!-- RIGHT: Ops — Thư viện | Hàng đợi -->
     <div class="col col-ops">
-      <div class="ops-sec seasons">
-        <div class="ops-head">
-          <h2>Mùa mới <span class="cnt" id="tab-seasons-n"></span></h2>
-          <button class="btn pri" type="button" onclick="lsnUpdateAll()">↻ Cập nhật tất cả</button>
-          <button class="btn" type="button" onclick="lsnRefresh()">Làm mới</button>
-          <span class="grow"></span>
-          <span class="muted hint-inline" id="seasons-hint">Đọc seasons từ Hongguo /dl/status</span>
-        </div>
-        <div class="ops-body">
-          <div class="libseasons" id="libSeasons" role="region" aria-label="New seasons"></div>
-          <div class="muted" id="seasons-empty" style="padding:12px">Chưa có dữ liệu mùa mới. Bấm <b>Cập nhật tất cả</b> để Hongguo quét thư viện (cần Downloader đang chạy).</div>
-        </div>
+      <div class="ops-main-tabs" id="ops-main-tabs">
+        <button type="button" class="tab on" data-ops="lib" onclick="setOpsMain('lib')">📚 Thư viện</button>
+        <button type="button" class="tab" data-ops="queue" onclick="setOpsMain('queue')">📥 Hàng đợi<span class="cnt" id="tab-ops-queue-n"></span></button>
       </div>
 
-      <div class="ops-sec library">
+      <div class="ops-sec library" id="ops-lib-pane">
         <div class="ops-head">
           <h2>Thư viện <span class="muted" id="lib-sum"></span></h2>
           <span class="col-lib-hint">▶ = xem đã tải</span>
@@ -419,11 +465,11 @@
         <div class="scroll" id="library" style="flex:1"><div class="muted" style="padding:12px">Đang tải…</div></div>
       </div>
 
-      <div class="ops-sec queues">
+      <div class="ops-sec queues" id="ops-queue-wrap" hidden>
         <div class="ops-head" id="ops-queue-tabs">
           <h2>Hàng đợi</h2>
-          <button type="button" class="tab on" data-q="dl" onclick="setOpsQueue('dl')">📥 Hàng đợi tải<span class="cnt" id="tab-queue-n"></span></button>
-          <button type="button" class="tab" data-q="merge" onclick="setOpsQueue('merge')">🎞 Hàng đợi gộp<span class="cnt" id="tab-merge-n"></span></button>
+          <button type="button" class="tab on" data-q="dl" onclick="setOpsQueue('dl')">📥 Tải<span class="cnt" id="tab-queue-n"></span></button>
+          <button type="button" class="tab" data-q="merge" onclick="setOpsQueue('merge')">🎞 Gộp<span class="cnt" id="tab-merge-n"></span></button>
           <span class="grow"></span>
           <div id="merge-cur" class="muted hint-inline" style="max-width:none">○ Idle</div>
         </div>
@@ -507,6 +553,7 @@ let lastGroups=[];
 let libItems=[];
 let leftTab='rank';
 let discoverMode='rank'; // search | rank | catalog
+let opsMain='lib';     // lib | queue
 let opsQueue='dl';     // dl | merge
 let rankCat='all';
 let rankLoaded=false;
@@ -543,6 +590,8 @@ function updateQueueBadges(){
   const n = list.length;
   const tabBadge = document.getElementById('tab-queue-n');
   if(tabBadge) tabBadge.textContent = n ? n : '';
+  const opsBadge = document.getElementById('tab-ops-queue-n');
+  if(opsBadge) opsBadge.textContent = n ? n : '';
   
   document.querySelectorAll('.queue-btn-cnt').forEach(el => { el.textContent = n; });
   const hintEl = document.getElementById('queue-pane-hint');
@@ -600,12 +649,23 @@ function bindResCheckboxes(box){
 
 function switchLeftTab(name){
   // Hongguo2 compat shim — map old tabs onto discover / ops panes
-  if(name==='merge'){ setOpsQueue('merge'); return; }
-  if(name==='queue'){ setOpsQueue('dl'); return; }
-  if(name==='seasons'){ lsnRefresh(); return; }
+  if(name==='merge'){ setOpsMain('queue'); setOpsQueue('merge'); return; }
+  if(name==='queue'){ setOpsMain('queue'); setOpsQueue('dl'); return; }
+  if(name==='seasons'){ lsnSetBannerOpen(true); lsnRefresh(); return; }
   if(name==='rank'){ setDiscoverMode('rank'); return; }
   if(name==='catalog'){ setDiscoverMode('catalog'); return; }
   setDiscoverMode('search');
+}
+function setOpsMain(which){
+  opsMain=(which==='queue')?'queue':'lib';
+  document.querySelectorAll('#ops-main-tabs .tab').forEach(el=>{
+    el.classList.toggle('on', el.dataset.ops===opsMain);
+  });
+  const lib=document.getElementById('ops-lib-pane');
+  const q=document.getElementById('ops-queue-wrap');
+  if(lib) lib.hidden=(opsMain!=='lib');
+  if(q) q.hidden=(opsMain!=='queue');
+  if(opsMain==='queue') setOpsQueue(opsQueue, {switchMain:false});
 }
 function setDiscoverMode(mode){
   discoverMode=(mode==='search'||mode==='catalog')?mode:'rank';
@@ -631,8 +691,9 @@ function setDiscoverMode(mode){
   updateDlBtn();
   updateQueueBadges();
 }
-function setOpsQueue(which){
+function setOpsQueue(which, opts){
   opsQueue=(which==='merge')?'merge':'dl';
+  if((!opts || opts.switchMain!==false) && opsMain!=='queue') setOpsMain('queue');
   document.querySelectorAll('#ops-queue-tabs .tab').forEach(el=>{
     el.classList.toggle('on', el.dataset.q===opsQueue);
   });
@@ -1697,6 +1758,7 @@ function renderLog(){
 
 /* ---------- New seasons board (Hongguo /dl/status.seasons) ---------- */
 let _lsn=null, _lsnRun=null, _lsnHide=false, _lsnMore=false, _lsnAdded={}, _lsnDeclined={}, _lsnRows={}, _lsnBusy=false;
+let _lsnBannerCollapsed=true, _lsnUserClosed=false;
 const LSN_SUG_SHOW=12;
 const LSN_ID=/^[0-9]{15,20}$/;
 const num=v=>{ const n=Number(v); return Number.isFinite(n)?n:0; };
@@ -1704,14 +1766,179 @@ function lsnHint(msg){
   const el=document.getElementById('seasons-hint');
   if(el) el.textContent=msg||'';
 }
+function lsnSetBannerOpen(open){
+  _lsnBannerCollapsed=!open;
+  const ban=document.getElementById('seasonsBanner');
+  const btn=document.getElementById('seasonsCollapseBtn');
+  if(ban) ban.classList.toggle('collapsed', _lsnBannerCollapsed);
+  if(btn){
+    btn.textContent=_lsnBannerCollapsed?'▸':'▾';
+    btn.setAttribute('aria-expanded', _lsnBannerCollapsed?'false':'true');
+  }
+}
+function lsnToggleBanner(){
+  lsnSetBannerOpen(_lsnBannerCollapsed);
+}
+function lsnPickNum(...vals){
+  for(const v of vals){
+    if(v==null || v==='') continue;
+    const n=Number(v);
+    if(Number.isFinite(n) && n>=0) return n;
+  }
+  return null;
+}
+function lsnBucketCounts(ss){
+  const src=ss && typeof ss==='object' ? ss : (_lsn||{});
+  const len=k=>Array.isArray(src[k])?src[k].length:0;
+  const big=src.big||{};
+  const albums=Array.isArray(big.albums)?big.albums:(Array.isArray(src.albums)?src.albums:[]);
+  const albumN=albums.length;
+  const partialN=lsnPickNum(src.partial, big.partial, src.partial_n) || albums.filter(g=>g && g.why==='partial').length;
+  const deferredN=lsnPickNum(src.deferred, big.deferred, src.deferred_n) || albums.filter(g=>g && (g.why==='size'||g.why==='offered')).length;
+  const sug=len('older')+len('removed')+len('held')+len('declined')+len('failed')+len('related')+len('stopped');
+  const soon=len('soon');
+  const auto=len('auto');
+  return {sug, soon, auto, albumN, partialN, deferredN, locked:len('locked')};
+}
+function lsnProgressFrac(d){
+  const ss=(d&&d.seasons)||{};
+  const cur=lsnPickNum(d&&d.checked, ss.checked, d&&d.done, ss.done, d&&d.progress, ss.progress);
+  const tot=lsnPickNum(d&&d.to_check, ss.to_check, d&&d.total, ss.total, d&&d.to_check_n, ss.total_n);
+  if(cur!=null && tot!=null && tot>0) return {cur, tot, label:cur+'/'+tot};
+  const series=Array.isArray(d&&d.series)?d.series:[];
+  if(series.length){
+    const done=series.filter(s=>{
+      const st=String((s&& (s.status||s.state))||'');
+      return st==='done'||st==='checked'||st==='ok';
+    }).length;
+    const prog=series.reduce((a,s)=>a+num(s&&s.done),0);
+    const all=series.reduce((a,s)=>a+num(s&&s.total),0);
+    if(all>0) return {cur:prog, tot:all, label:prog+'/'+all+' tập'};
+    return {cur:done, tot:series.length, label:done+'/'+series.length+' series'};
+  }
+  const bc=lsnBucketCounts(ss);
+  if(bc.albumN){
+    const doneAlb=Math.max(0, bc.albumN-bc.partialN-bc.deferredN);
+    return {cur:doneAlb, tot:bc.albumN, label:doneAlb+'/'+bc.albumN+' album'};
+  }
+  return {cur:null, tot:null, label:''};
+}
+function lsnIsScanning(d){
+  d=d||window.__hgLastStatus||{};
+  const ss=d.seasons||{};
+  const state=String(ss.state||'');
+  const phase=String(d.phase||'');
+  const mode=String(d.mode||'');
+  if(_lsnBusy) return true;
+  if(d.running && (mode==='library' || state.match(/run|scan|check|update/i) || phase.match(/scan|check|update|download/i))) return true;
+  if(state==='running'||state==='scanning'||state==='checking'||state==='update') return true;
+  return false;
+}
+function lsnStatusVn(d){
+  d=d||window.__hgLastStatus||{};
+  const ss=d.seasons||{};
+  const state=String(ss.state||'');
+  const phase=String(d.phase||'');
+  const bc=lsnBucketCounts(ss);
+  const frac=lsnProgressFrac(d);
+  const found=lsnPickNum(d.found, ss.found);
+  const seriesN=(Array.isArray(d.series)?d.series.length:0) || lsnPickNum(d.total, ss.total, d.to_check, ss.to_check) || 0;
+  const scanning=lsnIsScanning(d);
+  if(scanning){
+    const bits=[];
+    if(frac.label) bits.push(frac.label);
+    else if(seriesN) bits.push(seriesN+' series');
+    if(found!=null) bits.push('tìm thấy '+found);
+    if(phase) bits.push(phase);
+    if(d.eps_done!=null && d.eps_need!=null) bits.push(num(d.eps_done)+'/'+num(d.eps_need)+' tập');
+    if(state) bits.push('seasons.'+state);
+    const title = phase==='downloading' ? 'Đang tải sau quét…'
+      : (phase==='cancelled' ? 'Update bị hủy…' : 'Đang quét thư viện…');
+    return {title, sub: bits.join(' · ') || 'Chờ Hongguo báo tiến độ', frac};
+  }
+  if(state==='done' || state==='idle' || (!d.running && (_lsn || found!=null || seriesN))){
+    const bits=[bc.sug? (bc.sug+' gợi ý') : '', bc.soon? (bc.soon+' sắp ra') : '',
+                bc.auto? (bc.auto+' đã thêm') : '', bc.albumN? (bc.albumN+' album lớn') : '',
+                found!=null? ('tìm thấy '+found) : '',
+                frac.label? ('đã kiểm '+frac.label) : ''].filter(Boolean);
+    return {title: bits.length ? ('Xong: '+bits.join(' · ')) : 'Update all xong', sub: [phase, state?('seasons.'+state):''].filter(Boolean).join(' · '), frac:{cur:null,tot:null,label:''}};
+  }
+  if(!_lsn) return {title:'Chưa có seasons', sub:'Bấm Cập nhật tất cả để quét (Downloader phải chạy)', frac};
+  return {title:'Mùa mới', sub:state?('seasons.state='+state):'', frac};
+}
+function lsnApplyProgressDom(info, show){
+  const ban=document.getElementById('seasonsBanner');
+  if(ban) ban.classList.toggle('busy', !!show);
+  const live=document.getElementById('seasonsLive');
+  const liveSub=document.getElementById('seasonsLiveSub');
+  const liveBar=document.getElementById('seasonsLiveBar');
+  const card=document.getElementById('seasonsProgress');
+  const title=document.getElementById('seasonsProgressTitle');
+  const sub=document.getElementById('seasonsProgressSub');
+  const bar=document.getElementById('seasonsProgressBar');
+  const pct=(info.frac.cur!=null && info.frac.tot>0) ? Math.min(100, Math.round(100*info.frac.cur/info.frac.tot)) : (show?18:0);
+  const line=(info.title||'')+(info.sub?(' · '+info.sub):'');
+  if(live){
+    live.hidden=!show;
+    if(liveSub) liveSub.textContent=line||'—';
+    if(liveBar) liveBar.style.width=pct+'%';
+  }
+  if(card){
+    if(!show){ card.hidden=true; }
+    else {
+      if(title) title.textContent=info.title;
+      if(sub) sub.textContent=info.sub||info.frac.label||'';
+      if(bar) bar.style.width=pct+'%';
+      card.hidden=false;
+    }
+  }
+}
+function lsnShowProgress(show, d){
+  if(!show){ lsnApplyProgressDom({title:'', sub:'', frac:{cur:null,tot:null,label:''}}, false); return; }
+  const info=lsnStatusVn(d);
+  lsnApplyProgressDom(info, true);
+  lsnSetBannerOpen(true);
+}
+function lsnScanFallbackHtml(st){
+  const series=Array.isArray(st&&st.series)?st.series:[];
+  if(!series.length) return '';
+  const order=['downloading','queued','checked','done','failed','cancelled','?'];
+  const by={};
+  series.forEach(s=>{
+    const k=String((s&& (s.status||s.state))||'?') || '?';
+    (by[k]=by[k]||[]).push(s);
+  });
+  const found=lsnPickNum(st.found);
+  const frac=lsnProgressFrac(st);
+  const say=[frac.label?('đã kiểm '+frac.label):'', found!=null?('tìm thấy '+found):'', st.phase?String(st.phase):''].filter(Boolean).join(' · ');
+  let h='<div class="lsn-head"><span class="lsn-title">📋 Quét thư viện</span><span class="lsn-sub">'+esc(say|| (series.length+' series'))+'</span></div>';
+  order.concat(Object.keys(by).filter(k=>!order.includes(k))).forEach(k=>{
+    const xs=by[k]; if(!xs||!xs.length) return;
+    const label={downloading:'Đang tải',queued:'Chờ tải',checked:'Đã kiểm',done:'Xong',failed:'Lỗi',cancelled:'Đã hủy'}[k]||k;
+    h+='<div class="lsn-row"><span class="lsn-k">'+esc(label)+' · '+xs.length+'</span><div class="lsn-items">'
+      +xs.slice(0,48).map(x=>{
+        const title=String(x.title||x.name||x.sid||'');
+        const need=num(x.need), have=num(x.have), tot=num(x.total), done=num(x.done);
+        let meta='';
+        if(need>0) meta='cần +'+need;
+        else if(tot>0) meta=done+'/'+tot;
+        else if(have>0) meta='có '+have;
+        const cls=(k==='checked'||k==='done')?'ok':(k==='downloading'?'dl':'');
+        return lsnPlain({sid:x.sid,title}, meta, cls);
+      }).join('')
+      +(xs.length>48?('<span class="muted">+'+ (xs.length-48)+'…</span>'):'')
+      +'</div></div>';
+  });
+  return h;
+}
 function lsnTake(st){
   if(!st) return;
   // Pineline luôn poll /api/hg/status — nhận seasons kể cả khi mode !== library
   if(st.seasons && typeof st.seasons==="object"){
-    if(st.started!==_lsnRun){ _lsnRun=st.started; _lsnHide=false; _lsnMore=false; _lsnAdded={}; _lsnDeclined={}; _lsnRows={}; }
+    if(st.started!==_lsnRun){ _lsnRun=st.started; _lsnHide=false; _lsnUserClosed=false; _lsnMore=false; _lsnAdded={}; _lsnDeclined={}; _lsnRows={}; }
     _lsn=st.seasons;
   } else if(st.mode==="library" && st.started!==_lsnRun){
-    _lsnRun=st.started; _lsn=null; _lsnHide=false; _lsnMore=false; _lsnAdded={}; _lsnDeclined={}; _lsnRows={};
+    _lsnRun=st.started; _lsn=null; _lsnHide=false; _lsnUserClosed=false; _lsnMore=false; _lsnAdded={}; _lsnDeclined={}; _lsnRows={};
   }
   (st.series||[]).forEach(r=>{
     const sid=String((r&& (r.sid||r.series_id))||'');
@@ -1779,10 +2006,21 @@ function lsnUpdateBadge(){
   const n=lsnBadgeCount();
   el.textContent=n?String(n):'';
 }
+function lsnHasBoard(){
+  if(!_lsn) return false;
+  return !!(lsnList("auto").length||lsnList("stopped").length||lsnList("locked").length||lsnList("soon").length
+    ||lsnBigAlbums().length||lsnList("older").length||lsnList("removed").length||lsnList("held").length
+    ||lsnList("declined").length||lsnList("failed").length||lsnList("related").length
+    ||lsnBigAll().some(x=>_lsnDeclined[x.sid]));
+}
 function lsnRender(){
   const el=document.getElementById('libSeasons');
   const empty=document.getElementById('seasons-empty');
   if(!el) return;
+  const st=window.__hgLastStatus||{};
+  const contentReady=lsnHasBoard();
+  // Có nội dung → mở banner trừ khi user đã ✕ đóng
+  if(contentReady && !_lsnUserClosed){ _lsnHide=false; lsnSetBannerOpen(true); }
   const auto=lsnList("auto"), locked=lsnList("locked"), soon=lsnList("soon"), bigs=lsnBigAlbums();
   const stoppedAll=lsnList("stopped");
   const stopped=stoppedAll.filter(x=>!_lsnAdded[x.sid]), addedNow=stoppedAll.filter(x=>_lsnAdded[x.sid]);
@@ -1791,10 +2029,18 @@ function lsnRender(){
    [lsnList("declined"),"đã bỏ qua"], [lsnBigAll().filter(x=>_lsnDeclined[x.sid]),"đã bỏ qua"], [lsnList("failed"),"không chạy được"],
    [related,""]].forEach(([xs,note])=>xs.forEach(x=>{ const k=String(x.sid); if(!seen.has(k)){ seen.add(k); sug.push([x,note]); } }));
   const has=_lsn && !_lsnHide && (auto.length||stoppedAll.length||locked.length||soon.length||bigs.length||sug.length);
-  if(empty) empty.hidden=!!has;
-  if(!has){ el.hidden=true; el.innerHTML=''; lsnUpdateBadge(); return; }
+  const scanning=lsnIsScanning(st);
+  const wantScan=!has && (scanning || (!_lsnHide && (st.found!=null || (st.mode==='library' && Array.isArray(st.series) && st.series.length))));
+  if(scanning || wantScan){ lsnShowProgress(true, st); }
+  else { lsnShowProgress(false, st); }
+  if(empty) empty.hidden=!!(has || wantScan || scanning);
+  if(!has){
+    const scanHtml=wantScan ? lsnScanFallbackHtml(st) : '';
+    if(scanHtml){ el.hidden=false; el.innerHTML=scanHtml; lsnUpdateBadge(); return; }
+    el.hidden=true; el.innerHTML=''; lsnUpdateBadge(); return;
+  }
+  if(!scanning) lsnShowProgress(false, st);
   const rows=_lsnRows;
-  const st=window.__hgLastStatus||{};
   const live=!!(st.running && (st.mode==="library" || lsnList("auto").length));
   const rel=new Set(related);
   const nBig=bigs.reduce((a,g)=>a+g.items.length,0), waiting=bigs.reduce((a,g)=>a+g.items.filter(x=>!_lsnAdded[x.sid]).length,0);
@@ -1881,51 +2127,123 @@ async function lsnRefresh(){
     const d=await jget('/api/hg/status');
     window.__hgLastStatus=d;
     lsnTake(d); lsnRender();
-    const ss=d.seasons||{};
-    lsnHint(ss.state ? ('seasons.state='+ss.state+(d.mode?(' · mode '+d.mode):'')) : 'Chưa có seasons — bấm Update all');
+    const info=lsnStatusVn(d);
+    lsnHint(info.title+(info.sub?(' · '+info.sub):''));
   }catch(e){ lsnHint(e.message||String(e)); }
+}
+function lsnCoreApprox(title){
+  let t=String(title||'').trim();
+  t=t.replace(/第[0-9一二三四五六七八九十百千零〇两兩]+季.*$/u,'');
+  t=t.replace(/\s*S\d+\s*.*$/i,'');
+  t=t.replace(/（.*?）|\(.*?\)/g,'');
+  return t.trim();
+}
+function lsnToBoardItem(r){
+  const sid=String((r&& (r.series_id||r.sid))||'');
+  if(!LSN_ID.test(sid)) return null;
+  return {
+    sid,
+    title:String(r.title||r.name||sid),
+    eps:num(r.episodes||r.eps||r.total||0),
+    season:num(r.season||0),
+    score:String(r.score||''),
+    base:String(r.core||r.stem||lsnCoreApprox(r.title||r.name||'')||''),
+    album:String(r.album||''),
+    short:true
+  };
+}
+async function lsnDiscoverNew(){
+  if(_lsnBusy) return;
+  _lsnBusy=true; _lsnUserClosed=false; _lsnHide=false;
+  lsnSetBannerOpen(true);
+  lsnApplyProgressDom({title:'Đang tìm mùa mới…', sub:'watchlist + films.db — không tải', frac:{cur:0,tot:1,label:'…'}}, true);
+  lsnHint('Đang tìm mùa mới từ watchlist/DB (không tải)…');
+  let d;
+  try{
+    d=await jpost('/api/hg/library/seasons/discover',{max_cores:16, expand:false});
+  }catch(e){
+    _lsnBusy=false; lsnShowProgress(false);
+    lsnHint('Discover lỗi: '+(e.message||e)+' — cần restart server nếu route mới chưa nạp');
+    return;
+  }
+  const ss=(d&&d.seasons)||{};
+  _lsn={
+    state:'done',
+    auto:ss.auto||[], locked:ss.locked||[], failed:ss.failed||[], stopped:ss.stopped||[],
+    declined:ss.declined||[], older:ss.older||[], removed:ss.removed||[], soon:ss.soon||[],
+    held:ss.held||[], related:ss.related||[], big:ss.big||{albums:[]}
+  };
+  _lsnBusy=false;
+  lsnRender();
+  const n=num(d&&d.found_n)||((ss.held||[]).length+(ss.related||[]).length);
+  const cores=num(d&&d.scanned_cores)||0;
+  const wl=num(d&&d.watchlist_n)||0;
+  lsnApplyProgressDom({
+    title: n?('Tìm thấy '+n+' mùa/series chưa có'):'Không thấy mùa mới',
+    sub:'quét '+cores+' bộ · watchlist '+wl+' · chỉ thông tin — + Thêm mới tải',
+    frac:{cur:cores,tot:Math.max(cores,1),label:cores+'/'+cores}
+  }, true);
+  lsnHint(n
+    ? ('Tìm thấy '+(d.held_n||0)+' mùa gần + '+(d.related_n||0)+' liên quan (watchlist '+wl+'). Chưa tải.')
+    : ('Đã quét '+cores+' bộ từ watchlist/DB — không thấy mùa mới'));
 }
 async function lsnUpdateAll(){
   if(_lsnBusy) return;
   const st=window.__hgLastStatus||{};
-  if(st.running){ lsnHint('Hongguo đang chạy job khác — chờ xong rồi Update all'); return; }
-  _lsnBusy=true; lsnRender();
-  lsnHint('Đang gửi Update all tới Hongguo…');
-  try{
-    await jpost('/api/hg/library/update',{});
-  }catch(e){
-    _lsnBusy=false; lsnRender();
-    lsnHint(e.message||String(e));
+  const attachOnly=!!(st.running && String(st.mode||'')==='library');
+  if(st.running && !attachOnly){
+    lsnHint('Hongguo đang tải phim — «Cập nhật thư viện» dùng chung máy tải, phải chờ xong. Muốn chỉ xem thông tin: bấm «Tìm mùa mới».');
     return;
   }
+  _lsnBusy=true; _lsnUserClosed=false; _lsnHide=false;
+  lsnSetBannerOpen(true);
+  lsnShowProgress(true, st);
+  lsnRender();
+  if(attachOnly){
+    lsnHint('Đang theo dõi quét thư viện đang chạy trên Hongguo…');
+  } else {
+    lsnHint('Gửi Cập nhật thư viện → Hongguo sẽ quét VÀ tải tập thiếu của series đã có…');
+    try{
+      await jpost('/api/hg/library/update',{});
+    }catch(e){
+      _lsnBusy=false; lsnShowProgress(false); lsnRender();
+      const msg=String(e.message||e);
+      if(/already running|đang chạy|wait for it/i.test(msg)){
+        lsnHint('Hongguo báo đang có job tải/update — chờ xong, hoặc bấm «Tìm mùa mới» nếu chỉ cần thông tin.');
+      } else {
+        lsnHint(msg);
+      }
+      return;
+    }
+  }
   const t0=Date.now(), maxMs=12*60*1000;
+  let sawRunning=attachOnly;
   while(Date.now()-t0<maxMs){
-    await new Promise(r=>setTimeout(r,2000));
+    await new Promise(r=>setTimeout(r,1500));
     let d;
     try{ d=await jget('/api/hg/status'); }catch(e){ continue; }
     window.__hgLastStatus=d;
     lsnTake(d); lsnRender();
-    const ss=d.seasons||{};
-    const state=String(ss.state||'');
-    if(d.running){
-      lsnHint('Update all đang chạy… '+(d.checked!=null? (d.checked+'/'+(d.to_check||'?')) : '')+(state?(' · '+state):''));
-      continue;
-    }
-    if(state==='done' || state==='idle' || (!d.running && _lsn)){
-      lsnHint(state==='done' ? 'Update all xong — board đã cập nhật' : ('Update all kết thúc · seasons.state='+(state||'—')));
-      break;
-    }
-    if(!d.running && Date.now()-t0>8000){
-      lsnHint('Update all đã gửi — chưa thấy seasons.state=done (Downloader đang chạy?)');
+    const info=lsnStatusVn(d);
+    lsnHint(info.title+(info.sub?(' · '+info.sub):''));
+    lsnShowProgress(true, d);
+    if(d.running || lsnIsScanning(d)){ sawRunning=true; continue; }
+    if(_lsn || (sawRunning && Date.now()-t0>2500) || (!sawRunning && Date.now()-t0>6000)){
       break;
     }
   }
-  _lsnBusy=false; lsnRender();
+  _lsnBusy=false;
+  const last=window.__hgLastStatus||{};
+  const doneInfo=lsnStatusVn(last);
+  const keep=!!(last.found!=null || (Array.isArray(last.series)&&last.series.length) || lsnHasBoard());
+  lsnShowProgress(keep, last);
+  lsnRender();
+  lsnHint(doneInfo.title+(doneInfo.sub?(' · '+doneInfo.sub):''));
 }
 function lsnClick(e){
   const b=e.target.closest('[data-lsn]'); if(!b || b.disabled) return;
   const act=b.dataset.lsn;
-  if(act==='close'){ _lsnHide=true; lsnRender(); }
+  if(act==='close'){ _lsnHide=true; _lsnUserClosed=true; lsnSetBannerOpen(false); lsnRender(); }
   else if(act==='more'){ _lsnMore=!_lsnMore; lsnRender(); }
   else if(act==='add'){ const sid=String(b.dataset.sid||''); if(LSN_ID.test(sid)) lsnSubmit([sid], b); }
   else if(act==='big'){ const g=lsnBigAlbums().find(x=>x.album===String(b.dataset.alb||''));
@@ -2456,12 +2774,33 @@ async function refreshAll(){
   if(discoverMode==='catalog') await loadCatalog(exPage||1);
   else if(discoverMode==='rank') await loadRank();
 }
+/** Deep-link từ Films UI: ?sid=… và/hoặc ?q=… */
+async function bootFromQuery(){
+  try{
+    const p=new URLSearchParams(location.search||'');
+    const sid=(p.get('sid')||'').trim();
+    const q=(p.get('q')||'').trim();
+    if(!sid && !q) return;
+    setDiscoverMode('search');
+    if(sid){
+      const paste=document.getElementById('paste-id');
+      if(paste) paste.value=sid;
+      await addByPaste();
+      try{ openBaikeDetail(sid, q); }catch(e){}
+    } else if(q){
+      const qel=document.getElementById('q');
+      if(qel) qel.value=q;
+      await doSearch();
+    }
+  }catch(e){ console.warn('bootFromQuery', e); }
+}
 loadDlQueueFromStorage();
 const _libSeasonsEl=document.getElementById('libSeasons');
 if(_libSeasonsEl) _libSeasonsEl.addEventListener('click', lsnClick);
 setDiscoverMode('rank');
-setOpsQueue('dl');
-refreshAll();
+setOpsQueue('dl', {switchMain:false});
+setOpsMain('lib');
+refreshAll().then(()=>bootFromQuery());
 setInterval(()=>{ ping(); refreshStatus(); refreshMerge(); }, 4000);
 setInterval(refreshLibrary, 15000);
 

@@ -91,6 +91,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def as_bool(val: Any, default: bool = True) -> bool:
+    """Parse bool an toàn — `bool("false")` là True nên không dùng raw bool()."""
+    if val is None:
+        return default
+    if isinstance(val, str):
+        v = val.strip().lower()
+        if v in ("1", "true", "on", "yes", "bật", "bat", "có", "co"):
+            return True
+        if v in ("0", "false", "off", "no", "tắt", "tat", "không", "khong", ""):
+            return False
+        return default
+    return bool(val)
+
+
 def _coerce(key: str, val: Any) -> Any:
     base = DEFAULTS[key]
     if isinstance(base, bool):
@@ -187,7 +201,11 @@ def render_kwargs(o: dict[str, Any]) -> dict[str, Any]:
         "frame": str(o.get("frame") or "off"),
         "vbitrate": str(o.get("vbitrate") or DEFAULTS["vbitrate"]),
         "speed_factor": float(o.get("render_speed") or o.get("speed_factor") or 1.0),
-        "hardsub_blur": bool(o["hardsub_blur"]) if o.get("hardsub_blur") is not None else True,
+        "hardsub_blur": (
+            _coerce("hardsub_blur", o["hardsub_blur"])
+            if o.get("hardsub_blur") is not None
+            else True
+        ),
     }
 
 

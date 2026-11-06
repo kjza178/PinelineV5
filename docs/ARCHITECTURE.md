@@ -1,6 +1,6 @@
 # Kiến trúc PinelineV5
 
-_Cập nhật: 2026-11-06 (eng-swarm skills pointer)_
+_Cập nhật: 2026-11-06 (v5-map + func-sigs)_
 
 V5 = workspace refactor từ V4. Production ops có thể vẫn V4 (:8804) tới khi user chuyển hẳn; V5 mặc định **:8805**.
 
@@ -17,6 +17,8 @@ V5 = workspace refactor từ V4. Production ops có thể vẫn V4 (:8804) tới
 ## UI HTML
 
 Dashboard / Hongguo / Films / Workflow sống ở **`static/ui/`** (`index3.html`, `hongguo.html`, `films_ui.html`, `workflow.html`). `routes_ui.find_index` và `routes_films` ưu tiên path đó, fallback root/cwd.
+
+**Function map (interactive):** [`GET /v5-map`](../static/ui/v5-map.html) → `static/ui/v5-map.html` (curated module graph + key funcs). Catalog: [`reviews/2026-11-06-v5-func-catalog.md`](reviews/2026-11-06-v5-func-catalog.md). Per-module AST signatures: [`reviews/func-sigs/`](reviews/func-sigs/). Agent skill: `.cursor/skills/v5-func-signer`.
 
 ## Packages live (Phase B–F)
 
@@ -88,7 +90,7 @@ Không đổi so với V4: download → asr → translate → tts → assemble �
 
 ## Engineering swarm (agent skills)
 
-Song song audit/review V5 dùng roster dưới `.cursor/skills/v5-eng-swarm` (orchestrator) cùng các skill con `v5-vuln-hunter`, `v5-critical-bug-hunter`, `v5-invariants-monitor`, `v5-part-atomizer`, `v5-test-coverage`, `v5-pr-reviewer`, `v5-autofix-safe`, `v5-docs-generator`. Báo cáo first-run: [`reviews/2026-11-06-v5-eng-swarm.md`](reviews/2026-11-06-v5-eng-swarm.md); part map: [`reviews/2026-11-06-v5-part-atoms.md`](reviews/2026-11-06-v5-part-atoms.md). Index: [`reviews/README.md`](reviews/README.md).
+Song song audit/review V5 dùng roster dưới `.cursor/skills/v5-eng-swarm` (orchestrator) cùng các skill con `v5-vuln-hunter`, `v5-critical-bug-hunter`, `v5-invariants-monitor`, `v5-part-atomizer`, `v5-test-coverage`, `v5-pr-reviewer`, `v5-autofix-safe`, `v5-docs-generator`, `v5-func-signer`. Báo cáo first-run: [`reviews/2026-11-06-v5-eng-swarm.md`](reviews/2026-11-06-v5-eng-swarm.md); part map: [`reviews/2026-11-06-v5-part-atoms.md`](reviews/2026-11-06-v5-part-atoms.md). Index: [`reviews/README.md`](reviews/README.md).
 
 ## Dữ liệu V5
 

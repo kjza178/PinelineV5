@@ -4,6 +4,11 @@ Mới nhất trên cùng. Mỗi mục: quyết định — bối cảnh/lý do. 
 
 ## 2026-11
 
+- **11-06 (Drop Hongguo2)** User: bỏ hongguo 2, quá tệ — update V4–V5. Route `/hongguo2` → 302 `/hongguo`; không còn nav/link thử nghiệm; deep-link Films UI → Hongguo gốc + `bootFromQuery`. File `hongguo2.html` giữ archive trên đĩa. Fix `docs/fixes/2026-11-06-drop-hongguo2.md`.
+
+- **11-06 (Films UI Mùa mới)** User: ok làm đi — bảng mùa mới chính ở Films UI (`/films/ui?tab=seasons`), filter chỉ mùa mới hơn max đã biết; Hongguo2 còn badge/compact + Update Lib. Fix follow-up `docs/fixes/2026-11-06-hg-watchlist-discover.md`. *(superseded: Hongguo2 đã drop.)*
+- **11-06 (hg_watchlist)** User: ok — tạo bảng meta trong `films.db` (`hg_watchlist`); xoá Lib giữ sid/core/title; «Tìm mùa mới» quét theo DB+watchlist, **không** gọi Hongguo Update all (tránh tải hàng nghìn tập). Nút «Cập nhật thư viện» giữ hành vi tải tập thiếu. Fix `docs/fixes/2026-11-06-hg-watchlist-discover.md`.
+
 - **11-05 (autosplit conflict guards)** User asked V2+V4+V5 — guards chống auto-split / ASR promote chồng luồng (merged skip, same-source promote, part pipeline complete). Fix log `docs/fixes/2026-11-05-autosplit-conflict-guards.md`. Không restart lần này.
 
 - **11-05 (restore Tauri V5)** User: có — khôi phục Tauri từ archive lên root V5 (song song WebView2 `app_desktop.py`). Branding/port **8805**; `cargo check` pass. Backup `Z:\PinelineV2_codebak\2026-11-05_restore-tauri\`.

@@ -426,6 +426,43 @@ def launch_yt_uploader_process():
         return JSONResponse({"ok": False, "error": f"Lỗi khởi chạy yt_uploader: {e}"}, status_code=500)
 
 
+def _usa_json(fn, *args, **kwargs):
+    """Bridge sang uploader_settings_api (sidecar-compatible)."""
+    import uploader_settings_api as usa
+    code, body = fn(*args, **kwargs)
+    return JSONResponse(body, status_code=code)
+
+
+@router.post("/api/uploader/skip")
+def uploader_skip_item(payload: Dict[str, Any] = Body(...)):
+    import uploader_settings_api as usa
+    return _usa_json(usa.skip_upload_item, payload)
+
+
+@router.post("/api/uploader/skip-current")
+def uploader_skip_current():
+    import uploader_settings_api as usa
+    return _usa_json(usa.skip_current_upload)
+
+
+@router.post("/api/uploader/clear-skipped")
+def uploader_clear_skipped():
+    import uploader_settings_api as usa
+    return _usa_json(usa.clear_skipped)
+
+
+@router.post("/api/uploader/move")
+def uploader_move_item(payload: Dict[str, Any] = Body(...)):
+    import uploader_settings_api as usa
+    return _usa_json(usa.move_upload_item, payload)
+
+
+@router.post("/api/uploader/settings")
+def uploader_save_settings(payload: Dict[str, Any] = Body(...)):
+    import uploader_settings_api as usa
+    return _usa_json(usa.save_uploader_settings, payload)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. AUTO-PUBLISH API
 # ══════════════════════════════════════════════════════════════════════════════
@@ -455,8 +492,22 @@ def auto_publish_trigger(body: dict):
     privacy = body.get("privacy")
     sched = body.get("schedule_hours")
     force = bool(body.get("force", False))
-    res = auto_publisher.publish_job(job_id, privacy=privacy, schedule_hours=sched, force=force)
-    return res if res.get("ok") else JSONResponse(res, status_code=500)
+    allow_oversized = bool(
+        body.get("allow_oversized") or body.get("allow_huge") or body.get("confirm_huge")
+    )
+    busy_now, active_owner = auto_publisher.is_any_job_uploading()
+    if busy_now and active_owner != job_id:
+        res = auto_publisher.enqueue_publish(
+            job_id, privacy=privacy, schedule_hours=sched, force=force, allow_oversized=allow_oversized
+        )
+    else:
+        res = auto_publisher.publish_job(
+            job_id, privacy=privacy, schedule_hours=sched, force=force, allow_oversized=allow_oversized
+        )
+    if res.get("ok"):
+        return res
+    code = 400 if res.get("refused_oversized") else 500
+    return JSONResponse(res, status_code=code)
 
 
 @router.post("/api/auto-publish/scan")

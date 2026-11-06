@@ -1,5 +1,5 @@
 """
-Feeder + Run-watch cho Auto-pilot (chạy trong sidecar :8802, gọi API server mặc định :8804).
+Feeder + Run-watch cho Auto-pilot (chạy trong sidecar :8802, chỉ gọi API :8801).
 
 Feeder — khi hàng chờ trống, không job nào chạy/chờ → thêm job mới theo "yêu cầu" (spec):
   lib_merged : file (merged) trong thư viện Hongguo chưa làm job
@@ -23,10 +23,10 @@ from typing import Any
 
 import requests
 
-import agents.agent_autopilot as ap
-import core.film_db as film_db
+import agent_autopilot as ap
+import film_db
 
-ROOT = Path(__file__).resolve().parent.parent  # project root (file lives in agents/)
+ROOT = Path(__file__).resolve().parent
 WORK = ROOT / "work"
 STATE_PATH = WORK / "logs" / "feeder_state.json"
 
@@ -155,7 +155,7 @@ def _post(base: str, path: str, body: dict | None = None, timeout: float = 120) 
 # ─── thư viện + job đã có ────────────────────────────────────────────────
 
 def _hg():
-    import agents.hongguo_bridge as hg  # noqa: PLC0415
+    import hongguo_bridge as hg  # noqa: PLC0415
     return hg
 
 
@@ -258,7 +258,7 @@ def candidates(base: str, st: dict, items: list[dict] | None = None, *, manual: 
 
     # Bỏ qua các mùa đã bị chặn bản quyền YouTube (Content ID Block)
     try:
-        import core.film_db as film_db
+        import film_db
         lib_blocks = film_db.list_library_blocks()
     except Exception:
         lib_blocks = {}
@@ -483,7 +483,7 @@ def library_view(base: str) -> dict:
     tr = _translate(base, [g["core"] for g in out] + [s["title"] for g in out for s in g["seasons"]], st)
     # Gắn trạng thái bản quyền từ films.db (library_blocks)
     try:
-        import core.film_db as film_db
+        import film_db
         lib_blocks = film_db.list_library_blocks()
     except Exception:
         lib_blocks = {}
@@ -578,7 +578,7 @@ def library_action(base: str, action: str, names: list[str] | None = None, cores
             return {"ok": False, "error": f"Không tìm thấy thư mục thư viện ({root})"}
 
         try:
-            import core.film_db as film_db
+            import film_db
             lib_blocks = film_db.list_library_blocks()
         except Exception:
             lib_blocks = {}
@@ -1027,14 +1027,96 @@ def _fmt_srt_ts(sec: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+_COMBINE_CN_NUM = {
+    "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "兩": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+}
+
+
+def _combine_parse_cn_int(s: str) -> int | None:
+    s = (s or "").strip()
+    if not s:
+        return None
+    if s.isdigit():
+        return int(s)
+    if s == "十":
+        return 10
+    if s.startswith("十"):
+        return 10 + (_COMBINE_CN_NUM.get(s[1:], 0) or 0)
+    if s.endswith("十") and len(s) == 2:
+        return (_COMBINE_CN_NUM.get(s[0], 0) or 0) * 10
+    if "十" in s:
+        a, _, b = s.partition("十")
+        return (_COMBINE_CN_NUM.get(a, 0) or 0) * 10 + (_COMBINE_CN_NUM.get(b, 0) or 0)
+    if s in _COMBINE_CN_NUM:
+        return _COMBINE_CN_NUM[s]
+    return None
+
+
+def _combine_part_num(*texts: str) -> int:
+    """Bóc số phần từ title_vi / title_zh / name / job_id.
+    Missing → 0 (xếp trước Phần 1 — thường là bản gốc chưa gắn số)."""
+    blob = " ".join(str(t or "") for t in texts if t)
+    if not blob.strip():
+        return 0
+    m = re.match(
+        r"^(?:phần|mùa|season|tập|p)\s*(\d+)\s*[|:\-–—]",
+        blob.strip(),
+        re.I,
+    )
+    if m:
+        return int(m.group(1))
+    m = re.search(
+        r"(?:^|[\s_\-\.\(:|])(?:p|phần|mùa|season|s|tập|t)\s*(\d+)",
+        blob,
+        re.I,
+    )
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\bpart\s*(\d+)\b", blob, re.I)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"第([0-9一二三四五六七八九十百零〇两兩]+)[季集部话話]", blob)
+    if m:
+        n = _combine_parse_cn_int(m.group(1))
+        if n is not None:
+            return n
+    m = re.search(r"(?:^|[_\-\s.])p(\d+)\b", blob, re.I)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"_p(\d+)$", blob, re.I)
+    if m:
+        return int(m.group(1))
+    return 0
+
+
+def _part_sort_key(jid: str, manifest: dict) -> tuple:
+    """(part, created_at, job_id). Thiếu số phần → 0."""
+    m = manifest or {}
+    req = m.get("request") or {}
+    title_vi = str(m.get("title_vi") or "").strip()
+    title_zh = str(m.get("title_zh") or "").strip()
+    name = str(req.get("title") or req.get("name") or "").strip()
+    part = _combine_part_num(title_vi, title_zh, name, str(jid))
+    if not part:
+        try:
+            part = int(req.get("season") or m.get("season") or 0)
+        except (TypeError, ValueError):
+            part = 0
+    created = str(m.get("created_at") or "")
+    return (part, created, str(jid))
+
+
 def combine_rendered_jobs(
     base: str,
     job_ids: list[str],
     custom_title_vi: str | None = None,
     auto_publish: bool = False,
+    preserve_order: bool = False,
 ) -> dict:
     """Nối các Job ĐÃ RENDER xong (work/<jid>/output.mp4) thành 1 Job video dài hoàn chỉnh
     để tạo Thumbnail/Meta và đăng YouTube (Trọn Bộ / Gộp Nhiều Phần).
+    Mặc định sắp theo Phần 1→N (không tin thứ tự tick UI). preserve_order=True giữ thứ tự client (↑↓).
     """
     import hashlib
     import shutil
@@ -1060,6 +1142,10 @@ def combine_rendered_jobs(
         if not out_p.is_file():
             return {"ok": False, "error": f"Job {jid} chưa có file video hoàn chỉnh (output.mp4)"}
         job_records.append({"job_id": jid, "work_dir": wdir, "manifest": m, "output_mp4": out_p})
+
+    if not preserve_order:
+        job_records.sort(key=lambda r: _part_sort_key(r["job_id"], r["manifest"]))
+        clean_ids = [r["job_id"] for r in job_records]
 
     merged_jid = hashlib.sha1(f"merged_jobs:{','.join(clean_ids)}:{int(time.time())}".encode("utf-8")).hexdigest()[:12]
     merged_dir = WORK / merged_jid
@@ -1185,7 +1271,7 @@ def combine_rendered_jobs(
     pub_res = None
     if auto_publish:
         try:
-            import agents.auto_publisher as auto_publisher
+            import auto_publisher
             busy_now, active_owner = auto_publisher.is_any_job_uploading()
             if busy_now and active_owner != merged_jid:
                 pub_res = auto_publisher.enqueue_publish(merged_jid, force=True)
@@ -1472,7 +1558,7 @@ _PARSE_SYS = (
 
 def _llm_cfg() -> tuple[str, str, list[str]]:
     """Cùng nguồn với agent chat (config.agent_llm): sidecar không còn cần key trong .bat."""
-    import core.config as _cfg
+    import config as _cfg
     c = _cfg.agent_llm()
     return c["base"], c["key"], [c["model"]] + ([c["fallback"]] if c["fallback"] else [])
 
@@ -1558,20 +1644,15 @@ def set_request(text: str) -> dict:
 # ─── run-watch ───────────────────────────────────────────────────────────
 
 def _server_tree_cpu(lib: Path | None) -> float | None:
-    """Tổng CPU-seconds của server Pineline + tiến trình con (bỏ ffmpeg ghép thư viện Hongguo)."""
+    """Tổng CPU-seconds của server :8801 + tiến trình con (bỏ ffmpeg ghép thư viện Hongguo)."""
     try:
         import psutil  # noqa: PLC0415
     except ImportError:
         return None
-    import os
-    want_port = (os.getenv("PORT") or "8805").strip()
     srv = None
     for p in psutil.process_iter(["cmdline"]):
         cl = " ".join(p.info.get("cmdline") or [])
-        if "server.py" not in cl:
-            continue
-        # Khớp PORT hiện tại; fallback nhận cả 8804/8801 nếu cmdline không ghi port rõ
-        if want_port in cl or f"--port {want_port}" in cl or "8805" in cl or "8804" in cl or "8801" in cl:
+        if "server.py" in cl and "8801" in cl:
             srv = p
             break
     if srv is None:

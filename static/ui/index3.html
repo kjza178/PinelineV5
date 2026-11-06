@@ -376,6 +376,7 @@
     <a href="/ui3" style="padding:3px 10px;border-radius:999px;background:var(--ok);color:#0c1a0c;border-color:transparent;font-weight:650;text-decoration:none">UI3</a>
     <a href="/ui4" style="padding:3px 10px;border-radius:999px;border:1px solid var(--accent-line);color:var(--accent);text-decoration:none;font-weight:650">UI4 Ops</a>
     <a href="/hongguo" style="padding:3px 10px;border-radius:999px;border:1px solid var(--line2);color:var(--text2);text-decoration:none">HG</a>
+    <a href="http://127.0.0.1:8802/films/ui?tab=seasons" style="padding:3px 10px;border-radius:999px;border:1px solid var(--accent-line);color:var(--accent);text-decoration:none;font-weight:650" title="Films UI · Mùa mới">🎬 Phim</a>
     <button type="button" id="btn-agent" onclick="toggleAgent()" title="Pineline V2 Agent" style="padding:3px 10px;border-radius:999px;border:1px solid var(--accent-line);background:var(--accent-dim);color:var(--accent);font-weight:650;cursor:pointer;font-family:inherit;font-size:12px">Agent</button>
   </div>
 
@@ -443,10 +444,11 @@
       <button type="button" class="side-add" onclick="showCompose()">+ Thêm video</button>
       <div class="side-row2">
         <a class="side-hg" href="/hongguo">Hongguo</a>
+        <a class="side-hg" href="http://127.0.0.1:8802/films/ui?tab=seasons" title="Films UI · Mùa mới" style="border-color:var(--accent);color:var(--accent)">🎬 Phim</a>
         <button type="button" class="btn" title="Enqueue merge mọi series Hongguo chưa DONE" onclick="mergeAllSeries()">Merge all series</button>
       </div>
       <div class="ckbox" id="cookie-box"></div>
-      <div class="slabel" id="qty">Hàng chờ · <a href="/" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI0</a>/<a href="/ui3" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI3</a>/<a href="/ui4" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI4</a>/<a href="/hongguo" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">HG</a></div>
+      <div class="slabel" id="qty">Hàng chờ · <a href="/" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI0</a>/<a href="/ui3" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI3</a>/<a href="/ui4" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI4</a>/<a href="/hongguo" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">HG</a>/<a href="http://127.0.0.1:8802/films/ui?tab=seasons" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">Phim</a></div>
       <div class="queue" id="list"></div>
       <div class="side-foot"><span class="dg"></span> GPU · gemma4 · chạy lần lượt</div>
     </aside>
@@ -1126,6 +1128,7 @@ function autoBarHtml(j){
     <label class="chk">🔍 <select id="auto-zoom"><option value="off">off (không zoom)</option><option value="1.10">10%</option><option value="1.12" selected>12%</option><option value="1.15">15%</option></select></label>
     <label class="chk"><input type="checkbox" id="auto-motion" checked> Ken Burns+Drift</label>
     <label class="chk"><input type="checkbox" id="auto-lut" checked> LUT</label>
+    <label class="chk" title="Bật/tắt che hardsub (blur/stretch) khi render"><input type="checkbox" id="auto-hs-blur" checked onchange="queueBatchPush('hardsub_blur',this)"> Che hardsub (blur)</label>
     <label class="chk">Grain <select id="auto-grain"><option value="off">off</option><option value="weak" selected>weak</option><option value="medium">medium</option><option value="strong">strong</option></select></label>
     <label class="chk">Nén <select id="auto-vbit"><option value="8M" selected>8M</option><option value="4M">4M</option><option value="2M">2M</option></select></label>
     <label class="chk">Lật <select id="auto-flip"><option value="" selected>không</option><option value="h">ngang</option><option value="v">dọc</option><option value="hv">cả hai</option></select></label>
@@ -1929,6 +1932,8 @@ function artMux(j,box){
   const rbar=running?`<div class="pline big" style="margin-top:8px"><i style="width:${barPct}%"></i></div>`:'';
   const zCur=st.zoom||1.12;
   const vbCur=st.vbitrate||'8M';
+  // Đồng bộ từ thanh Auto (batch) — tránh panel mux luôn checked=true bỏ qua hardsub_blur=false
+  const hsBlurOn=!!(document.getElementById('auto-hs-blur')||{checked:true}).checked;
   const ctrl=`<div class="afile">🎬 <button class="btn pri" onclick="muxJob('${j.job_id}')" ${running?'disabled':''}>${done?'↻ Render lại':'Render video'}</button> <span class="amuted" id="mux-st">${rpct}</span></div>${rbar}`+
     `<div class="afile">🔊 Âm thanh: <select id="mux-audio" onchange="muxModeChanged()">${audioModeOptions(mode)}</select> <span class="amuted">· BGM thư viện = assets/bgm (không lấy nhạc gốc)</span></div>`+
     `<div class="afile" id="row-vvol">Giọng Trung giữ lại: <select id="mux-vvol"><option value="0.12">rất nhỏ</option><option value="0.2" selected>nhỏ</option><option value="0.32">vừa</option></select></div>`+
@@ -1937,7 +1942,7 @@ function artMux(j,box){
     `<div class="afile">🔍 Zoom crop: <select id="mux-zoom"><option value="off" ${(zCur==='off'||zCur<=1.01)?'selected':''}>off (không zoom)</option><option value="1.10" ${(zCur==1.1||zCur==1.10)&&zCur!=='off'?'selected':''}>10%</option><option value="1.12" ${(!zCur||zCur==1.12)&&zCur!=='off'?'selected':''}>12%</option><option value="1.15" ${zCur==1.15&&zCur!=='off'?'selected':''}>15%</option></select> · <label class="chk"><input type="checkbox" id="mux-motion" checked> Ken Burns+Drift</label> · <label class="chk"><input type="checkbox" id="mux-lut" checked> LUT</label> · Grain <select id="mux-grain"><option value="off">off</option><option value="weak" selected>weak</option><option value="medium">medium</option><option value="strong">strong</option></select></div>`+
     `<div class="afile">🖼 Khung <select id="mux-frame"><option value="off" selected>tắt</option><option value="auto">auto</option></select></div>`+
     `<div class="afile">™️ Brand <select id="mux-brand-mode" title="Chữ/logo kênh"><option value="off" selected>tắt</option><option value="drift">chạy sin (mượt)</option><option value="corners">đổi góc mỗi 40s</option><option value="drift_seed">sin + random theo job</option></select> · chữ <input id="mux-brand-text" placeholder="Tên kênh" style="width:140px"> · logo <select id="mux-brand-logo"><option value="off" selected>tắt</option><option value="auto">auto</option></select></div>`+
-    `<div class="afile"><label class="chk"><input type="checkbox" id="opt-sub" checked> phụ đề Việt</label> <label class="chk" title="Ghép đủ câu + bắt kịp khoảng trống"><input type="checkbox" id="opt-fit" checked> Khớp time</label> <span class="amuted">· luôn che watermark/hardsub + overlay OCR</span></div>`+
+    `<div class="afile"><label class="chk"><input type="checkbox" id="opt-sub" checked> phụ đề Việt</label> <label class="chk" title="Ghép đủ câu + bắt kịp khoảng trống"><input type="checkbox" id="opt-fit" checked> Khớp time</label> <label class="chk" title="Tắt = không blur/stretch vùng hardsub"><input type="checkbox" id="mux-hs-blur"${hsBlurOn?' checked':''}> Che hardsub (blur)</label> <span class="amuted">· watermark + overlay OCR</span></div>`+
     `<div class="afile">🖥 Độ phân giải: <select id="mux-res"><option value="source" selected>Nguồn (giữ gốc)</option><option value="1080">1080p / 1K (Full HD)</option></select> · Lật: <select id="mux-flip"><option value="" selected>không</option><option value="h">ngang (gương trái-phải)</option><option value="v">dọc (lật trên-dưới)</option><option value="hv">cả hai</option></select> · Nén H264: <select id="mux-vbit" title="Bitrate video — càng thấp file càng nhẹ"><option value="8M" ${!vbCur||vbCur==='8M'?'selected':''}>8M đẹp (~5–6GB/90p)</option><option value="4M" ${vbCur==='4M'?'selected':''}>4M cân bằng (~2.5GB)</option><option value="2M" ${vbCur==='2M'?'selected':''}>2M nhẹ (~1.3GB)</option></select></div>`;
   let player=''; if(done){ const resLbl=(st.width&&st.height)?`${st.width}×${st.height}`:(st.resolution||'');
     const vbLbl=st.vbitrate?` · H264 ${st.vbitrate}`:'';
@@ -2000,7 +2005,7 @@ function muxModeChanged(){
 // Lựa chọn áp cho cả batch (không lưu theo job) — giữ nguyên khi chuyển job / F5
 const AUTO_PREF_KEY='pineline.ui3.autobar';
 const AUTO_PREF_IDS=['auto-audio','auto-ovol','auto-tr-mode','auto-ocr','auto-fit','auto-res',
-  'auto-zoom','auto-motion','auto-lut','auto-grain','auto-vbit','auto-flip','auto-frame',
+  'auto-zoom','auto-motion','auto-lut','auto-hs-blur','auto-grain','auto-vbit','auto-flip','auto-frame',
   'auto-brand-mode','auto-brand-text','auto-brand-logo'];
 function autoPrefLoad(){ try{ return JSON.parse(localStorage.getItem(AUTO_PREF_KEY)||'{}')||{}; }catch(e){ return {}; } }
 function autoPrefSave(){
@@ -2014,7 +2019,15 @@ function autoPrefApply(){
   AUTO_PREF_IDS.forEach(id=>{
     if(!(id in p)) return;
     const el=document.getElementById(id); if(!el) return;
-    if(el.type==='checkbox') el.checked=!!p[id];
+    if(el.type==='checkbox'){
+      // Tránh !!'false' === true (localStorage / batch string)
+      const v=p[id];
+      if(typeof v==='boolean') el.checked=v;
+      else{
+        const s=String(v==null?'':v).trim().toLowerCase();
+        el.checked=!['0','false','off','no','tắt','tat','không','khong',''].includes(s);
+      }
+    }
     else if(el.tagName==='SELECT'){ const v=String(p[id]); if([...el.options].some(o=>o.value===v)) el.value=v; }
     else el.value=p[id];
   });
@@ -2041,6 +2054,7 @@ const PERJOB_TO_AUTO={voice:'auto-voice',speed:'auto-speed',tts_engine:'auto-eng
 const NUM_KEYS=new Set(['orig_vol','speed']);
 let _batchPending={}, _batchTimer=null;
 function queueBatchPush(k, el){
+  if(!el) return;
   let v= el.type==='checkbox' ? el.checked : el.value;
   if(k==='zoom'){
     v = (v==='off'||v==='1.0') ? 'off' : (parseFloat(v)||1.12);
@@ -2064,7 +2078,8 @@ async function flushBatchPush(){
   }catch(e){ _btnFlash('btn-batchcfg-save','✗ Sidecar :8802 tắt — chưa đồng bộ'); }
 }
 const BATCH_TO_AUTO={audio_mode:'auto-audio',orig_vol:'auto-ovol',translate_mode:'auto-tr-mode',ocr:'auto-ocr',
-  fit:'auto-fit',resolution:'auto-res',zoom:'auto-zoom',motion:'auto-motion',lut:'auto-lut',grain:'auto-grain',
+  fit:'auto-fit',resolution:'auto-res',zoom:'auto-zoom',motion:'auto-motion',lut:'auto-lut',
+  hardsub_blur:'auto-hs-blur',grain:'auto-grain',
   vbitrate:'auto-vbit',flip:'auto-flip',frame:'auto-frame',brand_mode:'auto-brand-mode',
   brand_text:'auto-brand-text',brand_logo:'auto-brand-logo'};
 function _btnFlash(id, text){
@@ -2164,8 +2179,8 @@ function engineChanged(id){ const e=curEngine(); saveTtsEngine(id,e);
 async function doTranslate(id,mode){ let body,label;
   const trMode=(document.getElementById('tr-mode')||{value:'oneshot'}).value||'oneshot';
   const trModel=(document.getElementById('tr-model')||{}).value||null;
-  if(mode==='single'){ body={model:trModel,mode:trMode}; label='↻ Dịch LẠI TOÀN BỘ ('+trMode+') — xoá script.json cũ'; }
-  else if(mode==='2pass'){ body={model:trModel||'gemma4-12b-qat-mtp-fast',review_model:'local/gemma3:12b',mode:trMode}; label='Dịch 2 lượt LẠI (oneshot → gemma3 rà) — xoá bản cũ'; }
+  if(mode==='single'){ body={model:trModel,mode:trMode,force:true}; label='↻ Dịch LẠI TOÀN BỘ ('+trMode+') — xoá script.json cũ'; }
+  else if(mode==='2pass'){ body={model:trModel||'gemma4-12b-qat-mtp-fast',review_model:'local/gemma3:12b',mode:trMode,force:true}; label='Dịch 2 lượt LẠI (oneshot → gemma3 rà) — xoá bản cũ'; }
   else{ body={review_only:true,review_model:'local/gemma3:12b'}; label='Rà soát văn phong (giữ bản dịch, chỉ soát)'; }
   if(!confirm(label+'?\nTTS cũ sẽ lỗi thời.')) return;
   try{ const r=await fetch('/api/jobs/'+id+'/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok){const d=await r.json().catch(()=>({})); alert('Không chạy được: '+(d.error||r.status)); return;} lastDetailSig=null; await refresh(); }catch(e){ alert('Lỗi: '+e); } }
@@ -2190,8 +2205,9 @@ async function muxJob(id){ return guardAct('mux:'+id, async()=>{
   const brand_logo=(document.getElementById('mux-brand-logo')||{value:'off'}).value||'off';
   const frame=(document.getElementById('mux-frame')||{value:'off'}).value||'off';
   const vbitrate=(document.getElementById('mux-vbit')||{value:'8M'}).value||'8M';
+  const hardsub_blur=(document.getElementById('mux-hs-blur')||{checked:true}).checked;
   try{
-    const r=await fetch('/api/jobs/'+id+'/mux',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audio_mode,voice_vol,orig_vol,add_sub,fit,resolution,flip,zoom,motion,lut,grain,brand,brand_mode,brand_text,brand_logo,frame,vbitrate})});
+    const r=await fetch('/api/jobs/'+id+'/mux',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({audio_mode,voice_vol,orig_vol,add_sub,fit,resolution,flip,zoom,motion,lut,grain,brand,brand_mode,brand_text,brand_logo,frame,vbitrate,hardsub_blur})});
     const d=await r.json(); if(d&&d.error){alert('Lỗi render: '+d.error); if(st)st.textContent=''; paintIdle(id); void refresh(); return;}
     lastDetailSig=null; void refresh();
   }catch(e){ alert('Lỗi: '+e); void refresh(); }
@@ -2553,8 +2569,9 @@ function collectRunAllOpts(){
   const brand_text=(document.getElementById('auto-brand-text')||{value:''}).value||'';
   const brand_logo=(document.getElementById('auto-brand-logo')||{value:'off'}).value||'off';
   const orig_vol=parseFloat((document.getElementById('auto-ovol')||{value:(audio_mode==='duck_bgm')?'0.22':'0.6'}).value);
+  const hardsub_blur=!!(document.getElementById('auto-hs-blur')||{checked:true}).checked;
   return {voice,speed,tts_engine,asr_engine,audio_mode,voice_vol:0.2,orig_vol,ocr,fit,resolution,translate_mode,
-    zoom,motion,lut,grain,flip,frame,brand:brand_mode!=='off',brand_mode,brand_text,brand_logo,vbitrate};
+    zoom,motion,lut,hardsub_blur,grain,flip,frame,brand:brand_mode!=='off',brand_mode,brand_text,brand_logo,vbitrate};
 }
 
 let _queuePollTimer=null;
@@ -2953,10 +2970,12 @@ async function runJobQueue(){
 
 function runOptsSummary(o){
   const ov=(o.audio_mode==='duck'||o.audio_mode==='duck_bgm')?` · tiếng gốc ${o.orig_vol}`:'';
+  const _hb=o.hardsub_blur;
+  const blur=(_hb===false||_hb===0||_hb==='0'||_hb==='off'||_hb==='false'||_hb==='no')?'blur off':'blur on';
   return `Giọng ${o.voice} · ${o.speed}× · TTS ${o.tts_engine}\n`
     +`ASR ${o.asr_engine} · dịch ${o.translate_mode}\n`
     +`Âm ${o.audio_mode}${ov}\n`
-    +`Render: zoom ${o.zoom} · motion ${o.motion?'on':'off'} · LUT ${o.lut?'on':'off'} · grain ${o.grain} · ${o.vbitrate}${o.flip?' · lật '+o.flip:''}`
+    +`Render: zoom ${o.zoom} · motion ${o.motion?'on':'off'} · LUT ${o.lut?'on':'off'} · ${blur} · grain ${o.grain} · ${o.vbitrate}${o.flip?' · lật '+o.flip:''}`
     +((o.brand_mode&&o.brand_mode!=='off')?`\nBrand ${o.brand_mode}${o.brand_text?' «'+o.brand_text+'»':''}`:'');
 }
 async function runGroupQueue(gid, title){
@@ -2989,31 +3008,10 @@ async function runAll(id){ return guardAct('all:'+id, async()=>{
   const av=document.getElementById('auto-voice'), vs=document.getElementById('tts-voice');
   const stored=(lastFull&&lastFull.stages.tts)?lastFull.stages.tts.voice:null;
   const engNow=(document.getElementById('auto-engine')||{value:'vieneu'}).value;
-  const voice=(av&&av.value)||(vs&&vs.value)||stored||((VOICES&&VOICES[engNow]&&VOICES[engNow][0])?VOICES[engNow][0].id:null);
+  const body=collectRunAllOpts();
+  const voice=(av&&av.value)||(vs&&vs.value)||stored||body.voice||((VOICES&&VOICES[engNow]&&VOICES[engNow][0])?VOICES[engNow][0].id:null);
   if(!voice){ alert('Chưa chọn giọng — hãy chọn giọng (hoặc Thêm giọng) trước khi Chạy tự động. Không chạy render tiếng gốc.'); paintIdle(id); void refresh(); return; }
-  const audio_mode=(document.getElementById('auto-audio')||{value:'voice_only'}).value;
-  const speed=parseFloat((document.getElementById('auto-speed')||{value:'1.0'}).value);
-  const tts_engine=(document.getElementById('auto-engine')||{value:'vieneu'}).value;
-  const asr_engine=(document.getElementById('auto-asr')||{value:'nano_fa'}).value;
-  const ocr=!!(document.getElementById('auto-ocr')||{}).checked;
-  const fit=(document.getElementById('auto-fit')||{checked:true}).checked;
-  const resolution=(document.getElementById('auto-res')||{value:'source'}).value||'source';
-  const translate_mode=(document.getElementById('auto-tr-mode')||{value:'oneshot'}).value||'oneshot';
-  const zAuto=(document.getElementById('auto-zoom')||{value:'1.12'}).value;
-  const zoom=(zAuto==='off'||zAuto==='1.0')?'off':(parseFloat(zAuto)||1.12);
-  const motion=!!(document.getElementById('auto-motion')||{checked:true}).checked;
-  const lut=!!(document.getElementById('auto-lut')||{checked:true}).checked;
-  const grain=(document.getElementById('auto-grain')||{value:'weak'}).value||'weak';
-  const vbitrate=(document.getElementById('auto-vbit')||{value:'8M'}).value||'8M';
-  const flip=(document.getElementById('auto-flip')||{value:''}).value||'';
-  const frame=(document.getElementById('auto-frame')||{value:'off'}).value||'off';
-  const brand_mode=(document.getElementById('auto-brand-mode')||{value:'off'}).value||'off';
-  const brand_text=(document.getElementById('auto-brand-text')||{value:''}).value||'';
-  const brand_logo=(document.getElementById('auto-brand-logo')||{value:'off'}).value||'off';
-  const brand=brand_mode!=='off';
-  const orig_vol=parseFloat((document.getElementById('auto-ovol')||{value:(audio_mode==='duck_bgm')?'0.22':'0.6'}).value);
-  const body={voice,speed,tts_engine,asr_engine,audio_mode,voice_vol:0.2,orig_vol,ocr,fit,resolution,translate_mode,
-    zoom,motion,lut,grain,flip,frame,brand,brand_mode,brand_text,brand_logo,vbitrate};
+  body.voice=voice;
   try{
     const r=await fetch('/api/jobs/'+id+'/run-all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok){ const d=await r.json().catch(()=>({})); busyHint(d.error||r.status); paintIdle(id); lastDetailSig=null; void refresh(); return; }

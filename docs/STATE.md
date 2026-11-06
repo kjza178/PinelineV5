@@ -1,19 +1,17 @@
-# Hiện trạng PinelineV5 (dual-tree ops)
+# Hiện trạng PinelineV4 (port từ V2)
 
-V5 là workspace chính của file này; bảng dưới vẫn liệt kê V2/V4/V5 vì sidecar và production còn dual-tree.
-
-_Cập nhật: 2026-11-06 ~15:45 — SAFE autofix ENOSPC/PORT/uploader defaults trên disk; **không restart** :8805 (chờ user)_
+_Cập nhật: 2026-11-07 ~01:15 — Skip UX sticky live trên Films; **chờ restart :8801** (hardsub_blur); **chờ restart :8802 khi idle** (oversized enqueue/auto-pub + skip message — PID 35972, auto-pub state từng `uploading`)_
 
 ## Dịch vụ
 
 | Dịch vụ | Cổng | PID | Khởi động bằng | Ghi chú |
 |---|---|---|---|---|
-| Pineline V4 `server.py` / desktop | **8804** | **39588** (01:16 3/11) | `run_v4.bat` / `server.py` | TEMP `D:\PinelineV4_tmp`. `llm.py` pool-first file upload. |
-| Sidecar Auto-pilot + Telegram `agent_tele_cmd.py` | 8802 | **41560** (19:25 4/11) | kill+start `agent_tele_cmd` (BASE :8801) | Ghost lock đã gỡ; đang publish `5223`. |
-| Pineline V2 | **8801** | **15120** (01:16 3/11) | `restart_server.py --clean-env` | Queue rỗng sau restart. |
-| Pineline V5 | **8805** | **21320** (00:09 5/11) | `PORT=8805 restart_server.py --ignore-hg --clean-env` | TEMP `D:\PinelineV5_tmp`. Đã nạp `core.*` (restart sau package move). |
-| Hongguo Downloader | 8000 | — | app riêng | Cần UI token; API `/dl/*`. |
-| llama-server `qwen36-turbo` | 8083 | 35080 | `E:\models\presets\ui-server.ps1` | Giữ ~7,7 GB VRAM. **Không kill khi chưa được phép.** |
+| Pineline V4 `server.py` / desktop | **8804** | — (không listening 21:43 5/11) | `run_v4.bat` / `server.py` | TEMP `D:\PinelineV4_tmp`. `llm.py` pool-first file upload. |
+| Sidecar Auto-pilot + Telegram `agent_tele_cmd.py` | 8802 | **35972** (live; chưa restart sau Skip UX) | `python agent_tele_cmd.py` cwd V2 | Films Skip sticky UI live từ disk. Python oversized/skip refine chờ restart idle. |
+| Pineline V2 | **8801** | (restart ~21:17 6/11) | `restart_server.py --ignore-hg --clean-env` | Translate force `88d80ba0be0f` (~5%+); harden `_clear_stop` dual-path trên disk **chưa** nạp process. Llama :8083 không đụng. |
+| Pineline V5 | **8805** | — (không listening 21:43 5/11) | `server.py --port 8805` | TEMP `D:\PinelineV5_tmp`. |
+| Hongguo Downloader | 8000 | **20160** | app riêng | Cần UI token; API `/dl/*`. **Không kill.** |
+| llama-server `qwen36-turbo` | 8083 | **22796** | `E:\models\presets\ui-server.ps1` | Type-C GPU; ~7 GB VRAM. **Không kill.** |
 | 9router (LLM router) | 192.168.31.247:20128 | — | máy khác trong LAN | Model đang dùng: `ollama/gemma4:31b-cloud`. Combo `openclaw` hỏng. |
 | YT uploader | — | — | `Z:\yt_uploader` (app desktop riêng) | Restart mất danh sách upload. Upload cần user cho phép. |
 
@@ -50,24 +48,14 @@ Restart chỉ khi hàng đợi rảnh, hoặc user đồng ý (yes/no).
 
 ## Việc còn treo / cần user quyết
 
-- **Chờ hard refresh `/hongguo` + `/hongguo2`** — seasons board + trang Hongguo2 (HTML static).
-- **Chờ restart :8805** — nạp ENOSPC split guard + `_AUTO_SPLIT_ACTIVE` + PORT/uploader defaults; thêm `_plan_block_for_qa` + llm no-retry 413 + route `ui_hongguo2` / seasons / merge no-dup. Hỏi yes/no xoá part `*_p0N/output.mp4` (~23 GB trên d01).
-- ~~Chờ restart :8805 (`core/` package)~~ — restart 00:09 PID 38920→21320; smoke `/` `/films/ui` `/api/queue/jobs` `/api/voices` `/api/cookies` 200.
-- Unity 23:55: docs + xoá TARGET shells; đã xong (superseded bởi `core/` 11-05).
-- ~~Chờ restart :8805 (Phase F — `tools.*`)~~ — restart 23:49 PID 27296→38920; smoke `/` `/films/ui` `/api/queue/jobs` `/api/voices` 200.
-- ~~Chờ restart :8805 (Phase E — xoá shim / rewrite import)~~ — restart 22:33 PID 21536→27296; smoke `/` `/films/ui` `/api/voices` `/api/cookies` `/api/queue/jobs` + OpenAPI 177 OK.
-- ~~Chờ restart :8805 (layout A–D + assets/fs)~~ — restart 21:11 PID 41048→21536; smoke `/` `/films/ui` `/api/voices` `/api/cookies` `/api/queue/jobs` + OpenAPI `/api/jobs`+`/api/queue/jobs` OK.
-
-- Launcher thật: `apps/run_v5.bat` / `apps/run_tele_cmd.bat`; root chỉ stub `call apps\…`.
-- ~~Chờ restart :8805 (queue/jobs SSOT)~~ — đã restart 19:18; smoke `/api/queue/jobs` + OpenAPI OK.
-- ~~Ghost auto-publish lock~~ — restart :8802 19:25; lock mới cho `5223c2a43053`.
-- ~~`ce42` force trong auto-publish queue~~ — đã dequeue 19:32 (đã có YT).
-
+- **Chờ restart :8801** — nạp `MuxReq`/`RunAllReq.hardsub_blur` + `as_bool` queue/render; thêm `TranslateReq.force` + dual-path `_clear_stop`. Live OpenAPI chưa có `hardsub_blur`. Fix `docs/fixes/2026-11-07-hardsub-blur-toggle.md`.
+- **Chờ restart :8802 khi idle** — nạp `uploader_settings_api` allow_huge + `auto_publisher` refuse oversized + `allow_oversized` trên trigger/combine. UI Skip sticky đã live (hard refresh). Fix `docs/fixes/2026-11-07-uploader-skip-ux.md`.
+- ~~Chờ restart :8801 (hongguo2)~~ — đã restart 15:13 6/11; `/hongguo2` 200 + body Hongguo2.
+- **Hard refresh `/hongguo` + `/hongguo2`** — seasons board + trang Hongguo2 (HTML static) nếu browser còn cache cũ.
 - ~~Restart :8804~~ — đã lên 01:16 3/11 (cùng :8801/:8805); Aurora pool-file + pronoun/review lock đã trong process.
-
 - API `/films/*` + `/meta/*` song song :8804 ↔ :8802 (Telegram) — giữ trừ khi gộp process.
 - RUNBOOK/ARCHITECTURE đã viết lại cho V4 (2026-11-02). Đoạn job/history dưới đây vẫn mang số liệu V2 cũ (tham khảo).
-- Attic: `scripts/archive/{launchers_legacy,tauri_desktop,ui_legacy,scratch_oneshot,docs_stale}/` — **Tauri live** lại ở root (`run_tauri.bat`); archive chỉ đối chiếu.
+- Attic: `scripts/archive/{launchers_legacy,tauri_desktop,ui_legacy,scratch_oneshot,docs_stale}/`.
 - Render lại các job có output lệch tiếng (0281, dccc, 6e1d, 7bbf, 35bf) và 2ef87 (kiểu che mới) — user chưa yêu cầu.
 - Nhạc nền gốc gây claim Content ID — **đã chuyển CONFIG BATCH sang `sfx_lib`** (07/10 02:52, user duyệt). Chưa render job thật nào bằng `sfx_lib`; job đã render trước vẫn còn nhạc gốc (render lại khi user yêu cầu). `duck_bgm` còn rủi ro hụt đuôi giống lỗi `sfx_lib` đã sửa (chưa dùng). Hướng đã chọn: giọng Việt + SFX gốc (CDX23) + nhạc YouTube Audio Library theo mức êm/vừa/dồn dập; kho 45 bài ở `assets/bgm_yt/`; chế độ `sfx_lib` đã có trong code/UI (07/10 02:36), mẫu `E_sfx_lib.mp4`/`E2_sfx_lib_chinh.mp4`. Đã có 4 mẫu nghe so sánh ở `D:\PinelineV2_tmp\audio_samples\77a8dd016e43\` (worklog 07/10 01:47).
 - 2 job cũ giữ bản sao video nguồn riêng: 0281 (23,7 GiB) và dccc (13,0 GiB) trùng file `(merged)` trong `D:\Lib` — user quyết **giữ nguyên job cũ**, đọc thẳng `D:\Lib` chỉ áp dụng cho job mới (`fixes/2026-10-07-source-duplicate-copy.md`). 5 job hard link (05361, 2ef87, 3a2e, 77a8, f9fe) không tốn thêm ổ.

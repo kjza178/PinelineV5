@@ -438,6 +438,46 @@ def hg_seasons_decline(body: dict | None = None):
         return _hg_err(e)
 
 
+@router.post("/api/hg/library/seasons/discover")
+def hg_seasons_discover(body: dict | None = None):
+    """Chỉ tìm mùa mới theo watchlist+films+lib — không tải / không gọi Update all."""
+    import importlib
+    import agents.hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    body = body or {}
+    try:
+        max_cores = int(body.get("max_cores") or 16)
+    except (TypeError, ValueError):
+        max_cores = 16
+    expand = bool(body.get("expand") or False)
+    try:
+        return hg.discover_new_seasons(
+            _hg_base(body.get("base")), max_cores=max_cores, expand=expand
+        )
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.get("/api/hg/library/watchlist")
+def hg_library_watchlist(include_deleted: bool = True):
+    """Danh sách meta watchlist (sau xoá Lib vẫn còn) — không tải."""
+    try:
+        from core import film_db as fdb  # type: ignore
+    except Exception:  # noqa: BLE001
+        import film_db as fdb  # type: ignore
+    try:
+        rows = fdb.list_hg_watchlist(include_deleted=bool(include_deleted))
+        return {
+            "ok": True,
+            "n": len(rows),
+            "items": rows,
+            "on_disk": sum(1 for r in rows if int(r.get("on_disk") or 0) == 1),
+            "deleted": sum(1 for r in rows if int(r.get("on_disk") or 0) == 0),
+        }
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
 @router.post("/api/meta/generate")
 @router.post("/meta/generate")
 def meta_generate(body: dict):

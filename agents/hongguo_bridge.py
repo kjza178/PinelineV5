@@ -1797,17 +1797,267 @@ def open_library(name: str | None = None, base: str = DEFAULT_BASE) -> dict:
     return _req("POST", base, "/dl/library/open", payload=payload)
 
 
+def _film_db():
+    """film_db dual-tree: V5 `core.film_db` hoặc V2/V4 `film_db`."""
+    try:
+        from core import film_db as m  # type: ignore
+        return m
+    except Exception:  # noqa: BLE001
+        import film_db as m  # type: ignore
+        return m
+
+
+def remember_library_items(items: list[dict] | None, *, source: str = "library",
+                           on_disk: int = 1, deleted: bool = False) -> int:
+    """Ghi meta series vào hg_watchlist (không giữ video)."""
+    try:
+        return int(_film_db().upsert_hg_watchlist_many(
+            list(items or []), source=source, on_disk=on_disk, deleted=deleted
+        ))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def season_num(title: str, season_field=None) -> int:
+    """Số mùa từ field hoặc chữ 「第N季」 trong title; 0 = không rõ."""
+    if season_field is not None and str(season_field).strip() != "":
+        try:
+            n = int(season_field)
+            if n > 0:
+                return n
+        except (TypeError, ValueError):
+            pass
+    m = re.search(r"第([0-9一二三四五六七八九十百零〇两兩]+)季", title or "")
+    if not m:
+        return 0
+    n = _parse_cn_int(m.group(1))
+    return n if n is not None else 0
+
+
+def discover_new_seasons(base: str = DEFAULT_BASE, max_cores: int = 16,
+                         expand: bool = False) -> dict:
+    """Chỉ tìm mùa/series mới theo watchlist+films+lib hiện có — KHÔNG gọi /dl/library/update.
+
+    Trả board dạng seasons (held=mới hơn max đã biết / older=≤max / related) + groups.
+    Không tự tải.
+    """
+    fdb = _film_db()
+    lib = library(base)
+    items = list((lib or {}).get("items") or [])
+    # Seed / refresh watchlist từ Lib đang còn trên đĩa
+    remember_library_items(items, source="library", on_disk=1, deleted=False)
+    # Bổ sung sid đã làm từ films.db
+    try:
+        for sid in sorted(fdb.series_ids()):
+            fdb.upsert_hg_watchlist(sid=sid, source="films", on_disk=0)
+    except Exception:  # noqa: BLE001
+        pass
+
+    known = set(fdb.known_hg_sids())
+    for it in items:
+        sid = str(it.get("series_id") or it.get("sid") or "").strip()
+        if sid:
+            known.add(sid)
+
+    # max season đã biết theo franchise core (watchlist + lib)
+    max_known: dict[str, int] = {}
+
+    def _bump(core: str, title: str, season_field=None) -> None:
+        c = (core or franchise_core(title) or "").strip()
+        if not c:
+            return
+        sn = season_num(title, season_field)
+        if sn > max_known.get(c, 0):
+            max_known[c] = sn
+
+    try:
+        for w in fdb.list_hg_watchlist():
+            _bump(str(w.get("core") or ""), str(w.get("title") or w.get("name") or ""),
+                  w.get("season"))
+    except Exception:  # noqa: BLE001
+        pass
+    for it in items:
+        _bump(str(it.get("core") or ""), str(it.get("title") or it.get("name") or ""),
+              it.get("season"))
+
+    cores = list(fdb.watchlist_cores(limit=max(1, int(max_cores))))
+    # Nếu watchlist trống: lấy core từ Lib live
+    if not cores:
+        seen: set[str] = set()
+        for it in items:
+            title = str(it.get("title") or it.get("name") or "")
+            c = franchise_core(title)
+            if c and c not in seen:
+                seen.add(c)
+                cores.append(c)
+            if len(cores) >= max_cores:
+                break
+    # Chuẩn hoá stem (watchlist/films.series đôi khi còn 「第N季」)
+    norm: list[str] = []
+    seen_stem: set[str] = set()
+    for c in cores:
+        stem = (franchise_core(c) or str(c or "").strip() or "").strip()
+        if stem and stem not in seen_stem:
+            seen_stem.add(stem)
+            norm.append(stem)
+    cores = norm
+
+    held: list[dict] = []
+    older: list[dict] = []
+    related: list[dict] = []
+    by_sid: dict[str, dict] = {}
+
+    def _board_item(r: dict, base_guess: str = "") -> dict | None:
+        sid = str(r.get("series_id") or r.get("sid") or "").strip()
+        if not re.fullmatch(r"\d{15,20}", sid):
+            return None
+        title = str(r.get("title") or r.get("name") or sid)
+        sn = season_num(title, r.get("season"))
+        base_v = str(
+            r.get("core") or r.get("stem") or franchise_core(title) or base_guess or ""
+        ).strip()
+        base_v = (franchise_core(base_v) or base_v).strip()
+        return {
+            "sid": sid,
+            "title": title,
+            "eps": int(r.get("episodes") or r.get("eps") or r.get("total") or 0),
+            "season": sn,
+            "score": str(r.get("score") or ""),
+            "base": base_v,
+            "album": str(r.get("album") or ""),
+            "short": True,
+        }
+
+    def _same_franchise(it_base: str, it_title: str, core: str) -> bool:
+        stem = (franchise_core(core) or core or "").strip()
+        b = (it_base or franchise_core(it_title) or "").strip()
+        if not stem and not core:
+            return False
+        if b and (b == core or b == stem):
+            return True
+        if stem and (stem in (it_title or "") or (b and (stem in b or b in stem))):
+            return True
+        if core and core in (it_title or ""):
+            return True
+        return False
+
+    scanned = 0
+    for core in cores[: max(1, int(max_cores))]:
+        scanned += 1
+        try:
+            res = search(core, base=base, expand=bool(expand))
+        except Exception:  # noqa: BLE001
+            continue
+        rows = list(res.get("results") or [])
+        for g in res.get("groups") or []:
+            if isinstance(g, dict) and isinstance(g.get("items"), list):
+                rows.extend(g["items"])
+        for row in rows:
+            it = _board_item(row, core)
+            if not it or it["sid"] in by_sid:
+                continue
+            by_sid[it["sid"]] = it
+            if it["sid"] in known:
+                continue
+            if not _same_franchise(it["base"], it["title"], core):
+                related.append(it)
+                continue
+            mk = (
+                max_known.get(it["base"] or "", 0)
+                or max_known.get(core, 0)
+                or max_known.get(franchise_core(core) or "", 0)
+            )
+            it["max_known"] = mk
+            # Có số mùa và ≤ max đã biết → older; còn lại (mới hơn / chưa rõ số) → held
+            if it["season"] > 0 and mk > 0 and it["season"] <= mk:
+                older.append(it)
+            else:
+                held.append(it)
+
+    # Gom theo franchise cho Films UI
+    group_map: dict[str, dict] = {}
+    for bucket, key in ((held, "newer"), (older, "older"), (related, "related")):
+        for it in bucket:
+            core = str(it.get("base") or franchise_core(it.get("title") or "") or "?").strip() or "?"
+            g = group_map.get(core)
+            if not g:
+                g = {
+                    "core": core,
+                    "max_known": int(max_known.get(core, 0) or 0),
+                    "newer": [],
+                    "older": [],
+                    "related": [],
+                }
+                group_map[core] = g
+            g[key].append(it)
+            if it.get("max_known") and int(it["max_known"]) > g["max_known"]:
+                g["max_known"] = int(it["max_known"])
+    groups = sorted(
+        group_map.values(),
+        key=lambda g: (-(len(g["newer"]) + len(g["related"])), g["core"]),
+    )
+
+    seasons = {
+        "state": "done",
+        "auto": [],
+        "locked": [],
+        "failed": [],
+        "stopped": [],
+        "declined": [],
+        "older": older,
+        "removed": [],
+        "soon": [],
+        "held": held,
+        "related": related,
+        "big": {"albums": []},
+        "albums": 0,
+        "partial": False,
+        "deferred": 0,
+    }
+    return {
+        "ok": True,
+        "seasons": seasons,
+        "groups": groups,
+        "max_known": max_known,
+        "scanned_cores": scanned,
+        "cores": cores[: max(1, int(max_cores))],
+        "known_n": len(known),
+        "found_n": len(held) + len(related),
+        "newer_n": len(held),
+        "older_n": len(older),
+        "held_n": len(held),
+        "related_n": len(related),
+        "watchlist_n": len(fdb.list_hg_watchlist()),
+        "download": False,
+        "hint": "chỉ thông tin — bấm + Thêm mới tải · held=mới hơn max đã biết",
+    }
+
+
 def delete_library_series(names: list[str], base: str = DEFAULT_BASE) -> dict:
-    r"""Xoá vĩnh viễn thư mục series tại ổ đĩa D:\Lib để giải phóng dung lượng."""
+    r"""Xoá vĩnh viễn thư mục series tại ổ đĩa D:\Lib để giải phóng dung lượng.
+
+    Trước khi xoá: ghi meta (sid/core/title…) vào films.db.`hg_watchlist` để vẫn quét được mùa mới.
+    """
     root = _output_dir(base)
     if not root or not root.is_dir():
         return {"ok": False, "error": f"Không tìm thấy thư mục thư viện ({root})"}
     deleted: list[str] = []
     errors: list[str] = []
     freed_bytes = 0
+    remembered = 0
     import stat
     import shutil
     import subprocess
+
+    # Snapshot meta trước khi xoá đĩa
+    by_name: dict[str, dict] = {}
+    try:
+        for it in (library(base).get("items") or []):
+            nm = str(it.get("name") or "").strip()
+            if nm:
+                by_name[nm] = it
+    except Exception:  # noqa: BLE001
+        by_name = {}
 
     def _robust_remove(folder: Path):
         def _fix_perm(func, fpath, exc_info):
@@ -1835,6 +2085,7 @@ def delete_library_series(names: list[str], base: str = DEFAULT_BASE) -> dict:
             folder = safe_child(root, nm)
             if not folder:
                 continue
+            meta = by_name.get(nm) or {"name": nm, "title": nm}
             if folder.is_dir():
                 try:
                     for f in folder.rglob("*"):
@@ -1854,6 +2105,9 @@ def delete_library_series(names: list[str], base: str = DEFAULT_BASE) -> dict:
                         _merge_done.pop(nm, None)
                         if nm in _merge_q:
                             _merge_q.remove(nm)
+                        remembered += remember_library_items(
+                            [meta], source="delete", on_disk=0, deleted=True
+                        )
                 except Exception as e:
                     errors.append(f"{nm}: {e}")
             elif not folder.exists():
@@ -1861,8 +2115,15 @@ def delete_library_series(names: list[str], base: str = DEFAULT_BASE) -> dict:
                 _merge_done.pop(nm, None)
                 if nm in _merge_q:
                     _merge_q.remove(nm)
+                remembered += remember_library_items(
+                    [meta], source="delete", on_disk=0, deleted=True
+                )
         if deleted:
             _save_merge_state()
+            try:
+                _film_db().mark_hg_watchlist_deleted_by_names(deleted)
+            except Exception:  # noqa: BLE001
+                pass
 
     return {
         "ok": len(errors) == 0 or len(deleted) > 0,
@@ -1870,6 +2131,7 @@ def delete_library_series(names: list[str], base: str = DEFAULT_BASE) -> dict:
         "errors": errors,
         "count": len(deleted),
         "freed_mb": round(freed_bytes / (1024 * 1024), 1),
+        "watchlist_saved": remembered,
     }
 
 

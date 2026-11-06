@@ -1,4 +1,4 @@
-"""Ghi file an toàn giữa nhiều tiến trình (server :8804, sidecar :8802, script).
+"""Ghi file an toàn giữa nhiều tiến trình (server :8801, sidecar :8802, script).
 
 atomic_write_text: ghi temp riêng (pid+thread) rồi os.replace — người đọc không bao giờ thấy file dở.
 file_lock: khoá liên tiến trình bằng file .lock tạo O_EXCL; khoá bỏ quên (tiến trình chết) quá
@@ -69,7 +69,26 @@ def file_lock(path: str | Path, timeout: float = 15.0, stale_sec: float = 60.0):
         except (FileExistsError, PermissionError):
             # Windows: tạo lại đúng lúc bản cũ đang chờ xoá → PermissionError thay vì FileExistsError
             try:
-                if time.time() - lock.stat().st_mtime > stale_sec:
+                stale = time.time() - lock.stat().st_mtime > stale_sec
+                dead_owner = False
+                try:
+                    # Nội dung thường: "<pid> <epoch>" — nếu PID chết thì coi lock stale
+                    parts = lock.read_text(encoding="utf-8", errors="ignore").strip().split()
+                    if parts and parts[0].isdigit():
+                        opid = int(parts[0])
+                        if opid > 0:
+                            try:
+                                import ctypes
+                                h = ctypes.windll.kernel32.OpenProcess(0x1000, False, opid)
+                                if h:
+                                    ctypes.windll.kernel32.CloseHandle(h)
+                                else:
+                                    dead_owner = True
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+                if stale or dead_owner:
                     lock.unlink()
                     continue
             except OSError:

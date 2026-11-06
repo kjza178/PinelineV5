@@ -276,8 +276,9 @@
     <span class="pill" id="conn">…</span>
     <span class="pill" id="outdir">output: —</span>
     <div class="spacer"></div>
-    <a class="btn" href="/hongguo2" style="border-color:var(--accent);color:var(--accent)">Thử Hongguo2</a>
-    <a class="btn pri" href="/" style="text-decoration:none;font-weight:600;padding:5px 12px;background:#1e293b;border:1px solid #38bdf8;color:#38bdf8">⬅ Quay lại Studio</a>
+    <a class="btn" href="http://127.0.0.1:8802/films/ui?tab=seasons" style="border-color:var(--accent);color:var(--accent)" title="Films UI · Mùa mới">🎬 Phim / Mùa mới</a>
+    <a class="btn" href="http://127.0.0.1:8802/films/ui" title="Films UI">Films UI</a>
+    <a class="btn" href="/">Studio</a>
     <a class="btn" href="/ui3">UI3</a>
     <button class="btn" onclick="refreshAll()">↻ Refresh</button>
   </div>
@@ -2349,10 +2350,30 @@ async function refreshAll(){
     else await loadRank();
   }
 }
+/** Deep-link từ Films UI: ?sid=… và/hoặc ?q=… */
+async function bootFromQuery(){
+  try{
+    const p=new URLSearchParams(location.search||'');
+    const sid=(p.get('sid')||'').trim();
+    const q=(p.get('q')||'').trim();
+    if(!sid && !q) return;
+    switchLeftTab('search');
+    if(sid){
+      const paste=document.getElementById('paste-id');
+      if(paste) paste.value=sid;
+      await addByPaste();
+      try{ openBaikeDetail(sid, q); }catch(e){}
+    } else if(q){
+      const qel=document.getElementById('q');
+      if(qel) qel.value=q;
+      await doSearch();
+    }
+  }catch(e){ console.warn('bootFromQuery', e); }
+}
 loadDlQueueFromStorage();
 const _libSeasonsEl=document.getElementById('libSeasons');
 if(_libSeasonsEl) _libSeasonsEl.addEventListener('click', lsnClick);
-refreshAll();
+refreshAll().then(()=>bootFromQuery());
 setInterval(()=>{ ping(); refreshStatus(); refreshMerge(); }, 4000);
 setInterval(refreshLibrary, 15000);
 </script>

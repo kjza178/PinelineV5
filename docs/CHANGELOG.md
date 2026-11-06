@@ -1,75 +1,78 @@
-# Changelog
+﻿# Changelog
 
 Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần restart gì. Chi tiết bug: docs/fixes/. Nhật ký phiên: docs/worklog/.
 
+## 2026-11-07
+
+- **Uploader Skip UX + oversized guard** (~01:15). Backup zip `…_0109.zip` + codebak `…_skip-upload-ux\`. Sticky `#up-skip-banner` + header Skip + Done/batch Skip; poll status 4s; `queue||items`; enqueue/auto-publish refuse >11.5h / ≥64GiB trừ confirm. Sync V4/V5 UI + `agents/auto_publisher`. Fix `docs/fixes/2026-11-07-uploader-skip-ux.md`. **Hard refresh Films**. **Không restart :8802** (chưa idle) — restart khi idle để nạp Python API.
+- **Combine part-order harden** (~01:25). Backup zip `…_0108.zip` + `…_combine-part-order\`. CN `第N季/集`, missing→0, secondary `created_at`/`job_id`, numbered ↑↓ + `preserve_order`/`explicit_order`. Sync V4/V5. Follow-up `docs/fixes/2026-11-07-combine-part-order.md`. **Hard refresh Films**. Sort-by-part: feeder reload (không cần :8801). **Hỏi restart :8802** nếu cần ↑↓ preserve_order trên process tele_cmd cũ.
+
+- **Combine sort Phần 1→N** (~01:20). Backup `…_combine-part-order\`. Modal/API không nối theo thứ tự tick; cảnh báo >11.5h; Skip đang upload trên batch Done. Fix `docs/fixes/2026-11-07-combine-part-order.md`. **Hard refresh Films** (feeder reload mỗi POST).
+
+- **SAFE autofix hardsub_blur UI/as_bool** (~00:55). Backup `…_hardsub-blur-safefix2\`. `films_ui` loadSettings coerce `"false"`; `index3` autoPrefApply + runOptsSummary; `run_all`/`mux_job` → `as_bool`; tests 22 OK. Sync V4/V5 + `static/ui`. Follow-up `docs/fixes/2026-11-07-hardsub-blur-toggle.md`. **Hard refresh UI**. **Không restart** (:8801 vẫn cần restart idle để nạp field).
+
+- **hardsub_blur recheck P1** (~01:15). Backup `…_hardsub-blur-p1\`. Queue stamp `as_bool`; V5 `core/batch_config` + `engines/render` parity; log `hardsub=off`. Follow-up fix log. **Restart :8801 khi idle** (P0 live schema).
+
+- **hardsub_blur coerce P0** (~01:10). Backup `…_hardsub-blur-coerce\`. `batch_config.as_bool`; `_queue_run_one`/`_auto_pipeline` + `render.py` queue_opts không còn `bool("false")`; Films load `/config` trước early-return. Tests ≥21. Sync V4/V5. Follow-up `docs/fixes/2026-11-07-hardsub-blur-toggle.md`. **Restart :8801 khi idle**.
+
+- **SAFE autofix hardsub_blur stale V5 UI** (~00:50). Backup `…_hardsub-blur-autofix\`. Sync `static/ui/index3.html`+`films_ui.html` (live V5) ← root; null-guards settings/`queueBatchPush`; V2→V4→V5. Follow-up `docs/fixes/2026-11-07-hardsub-blur-toggle.md`. **Hard refresh V5 UI**. **Restart :8801 khi idle** (OpenAPI live chưa có MuxReq.hardsub_blur). :8802 không cần.
+
+- **UI audit hardsub/combine SAFE** (~01:00). Backup `…_hardsub-blur-toggle\`. `index3.html`: `mux-hs-blur` sync từ `auto-hs-blur`. `films_ui.html`: bỏ `doCopyGptPrompt` trùng. Route `/films/mergeable` OK. Sync V4/V5. Follow-up `docs/fixes/2026-11-07-hardsub-blur-toggle.md`. **Hard refresh UI3/Films** (không restart).
+
+- **hardsub_blur on/off** (~00:55). `MuxReq.hardsub_blur` + `mux_job` truyền `_do_render`; UI3 `auto-hs-blur`/`mux-hs-blur`; Films Settings tab Render → `/config`. Test `tests/test_hardsub_blur_toggle.py`. Swarm check/test/autofix. Fix `docs/fixes/2026-11-07-hardsub-blur-toggle.md`. **Restart :8801** khi idle để nạp MuxReq. Hard refresh UI3/Films.
+
+- **Films UI gộp job đã làm** (~00:50). API `/films/combine` đã có nhưng thiếu nút. Batch **🔗 Gộp job đã làm** + modal; `films_merge_api` mergeable/merge-parts; lib tick `need_merge` + ghép hàng loạt. Fix `docs/fixes/2026-11-07-films-combine-ui.md`. **Sidecar :8802 restarted** (PID 35972). Hard refresh Films UI.
+
+- **Port Settings+Uploader → :8802 + skip upload** (~00:40). Backup zip `…_0034.zip` + codebak `…_uploader-settings-8802\`. Module `uploader_settings_api.py`; wire `agent_tele_cmd` GET/POST; Films UI skip-current / skip-item / move / priority / auto-launch / clear-skipped; `yt_uploader` đọc `skip_current.flag`. Sync V4/V5 (+ V5 FastAPI bridge skip). Fix `docs/fixes/2026-11-07-uploader-settings-8802.md`. **Đã restart sidecar :8802** (PID 16628). Hard refresh Films UI.
+
+- **Films UI jq onclick leftovers** (~00:10). Backup `Z:\PinelineV2_codebak\2026-11-07_films-ui-syntax\` + zip `…_0006.zip`. `films_ui.html`: thay `'${…}'`/`'${esc(…)}'` còn sót bằng `${jq(…)}` (OAuth id, job_id, titles, hooks; merge names → `JSON.parse(${jq(JSON.stringify(…))})`). jq 27→37; leftover unsafe string-ish=0. Sync V4/V5 + `static/ui`. Fix `docs/fixes/2026-11-07-films-ui-syntax.md`. **Hard refresh Films UI** (không restart).
+
+## 2026-11-07
+
+- **Uploader Skip UX + oversized guard** (~01:15). Backup zip `…_0109.zip` + codebak `…_skip-upload-ux\`. Sticky `#up-skip-banner` + header Skip + Done/batch Skip; poll status 4s; `queue||items`; enqueue/auto-publish refuse >11.5h / ≥64GiB trừ confirm. Sync V4/V5 UI + `agents/auto_publisher`. Fix `docs/fixes/2026-11-07-uploader-skip-ux.md`. **Hard refresh Films**. **Không restart :8802** (chưa idle) — restart khi idle để nạp Python API.
+- **Tool loop pipeline** (~00:30). `agent_tool_loop.py` + `pineline_run_stage_wait` / `pineline_pipeline_loop`. CLI HTTP smoke. Tests 4 passed. Review `docs/reviews/2026-11-07-tool-loop.md`. **Restart :8801** khi idle.
+
+- **Films UI jq HTML-escape + swarm** (~00:05). Backup `…_films-ui-jq-html\`. `jq` stringify + `&quot;` (onclick không còn cắt attribute); autopub load flat config; Settings/Uploader toast 404 rõ. Sync V4/V5. Fix `docs/fixes/2026-11-07-films-ui-syntax.md` · review `docs/reviews/2026-11-07-films-ui-swarm.md`. **Hard refresh `/films/ui`** (không restart). Còn mở: port `/api/settings` + `/api/uploader` vào :8802.
+
 ## 2026-11-06
 
-- **V5 part atoms expanded** (~15:55). Overwrite `docs/reviews/2026-11-06-v5-part-atoms.md` — finest-grain atoms (file/fn/trigger/I-O/next) cho entry, core/, HTTP attach+bodies, engines, `_auto_pipeline`/`_auto_gpu`/queue/split, agents, UI→API, `work/<id>/`. Mermaid pipeline. **Không restart**.
+- **Eng-swarm translate force** (~23:55). Báo cáo `docs/reviews/2026-11-06-v5-eng-swarm-translate-force.md`. Early-stop worker → translate `pending` (tránh ghost running). V5 đã `force=bool(force)` + 4 unit tests. **Cần restart :8801**.
 
-- **SAFE autofix eng-swarm** (~15:45). Backup `Z:\PinelineV2_codebak\2026-11-06_v5-swarm-autofix\`. Port ENOSPC/`DiskFullError`/`assert_enough_space` + no re-encode-on-disk-full + cleanup mid-split từ V2 → `engines/split_parts.py`; `_AUTO_SPLIT_ACTIVE` + `_maybe_auto_split_guarded` trong `server.py`; default `PORT=8805`; uploader `WORK_DIR`/`TEMP` → `D:\PinelineV5_work`/`D:\PinelineV5_tmp`. Tests `tests/test_split_enospc_guard.py`. Fix `docs/fixes/2026-11-06-v5-enospc-port.md`. **Không restart** (user); nạp khi restart :8805 sau.
+- **Translate force-wipe mặc định** (~22:25). Backup `…_translate-force-default\` + restore `…_restore-script-88\`. `_translate_flow` hardcode `force=True` → mọi `/translate` xoá script; user thấy nhảy về «dịch lại từ đầu» lúc chuẩn bị TTS. Thêm `TranslateReq.force` (default false); UI «Dịch lại» gửi `force:true`. Khôi phục `88d80ba0be0f` từ `script.display.json` (4334/4342). Sync V4/V5. Fix `docs/fixes/2026-11-06-translate-force-wipe.md`. **Cần restart :8801**.
 
-- **Eng-swarm docs index** (~15:40). `docs/reviews/README.md` (link eng-swarm + part-atoms); `docs/ARCHITECTURE.md` section *Engineering swarm* → `.cursor/skills/v5-eng-swarm`. **Không restart**.
+- **Translate stop dual-path + retranslate live** (~21:25). Backup `Z:\PinelineV2_codebak\2026-11-06_clear-stop-dual\`. Restart :8801 + force translate `88d80ba0be0f` (user «có»); live `script.json` + progress tăng, không ghost `.stop`. Harden `_clear_stop` (WORK_ROOT + `D:\PinelineV2_work`) + `_run_translate` clear trước flow. Sync V4/V5. Follow-up `docs/fixes/2026-11-06-translate-stop-ghost.md`. **Cần restart :8801 sau khi job 88d8 dịch xong** để nạp harden (đang chạy process cũ vẫn clear_stop một path — đủ vì junction).
 
-- **V5 part atoms review** (~15:36). `docs/reviews/2026-11-06-v5-part-atoms.md` — finest-grain map entry/core/HTTP/pipeline/agents/UI/data (atom→file→fn→side effect). **Không restart**.
+- **Hongguo2 seasons banner + Ops tabs** (~16:30). Backup `Z:\PinelineV2_codebak\2026-11-06_hongguo2-layout2\`. Bỏ clip `max-height:72px`; Mùa mới full-width banner; Ops `Thư viện|Hàng đợi`; progress VN + card khi Update all. Sync V4/V5. Fix `docs/fixes/2026-11-06-hongguo2-seasons-layout.md`. **Hard refresh `/hongguo2`** (không restart).
 
-- **Pronoun-QA slim plan (Aurora 413)** (~15:30). Backup `Z:\PinelineV2_codebak\2026-11-06_pronoun-qa-slim\`. `engines/translate._plan_block_for_qa`; `engines/pronoun_consistency` + `agents/agent_pronoun_pass` slim; `engines/llm._chatgpt_chat` no-retry 400/413/422. Sync V2/V4. Fix `docs/fixes/2026-11-06-pronoun-qa-413-slim.md`. **Cần restart :8805** khi nạp module (chưa restart nếu không running).
+- **Pronoun-QA slim plan (Aurora 413)** (~15:30). Backup `Z:\PinelineV2_codebak\2026-11-06_pronoun-qa-slim\`. `translate._plan_block_for_qa` (genre+style+pronouns only); `pronoun_consistency` + `agent_pronoun_pass` dùng slim; `llm._chatgpt_chat` no-retry 400/413/422. Đo `4041_p02`: full 72424 → slim 20119. Test `tests/test_pronoun_qa_slim_plan.py`. Sync V4/V5. Fix `docs/fixes/2026-11-06-pronoun-qa-413-slim.md`. **Cần restart :8801** (translate/llm/pronoun) khi queue idle — chưa restart (job `4041` đang ASR/translate).
 
-- **Hongguo2 Ops hẹp** (~15:16). Sync `static/ui/hongguo2.html` từ V2: Discover rộng, Ops capped ~380px. **Hard refresh `/hongguo2`** (không restart).
+- **Hongguo2 Ops hẹp** (~15:16). Backup `Z:\PinelineV2_codebak\2026-11-06_hongguo2-ops-narrow\`. CSS: Discover `1fr` | Ops `minmax(280px, min(34vw, 380px))`; seasons max ~120px; ops padding 6×10. Sync V4/V5. **Hard refresh `/hongguo2`** (không restart).
 
-- **Hongguo2 review pass** (~08:30). Sync `static/ui/hongguo2.html` từ V2 (CTA enqueue-only, `#results` scope, catalog-hint/cta-status, busy guards, UX). Fix `docs/fixes/2026-11-06-hongguo2-review.md`. **Hard refresh `/hongguo2`** (không restart).
+- **Hongguo2 review pass** (~08:30). Backup `Z:\PinelineV2_codebak\2026-11-06_hongguo2-review\`. CTA `doDownload` enqueue-only; submit chỉ `startDlQueue`/`dlGroup`/`dlDetail*`; `#results` scope; `catalog-hint`/`cta-status`; inflight guards; UX ops/labels; sync V4/V5. Fix `docs/fixes/2026-11-06-hongguo2-review.md`. **Hard refresh `/hongguo2`** (không restart).
 
-- **Hongguo2 redesign** (~08:20). Backup `Z:\PinelineV2_codebak\2026-11-06_0818_hongguo2\`. Thêm `static/ui/hongguo2.html` (IA 2 cột Discover|Ops). Route `GET /hongguo2` → `ui_hongguo2` trong `http_routes/routes_ui.py` + re-export `server.py`. Link «Thử Hongguo2» trên `static/ui/hongguo.html`. Sync V2/V4. **Restart :8805** để nạp route; hard refresh `/hongguo2`.
+- **Hongguo2 redesign** (~08:20). Backup `Z:\PinelineV2_codebak\2026-11-06_0818_hongguo2\`. Thêm `hongguo2.html` (IA 2 cột Discover 55% | Ops 45%: Tìm/Hot/Catalog + seasons/library/queues; không floating-q-bar). Route `GET /hongguo2` → `ui_hongguo2` trong `routes_ui.py` + re-export `server.py`. Link «Thử Hongguo2» trên `hongguo.html`. Sync V4/V5. **Restart :8801** để nạp route; hard refresh `/hongguo2`.
 
-- **Hongguo New seasons board** (~08:00). Backup `Z:\PinelineV2_codebak\2026-11-06_hg-new-seasons\`. `agents/hongguo_bridge`: `submit(scores=)` + `library_update`/`seasons_decline`; `http_routes/routes_hg` `/api/hg/library/update` + `/seasons/decline`; `HgSubmitIn.scores`; UI `static/ui/hongguo.html` tab 🆕 Mùa mới. Sync V2/V4. Fix `docs/fixes/2026-11-06-hg-new-seasons.md`. **Hard refresh `/hongguo`**; **restart :8805** nếu cần nạp bridge/routes.
+- **Hongguo New seasons board** (~08:00). Backup `Z:\PinelineV2_codebak\2026-11-06_hg-new-seasons\`. Bridge `submit(scores=)` + `library_update`/`seasons_decline`; routes `/api/hg/library/update` + `/seasons/decline`; `HgSubmitIn.scores`; UI tab 🆕 Mùa mới trên `hongguo.html`. Port V4/V5. Fix `docs/fixes/2026-11-06-hg-new-seasons.md`. **Hard refresh `/hongguo`**; **restart :8801** nếu cần nạp bridge/routes (HTML static không cần).
 
-- **Merge no-dup output** (~03:00). Backup `Z:\PinelineV2_codebak\2026-11-06_merge-no-dup-output\`. `engines/split_parts.merge_job_parts`: ghi 1 lần `output.mp4`; `output_full` chỉ hardlink (`_hardlink_alias`, không `copy2`); cleanup `_split_parts`. Sync V2/V4. Fix `docs/fixes/2026-11-06-merge-no-dup-output.md`. **Restart :8805** để nạp merge mới (job đã merge không cần remux).
+- **Merge no-dup output** (~03:00). Backup `Z:\PinelineV2_codebak\2026-11-06_merge-no-dup-output\`. `merge_job_parts`: ghi 1 lần `output.mp4`; `output_full` chỉ hardlink (`_hardlink_alias`, không `copy2`); cleanup `_split_parts`. Port V4/V5. Fix `docs/fixes/2026-11-06-merge-no-dup-output.md`. **Restart :8801** để nạp merge mới (job đã merge không cần remux).
 
 ## 2026-11-05
 
-- **Split voice queue_opts** (~21:40). `_resolve_voice`/speed/tts_engine đọc `queue_opts` trước list[0]; `split_job_to_subjobs` seed `stages.tts` + `tts_config`. Backup `Z:\PinelineV2_codebak\2026-11-05_split-voice-queue-opts\`. Fix `docs/fixes/2026-11-05-split-voice-queue-opts.md`. **Restart :8805** để nạp (chưa restart).
+- **Split part sai giọng** (~21:40). Backup `…_split-voice-queue-opts\`. `_resolve_voice/speed/engine` đọc `queue_opts` trước fallback list[0]; `split_job_to_subjobs` seed `stages.tts`+`tts_config`. Port V4/V5. Fix `docs/fixes/2026-11-05-split-voice-queue-opts.md`. **Restart :8801/:8804/:8805**.
 
-- **Auto-split conflict guards** (~21:20). Backup `Z:\PinelineV2_codebak\2026-11-05_autosplit-conflict-guards\`. `server.py` + `engines/split_parts.maybe_auto_split_job`: skip merged / mux-done; promote cùng nguồn không invalidate TTS. Sync V2/V4. Fix `docs/fixes/2026-11-05-autosplit-conflict-guards.md`. **Restart :8805** để nạp.
+- **Stop heal mux merged** (~21:25). `_stop_job`: parent đã merge+Full → mux done 100% (không pending/80%); stop part heal parent. Heal tay `d01dbbc2d703` → overall 100. Follow-up fix `autosplit-conflict-guards`. **Restart** để nạp stop mới.
 
-- **Restore Tauri desktop V5** (~04:25–04:30). Backup `Z:\PinelineV2_codebak\2026-11-05_restore-tauri\`. Copy từ archive → root (`src-tauri/`, `package.json`, `run_tauri.bat`…). Branding V5 / `devUrl` `:8805`; thêm `build.rs`, `capabilities/default.json`, `desktop/tauri_www/`; `run_tauri.bat` tự start `server.py` nếu chưa có cổng. `npm i` + `cargo check` OK. Archive giữ làm đối chiếu. **Không restart** servers; mở app: `run_tauri.bat`.
+- **Auto-split conflict guards** (~21:20). Backup `Z:\PinelineV2_codebak\2026-11-05_autosplit-conflict-guards\`. `server.py`: merged+Full → skip; `_AUTO_SPLIT_ACTIVE` lock; skip part mux-done; promote cùng ASR nguồn → không invalidate TTS. Port V4/V5 (`_auto_gpu` + `maybe_auto_split_job`). Fix `docs/fixes/2026-11-05-autosplit-conflict-guards.md`. **Restart :8801/:8804/:8805** để nạp (không restart lúc encode nếu user chưa cho).
 
-- **UI3 stale `?job=` clear** (~01:15). `refresh`: clear selection khi job không còn trong list (không chỉ khi detail 404). Sync V2/V4/V5. **Không restart** (hard refresh).
-- **UI3 404/stages sync → V2/V4** (~01:09). Logic đã có trên `static/ui/index3.html`; sync `renderDetail`/`refresh` guards sang V2+V4 root `index3.html`. Backup `Z:\PinelineV2_codebak\2026-11-05_ui3-404-stages\`. Fix `docs/fixes/2026-11-05-ui3-404-stages.md`. **Không restart** (hard refresh).
+- **Split ENOSPC guard** (~01:20). Backup `Z:\PinelineV2_codebak\2026-11-05_split-enospc\`. `split_parts.py`: check free trước split; ENOSPC → `DiskFullError` **không** re-encode; fail mid-way xoá `_split_parts`; sub-job ưu tiên `move`. Test `tests/test_split_enospc_guard.py` (3 passed). Fix `docs/fixes/2026-11-05-split-enospc-guard.md`. **Restart :8801 sau** khi job `d01dbbc2d703` xong (không restart lúc đang chạy).
 
-- **Upload limit stop-queue** (~00:43). Backup `Z:\PinelineV2_codebak\2026-11-05_upload-limit-stop\`. Port từ V2: `_is_yt_upload_limit_error`; `publish_job` finally không dequeue/drain khi `stop_queue`; drain loop break; `_publish_job_internal` trả `upload_limit_exceeded`+`stop_queue`. Test `tests/test_upload_limit_stop.py`. Fix `docs/fixes/2026-11-05-upload-limit-stop-queue.md`. **Không restart** (user).
+- **UI3 404/stages null-safe** (~01:09). Backup `Z:\PinelineV2_codebak\2026-11-05_ui3-404-stages\`. Sync từ V5: `renderDetail` guard `!j.job_id||!j.stages`; `refresh` check `detRes.ok`, clear selection + strip `?job=`. Fix `docs/fixes/2026-11-05-ui3-404-stages.md`. **Không restart** (hard refresh HTML).
 
-- **V5 `core/` package** (~00:05). Backup codebak `Z:\PinelineV2_codebak\2026-11-05_v5-core\` + zip `Z:\PinelineV2_backup_2026-11-05_0005.zip` (snapshot script). Move kernel → `core/`: `config`, `batch_config`, `job_queue`, `job_meta`, `film_db`, `manifest`, `fileio` (ROOT/`WORK_ROOT` = `parents[1]`; inter-import relative). Rewrite call sites → `import core.X as X` / `from core.X import …` (không shim root). `restart_server.CHECK_MODULES` → `core/*.py` (+ job_meta/film_db). Tests/LAYOUT/ARCHITECTURE/unity skill. Root còn 3 entry: `server.py`, `app_desktop.py`, `restart_server.py`. **Chờ restart :8805** (parent).
+- **Upload limit stop-queue** (~00:43). Backup `Z:\PinelineV2_codebak\2026-11-05_upload-limit-stop\`. `auto_publisher`: `_is_yt_upload_limit_error`; `stop_queue`/`upload_limit_exceeded` từ `_publish_job_internal`; `publish_job` finally không dequeue/drain khi limit; drain loop break. Test `tests/test_upload_limit_stop.py`. Fix `docs/fixes/2026-11-05-upload-limit-stop-queue.md`. Port V5 `agents/auto_publisher.py`. **Không restart**.
 
 ## 2026-11-04
 
-- **V5 structure unity** (~23:55). Backup codebak `Z:\PinelineV2_codebak\2026-11-04_v5-unity\`. Docs-first: LAYOUT/ARCHITECTURE/README/`pineline`/`http_routes`/DECISIONS/STATE + design `2026-11-04-v5-structure-unity.md` — app core = 10 root `.py`; attach registries LIVE; bodies ở `http_routes/`. Xoá TARGET shells rỗng: `pineline/{agents,pipeline,sidecar,desktop,ops,server/services}`. Harden `tests/test_layout_paths.py`. **Không restart :8805** (docs + empty dirs only).
-
-- **V5 restart :8805 Phase F** (~23:50). `PORT=8805 restart_server.py --ignore-hg --clean-env`; PID 27296→38920. Smoke `/` `/films/ui` `/api/queue/jobs` `/api/voices` 200; queue idle. **Không cần restart thêm.**
-
-- **V5 layout Phase F** (~23:46). Backup zip `Z:\PinelineV2_backup_2026-11-04_2346.zip` + codebak `Z:\PinelineV2_codebak\2026-11-04_v5-layout-F\`. F1: `scripts/install/` (+ reqs sibling), `scripts/check_cookies.py`, `work/logs/migrate_work.log`, xoá root `__pycache__`, archive `finetune_xuyenthanh` / legacy `config.json` / `.claude`+`.superpowers` → `scripts/archive/…`; `config/` cho preset JSON (giữ `pineline.config.json` root; `.nvenc_state.json` root). F2: package `tools/` — `lib_check`, `test_channel`, `preset_switcher`, `pick_dirs_dialog`, `migrate_work`, `context_studio/`; rewrite imports (no shim); `server` spawn `tools/pick_dirs_dialog.py`; `restart_server` CHECK_MODULES + `tools.migrate_work`. **Đã restart :8805** 23:50 (PID 38920).
-
-- **V5 layout Phase E** (~22:30). Backup codebak `Z:\PinelineV2_codebak\2026-11-04_v5-layout-E\` (+ zip `Z:\PinelineV2_backup_2026-11-04_2224.zip`). Rewrite flat import → `engines.*` / `engines.asr.*` / `agents.*` / `http_routes.*` (codemod ~362); CLI: `ASR_SCRIPTS` + `_run_engine("engines/translate.py")`, `sfx_lib` self-spawn `Path(__file__)`, `apps/run_tele_cmd.bat` → `python -m agents.agent_tele_cmd`, `restart_server` CHECK_MODULES/SMOKE package paths. Xoá **58** root shim; root còn **17** `.py`. Tests: layout assert shims gone; patch targets `agents.*`/`engines.*`; `ASR_USE_DEMUCS=1` trong demucs test. Smoke OpenAPI 177. **Không restart :8805** (parent). SKIP: `test_restart_guard` + check_batch4 sidecar lock (pre-existing).
-
-- **V5 batch-check + README layout** (~21:15). Backup codebak `Z:\PinelineV2_codebak\2026-11-04_v5-layout-sync\`. `scripts/check_batch{1,2}` ROOT=`Path(__file__).resolve().parents[1]` (không còn `Z:\PinelineV2`); batch2 UI → `static/ui/index3.html`, AST/source `agents/`+`engines/`; batch1 AST `agents/`, tmp `D:\PinelineV5_tmp`; batch3/4 đã `parents[1]` (batch4 comment V5). README mô tả `apps/agents/http_routes/engines/static/ui`. **Không restart :8805.**
-
-- **V5 layout Phase D** (~21:10). Backup codebak `Z:\PinelineV2_codebak\2026-11-04_v5-layout-D\` (+ zip `Z:\PinelineV2_backup_2026-11-04_2105.zip`). Move 22 pipeline engines → `engines/` flat + root shims (`importlib` + `sys.modules` alias; shim `importlib.import_module("engines")` trước load để `reload` OK). Path `parents[1]` cho `render`/`render_fx`/`sfx_lib`/`clone_tts`/`series_glossary`/`llm`/`title_mt`. `scripts/check_batch3` đọc `engines/render.py`+`engines/llm.py`. Test: `import download,translate,render,…` OK; `import server` OpenAPI 177; pytest core layout+queue+render/sfx/pronoun 55 OK; full suite 117 pass / 4 fail pre-existing (restart_guard, batch2/4 V2). **Không restart :8805.** SKIP: không.
-
-- **V5 layout Phase C** (~21:05). Backup codebak `Z:\PinelineV2_codebak\2026-11-04_v5-layout-C\`. Move 14 ASR modules → `engines/asr/` (+ root shims); `firered_asr._roots` vendor path `parents[2]`. Giữ `download`/`translate`/`render` ở root (Phase D). Verify `import asr, fun_asr_nano, hybrid_asr`; pytest layout+queue 9 OK. **Không restart :8805.**
-
-- **V5 Phase B verify + thumb root** (~21:02). Backup zip `…_2101.zip` + codebak `…_v5-layout-B-fix\`. Fix `routes_hg.meta_thumbnail_get` → project `data/thumbnails` (`parent.parent`). Tests `tests/test_layout_paths.py` (find_index cwd=`C:\Windows`, films_ui, openapi `/`+`/films/ui`). Pytest 9 OK. Fix `docs/fixes/2026-11-04-http-routes-thumb-root.md`. **Không restart :8805.**
-
-- **V5 layout Phase B** (~20:51). Backup codebak `Z:\PinelineV2_codebak\2026-11-04_v5-layout-B\`. Move `agent_*.py` + `hongguo_bridge`/`auto_publisher`/`meta_studio`/`canva_client` → `agents/`; `routes_*.py` → `http_routes/`; root shims (`sys.modules` alias) giữ `import agent_core` / `import routes_ui`. `server.py` re-export cycle-safe; `router = APIRouter()` trước `import server`. ROOT/`_HERE` → project root (`parent.parent`). Pytest 5 OK. **Không restart :8805.**
-
-- **V5 layout Phase A** (~20:50). Backup zip `Z:\PinelineV2_backup_2026-11-04_2048.zip` + codebak `Z:\PinelineV2_codebak\2026-11-04_v5-layout-A\`. HTML → `static/ui/`; launchers → `apps/` + root stubs; archive `run_v4`/V4.spec → `scripts/archive/v4/`; root markdown junk → `docs/archive_root/`; `static/app.js` → `scripts/archive/ui_legacy/`; `restart_server`/`migrate_work` default `run_v5.bat`. **Restart :8805** (parent).
-
-- **V5 cleanup plan + auditor skills** (~19:50). Skills `.cursor/skills/v5-{structure-auditor,deadcode-hunter,ops-docs-auditor}`; design `docs/design/2026-11-04-v5-structure-cleanup.md`; plan `docs/superpowers/plans/2026-11-04-v5-codebase-cleanup.md`. **Không restart** (docs/skills only).
-
-- **V5 assets/fs attach** (~19:45). Backup `Z:\PinelineV2_codebak\2026-11-04_v5-assets-fs-attach\`. Strip 10 `@app` (cookies/voices/frames/brand/clone/voice-sample/models/llm/fs); `assets`/`fs` registry + `include_router`. Oneshots → `scripts/archive/oneshot/`; xoá `tauri_desktop/node_modules`. Follow-up `docs/fixes/2026-11-04-v5-queue-ssot.md`. **Restart :8805.**
-
-- **V5 queue/jobs SSOT + gọn codebase** (~19:00). Backup `Z:\PinelineV2_codebak\2026-11-04_v5-queue-ssot\`. `pineline.server.routes.queue` → registry `attach` (xoá body trùng); wire `queue`+`jobs` `include_router`; strip `@app` queue/jobs; `job_queue.current_detail` / `build_queue_items` / `http_queue_state` (queue_state không còn N× `get_job_info` rời). Docs: `MANIFEST_CONTRACT.md`, ARCHITECTURE, routes README, DECISIONS. Fix `docs/fixes/2026-11-04-v5-queue-ssot.md`. **Restart :8805.**
-
-- **Queue meta từ films.db** (17:30, V5 only). Backup `Z:\PinelineV2_codebak\2026-11-04_v5-film-db-queue\`. Cột `series_ui`/`season_ui`/`group_index`; `job_meta.py`; `get_jobs_info` DB-first; `/api/queue/jobs` bỏ N× manifest pending. Fix `docs/fixes/2026-11-04-film-db-queue-meta.md`. **Restart :8805.**
-
-- **Queue sort/move** (16:57). Backup `Z:\PinelineV2_codebak\2026-11-04_queue-sort-move\`. UI gọi `/api/queue/jobs/sort|move`; season ưu tiên «Phần N» trên title; `job_sort_key` dùng `group_id`/series normalize. Sync V2/V4/V5 (`job_queue.py` + `index3.html`). Fix `docs/fixes/2026-11-04-queue-sort-move.md`. **Restart :8801** (+ hard refresh UI).
+- **Queue sort/move** (16:57). Backup `Z:\PinelineV2_codebak\2026-11-04_queue-sort-move\`. UI gọi `/api/queue/jobs/sort|move`; season ưu tiên «Phần N» trên title; `job_sort_key` dùng `group_id`/series normalize. Sync V2/V4/V5 (`job_queue.py` + `index3.html`). Fix `docs/fixes/2026-11-04-queue-sort-move.md`. **Restart :8801 done 17:11** (PID 35380; hard refresh UI vẫn nên).
 
 - **Title YT cấm tên nhân vật** (05:36). Backup `Z:\PinelineV2_codebak\2026-11-04_title-no-charname\`. Prompt: chỉ premise/hệ thống/«Ta» — không Hứa Hoa/Lão Lục…. Sync V2/V4/V5. **Restart** nếu meta in-process.
 

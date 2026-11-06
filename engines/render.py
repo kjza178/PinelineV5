@@ -2008,8 +2008,12 @@ def build_video_filter(W: int, H: int, zoom: float, ocr: list[dict],
             flush=True,
         )
     else:
-        meta["hardsub"] = "none"
-        print("[hardsub] Không phát hiện hardsub trong video gốc → KHÔNG blur (giữ nguyên khung hình gốc)", flush=True)
+        if not hardsub_blur:
+            meta["hardsub"] = "off"
+            print("[hardsub] tắt theo hardsub_blur=false — không blur/stretch", flush=True)
+        else:
+            meta["hardsub"] = "none"
+            print("[hardsub] Không phát hiện hardsub trong video gốc → KHÔNG blur (giữ nguyên khung hình gốc)", flush=True)
 
     if zoom > 1.01:
         if motion:
@@ -2750,9 +2754,18 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
             "Có tts.json nhưng không tạo được dub_fit.wav — từ chối render chỉ tiếng gốc.")
 
     # Kiểm tra cấu hình tắt hardsub_blur từ queue_opts hoặc config/env
+    # Không dùng bool("false") — chuỗi "false"/"off" phải tắt blur.
     user_hs_blur = m.data.get("queue_opts", {}).get("hardsub_blur")
     if user_hs_blur is not None:
-        hardsub_blur = bool(user_hs_blur)
+        if isinstance(user_hs_blur, str):
+            v = user_hs_blur.strip().lower()
+            if v in ("0", "false", "off", "no", "tắt", "tat", "không", "khong", ""):
+                hardsub_blur = False
+            elif v in ("1", "true", "on", "yes", "bật", "bat", "có", "co"):
+                hardsub_blur = True
+            # chuỗi lạ: giữ arg hardsub_blur từ caller
+        else:
+            hardsub_blur = bool(user_hs_blur)
     elif cfg("HARDSUB_BLUR", "1").strip().lower() in ("0", "false", "no", "off"):
         hardsub_blur = False
 

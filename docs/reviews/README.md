@@ -4,6 +4,8 @@ Báo cáo review / audit PinelineV5. Mới nhất trên cùng.
 
 | Ngày | File | Chủ đề |
 |---|---|---|
+| 2026-11-06 | [func-sigs/](./func-sigs/) | AST signatures batch (translate, queue, llm, bridge, server orch, …) |
+| 2026-11-06 | [2026-11-06-v5-func-catalog.md](./2026-11-06-v5-func-catalog.md) | **Function-level map** — spine CALL ORDER + full per-fn catalog (2118) |
 | 2026-11-06 | [2026-11-06-v5-eng-swarm.md](./2026-11-06-v5-eng-swarm.md) | First eng-swarm run (vuln/bugs/invariants/coverage/PR) |
 | 2026-11-06 | [2026-11-06-v5-part-atoms.md](./2026-11-06-v5-part-atoms.md) | Finest-grain part map expanded (file/fn/trigger/I-O/next + work layout) |
 | 2026-11-04 | [2026-11-04-v5-declutter-pass2.md](./2026-11-04-v5-declutter-pass2.md) | Declutter pass 2 |

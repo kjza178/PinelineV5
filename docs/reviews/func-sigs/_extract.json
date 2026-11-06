@@ -1,0 +1,2614 @@
+{
+  "translate": {
+    "path": "Z:\\PinelineV5\\engines\\translate.py",
+    "count": 42,
+    "funcs": [
+      {
+        "line": 59,
+        "name": "_tmodel",
+        "sig": "_tmodel() -> str | None",
+        "doc": "TRANSLATE_MODEL đọc lúc gọi (server import module 1 lần — MODEL ở trên bị đóng băng).",
+        "kind": "func"
+      },
+      {
+        "line": 64,
+        "name": "_rmodel",
+        "sig": "_rmodel() -> str | None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 68,
+        "name": "_is_llama_local_model",
+        "sig": "_is_llama_local_model(m: str | None) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 84,
+        "name": "_meaning_rules",
+        "sig": "_meaning_rules() -> str",
+        "doc": "Quy tắc chống dịch đen / lệch ngữ cảnh (lồng tiếng phim).",
+        "kind": "func"
+      },
+      {
+        "line": 147,
+        "name": "_style_rules",
+        "sig": "_style_rules() -> str",
+        "doc": "Quy tắc Manhua / short-drama: cứng Hán Việt + mềm hiện đại + xưng hô.",
+        "kind": "func"
+      },
+      {
+        "line": 179,
+        "name": "_character_rules",
+        "sig": "_character_rules() -> str",
+        "doc": "Chống nhầm nhân vật / sai giới tính khi dịch thoại.",
+        "kind": "func"
+      },
+      {
+        "line": 201,
+        "name": "_is_ancient_fantasy_genre",
+        "sig": "_is_ancient_fantasy_genre(plan: dict | None) -> bool",
+        "doc": "True khi phương án/genre thuộc tu tiên·cổ trang·wuxia·xianxia (không mixed đô thị).",
+        "kind": "func"
+      },
+      {
+        "line": 225,
+        "name": "_is_mixed_genre",
+        "sig": "_is_mixed_genre(plan: dict | None) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 239,
+        "name": "_mixed_address_rules",
+        "sig": "_mixed_address_rules() -> str",
+        "doc": "Đô thị dị năng + võ/KH: xưng hô hiện đại + cổ phong Hán Việt.",
+        "kind": "func"
+      },
+      {
+        "line": 260,
+        "name": "_ancient_address_rules",
+        "sig": "_ancient_address_rules() -> str",
+        "doc": "Chỉ inject khi genre tu tiên/cổ — không áp cho đô thị hiện đại.",
+        "kind": "func"
+      },
+      {
+        "line": 281,
+        "name": "_translate_rules",
+        "sig": "_translate_rules(plan: dict | None=None) -> str",
+        "doc": "Gộp nghĩa + văn phong + nhân vật (+ xưng hô theo genre).",
+        "kind": "func"
+      },
+      {
+        "line": 290,
+        "name": "_ocr_name_hints",
+        "sig": "_ocr_name_hints(work_dir: Path | None) -> list[str]",
+        "doc": "Tên/chữ trên hình từ ocr.json (nếu có) — gợi ý cho PLAN.",
+        "kind": "func"
+      },
+      {
+        "line": 317,
+        "name": "_resolve_translate_mode",
+        "sig": "_resolve_translate_mode(mode: str | None, model: str | None, n_todo: int) -> str",
+        "doc": "Trả 'oneshot' | 'batch'.",
+        "kind": "func"
+      },
+      {
+        "line": 345,
+        "name": "_has_cjk",
+        "sig": "_has_cjk(text: str) -> bool",
+        "doc": "Còn ký tự Hán trong bản dịch = model dịch sót/hỏng (đặc biệt model nhỏ local).",
+        "kind": "func"
+      },
+      {
+        "line": 373,
+        "name": "_salvage_mixed_vi",
+        "sig": "_salvage_mixed_vi(vi: str, *, zh: str='', plan: dict | None=None) -> str",
+        "doc": "Cứu VI lẫn Hán (vd «Đạt được 100% 增幅.») — không thì trả '' để vá lại.",
+        "kind": "func"
+      },
+      {
+        "line": 420,
+        "name": "build_plan",
+        "sig": "build_plan(segments: list[dict], target: str='Tiếng Việt', model: str | None=None, name_hints: list[str] | None=None, series_plan: dict | None=None) -> dict",
+        "doc": "LLM đọc toàn transcript -> phương án dịch: nhân vật, thuật ngữ, XƯNG HÔ, PHÂN CẢNH, tone.",
+        "kind": "func"
+      },
+      {
+        "line": 588,
+        "name": "_plan_block",
+        "sig": "_plan_block(p: dict) -> str",
+        "doc": "Đổ plan ra text nhét vào mọi prompt dịch. CHỐNG LỖI: model đôi khi trả",
+        "kind": "func"
+      },
+      {
+        "line": 700,
+        "name": "_plan_block_for_qa",
+        "sig": "_plan_block_for_qa(p: dict) -> str",
+        "doc": "Plan block gọn cho pronoun-QA / GPT vá đỏ — chỉ genre+style+pronouns.",
+        "kind": "func"
+      },
+      {
+        "line": 774,
+        "name": "_resolve_scene_context",
+        "sig": "_resolve_scene_context(plan: dict | None, rows: list[dict]) -> str",
+        "doc": "Xác định phân cảnh hiện tại của lô câu thoại (Scene-based context injection).",
+        "kind": "func"
+      },
+      {
+        "line": 867,
+        "name": "_norm_zh_cue",
+        "sig": "_norm_zh_cue(zh: str) -> str",
+        "doc": "Chuẩn hóa cue ZH để khớp lock (bỏ dấu câu/space).",
+        "kind": "func"
+      },
+      {
+        "line": 875,
+        "name": "ensure_hard_terms",
+        "sig": "ensure_hard_terms(plan: dict | None) -> dict",
+        "doc": "Gắn seed chengyu/taunt vào glossary.terms (không đè bản tay đã có).",
+        "kind": "func"
+      },
+      {
+        "line": 925,
+        "name": "hard_term_lock_map",
+        "sig": "hard_term_lock_map(plan: dict | None) -> dict[str, str]",
+        "doc": "zh_norm → vi bắt buộc (từ glossary type chengyu/idiom/combat_taunt/lock + seed).",
+        "kind": "func"
+      },
+      {
+        "line": 964,
+        "name": "apply_hard_term_locks",
+        "sig": "apply_hard_term_locks(rows: list[dict], plan: dict | None=None) -> int",
+        "doc": "Post-pass: cue ZH khớp lock → ghi đè VI (chuẩn, không phụ thuộc LLM).",
+        "kind": "func"
+      },
+      {
+        "line": 1011,
+        "name": "normalize_vi_thousands",
+        "sig": "normalize_vi_thousands(text: str) -> str",
+        "doc": "Dấu nghìn chuẩn Việt: 31 000 / 31,000 → 31.000.",
+        "kind": "func"
+      },
+      {
+        "line": 1027,
+        "name": "apply_style_polish",
+        "sig": "apply_style_polish(rows: list[dict], plan: dict | None=None) -> int",
+        "doc": "Post-pass deterministic: sửa calque / văn mẫu thường gặp (mixed short-drama).",
+        "kind": "func"
+      },
+      {
+        "line": 1278,
+        "name": "_is_modernish_genre",
+        "sig": "_is_modernish_genre(plan: dict | None) -> bool",
+        "doc": "Đô thị / mixed / hiện đại — cấm Ta–Ngươi cổ.",
+        "kind": "func"
+      },
+      {
+        "line": 1302,
+        "name": "_char_aliases",
+        "sig": "_char_aliases(plan: dict | None) -> dict[str, set[str]]",
+        "doc": "vi_name_lower → {zh, vi, aliases…} để khớp tên trong câu.",
+        "kind": "func"
+      },
+      {
+        "line": 1320,
+        "name": "_pronoun_pairs",
+        "sig": "_pronoun_pairs(plan: dict | None) -> list[dict]",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1336,
+        "name": "_detox_modern_pronouns",
+        "sig": "_detox_modern_pronouns(vi: str, zh: str) -> str",
+        "doc": "Ép Ta/Ngươi → Tôi/Cậu cho thoại đô thị (giữ «ông ta/cô ta/chúng ta»).",
+        "kind": "func"
+      },
+      {
+        "line": 1362,
+        "name": "apply_pronoun_postpass",
+        "sig": "apply_pronoun_postpass(rows: list[dict], plan: dict | None=None) -> int",
+        "doc": "Post-pass deterministic xưng hô — không phụ thuộc LLM nhớ ma trận.",
+        "kind": "func"
+      },
+      {
+        "line": 1428,
+        "name": "_salvage_items",
+        "sig": "_salvage_items(text: str) -> dict",
+        "doc": "Vớt từng object {\"i\":.., \"vi\":..} kể cả khi JSON TỔNG THỂ hỏng (model",
+        "kind": "func"
+      },
+      {
+        "line": 1453,
+        "name": "translate_oneshot",
+        "sig": "translate_oneshot(rows: list[dict], plan_block: str, target: str='Tiếng Việt', model: str | None=None, plan: dict | None=None) -> dict",
+        "doc": "Dịch TOÀN BỘ danh sách câu trong 1 lần gọi LLM (llama-server ctx lớn).",
+        "kind": "func"
+      },
+      {
+        "line": 1521,
+        "name": "translate_batch",
+        "sig": "translate_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict], target: str='Tiếng Việt', model: str | None=None, plan: dict | None=None) -> dict",
+        "doc": "LƯỢT 1 — DỊCH NGHĨA KỊCH BẢN CHUẨN XÁC (Semantic Accuracy) theo Phân Cảnh (Scene) + Series Glossary. Trả {i: vi}.",
+        "kind": "func"
+      },
+      {
+        "line": 1596,
+        "name": "_translate_safe",
+        "sig": "_translate_safe(rows: list[dict], plan_block: str, prev_ctx: list[dict], target: str, model: str | None, plan: dict | None=None) -> dict",
+        "doc": "Dịch 1 lô CÓ CHỐNG LỖI: nếu parse hỏng hoặc LLM nuốt câu, CHIA ĐÔI lô rồi thử lại.",
+        "kind": "func"
+      },
+      {
+        "line": 1624,
+        "name": "review_batch",
+        "sig": "review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict], target: str='Tiếng Việt', model: str | None=None, plan: dict | None=None) -> dict",
+        "doc": "LƯỢT 2 — BẢN ĐỊA HÓA LỜI THOẠI LỒNG TIẾNG & KHỚP NHỊP PHỤ ĐỀ (Voice Dubbing Localization).",
+        "kind": "func"
+      },
+      {
+        "line": 1697,
+        "name": "run_review",
+        "sig": "run_review(work_dir: str | Path, batch: int=40, target: str='Tiếng Việt', model: str | None=None, force: bool=False) -> dict",
+        "doc": "LƯỢT 2: soát bản dịch nháp (script.json) bằng model chính xác (minimax) rồi",
+        "kind": "func"
+      },
+      {
+        "line": 1894,
+        "name": "count_script_missing",
+        "sig": "count_script_missing(work_dir: str | Path) -> int",
+        "doc": "Đếm câu trống trong script.json (nguồn sự thật cho UI / auto-vá).",
+        "kind": "func"
+      },
+      {
+        "line": 1906,
+        "name": "_trivial_vi",
+        "sig": "_trivial_vi(zh: str) -> str | None",
+        "doc": "Câu chỉ cười/thán từ — không cần LLM (model hay trả lại chữ Hán → _has_cjk xoá).",
+        "kind": "func"
+      },
+      {
+        "line": 1947,
+        "name": "_compress_zh_for_llm",
+        "sig": "_compress_zh_for_llm(zh: str) -> str",
+        "doc": "Rút chuỗi cười/spam trước khi gửi LLM (tránh timeout / trả Hán).",
+        "kind": "func"
+      },
+      {
+        "line": 1952,
+        "name": "clean_zh_spam",
+        "sig": "clean_zh_spam(zh: str, max_rep: int=3, max_len: int=0) -> str",
+        "doc": "Rút 哈/呃/嗯/啊 spam + cụm chữ lặp (区域的区域的…) từ ASR.",
+        "kind": "func"
+      },
+      {
+        "line": 1989,
+        "name": "run_translate",
+        "sig": "run_translate(work_dir: str | Path, batch: int=20, target: str='Tiếng Việt', force: bool=False, model: str | None=None, mode: str | None=None) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2502,
+        "name": "main",
+        "sig": "main(argv=None)",
+        "doc": "",
+        "kind": "func"
+      }
+    ]
+  },
+  "split_parts": {
+    "path": "Z:\\PinelineV5\\engines\\split_parts.py",
+    "count": 19,
+    "funcs": [
+      {
+        "line": 36,
+        "name": "_is_disk_full_text",
+        "sig": "_is_disk_full_text(*chunks: str | None) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 41,
+        "name": "free_bytes",
+        "sig": "free_bytes(path: str | Path) -> int",
+        "doc": "Dung lượng trống trên volume chứa `path` (tạo parent nếu chưa có).",
+        "kind": "func"
+      },
+      {
+        "line": 50,
+        "name": "estimate_split_need_bytes",
+        "sig": "estimate_split_need_bytes(video_path: str | Path) -> int",
+        "doc": "Ước lượng chỗ cần cho split copy-mode (= gần bằng size nguồn + margin).",
+        "kind": "func"
+      },
+      {
+        "line": 56,
+        "name": "assert_enough_space_for_split",
+        "sig": "assert_enough_space_for_split(video_path: str | Path, out_dir: str | Path) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 66,
+        "name": "_unlink_quiet",
+        "sig": "_unlink_quiet(path: Path) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 74,
+        "name": "probe_duration",
+        "sig": "probe_duration(video_path: str | Path) -> float",
+        "doc": "Lấy thời lượng video tính bằng giây.",
+        "kind": "func"
+      },
+      {
+        "line": 90,
+        "name": "calculate_part_plan",
+        "sig": "calculate_part_plan(total_sec: float, target_hours: float=DEFAULT_TARGET_HOURS) -> list[tuple[float, float]]",
+        "doc": "Tính toán danh sách (start_sec, end_sec) cho từng part.",
+        "kind": "func"
+      },
+      {
+        "line": 111,
+        "name": "find_best_cut_point",
+        "sig": "find_best_cut_point(video_path: str | Path, target_cut_sec: float, search_radius_sec: float=90.0) -> float",
+        "doc": "Tìm điểm khoảng lặng (silence) gần nhất với target_cut_sec trong phạm vi ±search_radius_sec.",
+        "kind": "func"
+      },
+      {
+        "line": 152,
+        "name": "compute_smart_plan",
+        "sig": "compute_smart_plan(video_path: str | Path, target_hours: float=DEFAULT_TARGET_HOURS) -> list[dict]",
+        "doc": "Tính plan hoàn chỉnh có điểm cắt thông minh (tránh đứt câu thoại).",
+        "kind": "func"
+      },
+      {
+        "line": 194,
+        "name": "split_video_to_parts",
+        "sig": "split_video_to_parts(video_path: str | Path, out_dir: str | Path, target_hours: float=DEFAULT_TARGET_HOURS, prefix: str='part') -> list[dict]",
+        "doc": "Cắt video thành các part theo smart plan (lossless copy).",
+        "kind": "func"
+      },
+      {
+        "line": 331,
+        "name": "_hardlink_alias",
+        "sig": "_hardlink_alias(primary: Path, alias: Path) -> bool",
+        "doc": "Tạo alias cùng inode với primary. Không bao giờ copy2 (tránh nhân đôi GB).",
+        "kind": "func"
+      },
+      {
+        "line": 361,
+        "name": "cleanup_split_parts_dir",
+        "sig": "cleanup_split_parts_dir(parts_dir: str | Path) -> None",
+        "doc": "Xoá thư mục `_split_parts` dở (orphan GB sau fail / ENOSPC).",
+        "kind": "func"
+      },
+      {
+        "line": 373,
+        "name": "merge_parts_to_full",
+        "sig": "merge_parts_to_full(part_videos: list[str | Path], out_full_mp4: str | Path) -> Path",
+        "doc": "Nối danh sách các part đã render hoàn chỉnh thành 1 file full (lossless copy 30s).",
+        "kind": "func"
+      },
+      {
+        "line": 412,
+        "name": "split_job_to_subjobs",
+        "sig": "split_job_to_subjobs(job_id: str, target_hours: float=DEFAULT_TARGET_HOURS, work_root: str | Path='work') -> dict",
+        "doc": "Tự động chia một job video dài thành các sub-jobs (Part 1, Part 2...).",
+        "kind": "func"
+      },
+      {
+        "line": 576,
+        "name": "merge_job_parts",
+        "sig": "merge_job_parts(job_id: str, work_root: str | Path='work') -> dict",
+        "doc": "Kiểm tra các sub-job của job_id, nếu tất cả đã render xong thì ghép thành output_full.mp4.",
+        "kind": "func"
+      },
+      {
+        "line": 675,
+        "name": "is_split_subjob",
+        "sig": "is_split_subjob(work_dir: str | Path) -> bool",
+        "doc": "Part đã tách (…_p01) — không auto-split lần nữa.",
+        "kind": "func"
+      },
+      {
+        "line": 688,
+        "name": "maybe_auto_split_job",
+        "sig": "maybe_auto_split_job(job_id: str, *, work_root: str | Path='work', enabled: bool=True, target_hours: float=DEFAULT_TARGET_HOURS, min_hours: float | None=None) -> dict",
+        "doc": "Tự detect thời lượng video sau khi có source:",
+        "kind": "func"
+      },
+      {
+        "line": 792,
+        "name": "try_auto_merge_parent",
+        "sig": "try_auto_merge_parent(job_id: str, *, work_root: str | Path='work', enabled: bool=True) -> dict | None",
+        "doc": "Sau khi một part mux xong: nếu mọi part done → merge output_full trên job cha.",
+        "kind": "func"
+      },
+      {
+        "line": 818,
+        "name": "main",
+        "sig": "main()",
+        "doc": "",
+        "kind": "func"
+      }
+    ]
+  },
+  "job_queue": {
+    "path": "Z:\\PinelineV5\\core\\job_queue.py",
+    "count": 30,
+    "funcs": [
+      {
+        "line": 23,
+        "name": "get_job_info",
+        "sig": "get_job_info(job_id: str, *, prefer_db: bool=True) -> dict",
+        "doc": "Metadata hàng chờ: ưu tiên films.db (series_ui/season_ui), fallback manifest.",
+        "kind": "func"
+      },
+      {
+        "line": 83,
+        "name": "get_jobs_info",
+        "sig": "get_jobs_info(job_ids: list[str]) -> dict[str, dict]",
+        "doc": "Batch metadata cho nhiều job — 1 query DB + fallback file từng id thiếu.",
+        "kind": "func"
+      },
+      {
+        "line": 108,
+        "name": "job_sort_key",
+        "sig": "job_sort_key(job_id: str) -> tuple",
+        "doc": "Khóa sắp xếp: (group_id|series_norm, season P1..Pn, title).",
+        "kind": "func"
+      },
+      {
+        "line": 126,
+        "name": "_reset_for_tests",
+        "sig": "_reset_for_tests(load_disk: bool=False) -> None",
+        "doc": "Chỉ dùng trong pytest.",
+        "kind": "func"
+      },
+      {
+        "line": 149,
+        "name": "set_runner",
+        "sig": "set_runner(fn: Callable[[str, dict], tuple[str, str]]) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 154,
+        "name": "is_wired_done",
+        "sig": "is_wired_done(work_dir: Path) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 167,
+        "name": "_persist_path",
+        "sig": "_persist_path() -> Path",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 171,
+        "name": "_save",
+        "sig": "_save() -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 188,
+        "name": "_load",
+        "sig": "_load() -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 216,
+        "name": "_hist_push",
+        "sig": "_hist_push(job_id: str, status: str, detail: str='') -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 223,
+        "name": "queue_busy",
+        "sig": "queue_busy() -> bool",
+        "doc": "True nếu worker đang chạy hoặc còn job trong hàng — dùng GPU gate heal/watch.",
+        "kind": "func"
+      },
+      {
+        "line": 229,
+        "name": "current_detail",
+        "sig": "current_detail(job_id: str | None, *, work_root: Path | None=None) -> dict | None",
+        "doc": "Stage/progress/ETA thô — đọc manifest của đúng 1 job (live).",
+        "kind": "func"
+      },
+      {
+        "line": 285,
+        "name": "build_queue_items",
+        "sig": "build_queue_items(job_ids: list[str]) -> list[dict]",
+        "doc": "Metadata pending — 1 batch films.db (+ fallback), không N lần parse manifest.",
+        "kind": "func"
+      },
+      {
+        "line": 307,
+        "name": "queue_state",
+        "sig": "queue_state(*, enrich: bool=True) -> dict",
+        "doc": "Trạng thái hàng chờ. enrich=True → queue_items/current_info qua batch DB.",
+        "kind": "func"
+      },
+      {
+        "line": 331,
+        "name": "http_queue_state",
+        "sig": "http_queue_state(*, work_root: Path | None=None) -> dict",
+        "doc": "Payload GET /api/queue/jobs: state + live current_detail + labels ngắn.",
+        "kind": "func"
+      },
+      {
+        "line": 350,
+        "name": "queue_add",
+        "sig": "queue_add(job_ids: list[str], opts: dict | None=None, skip_done: bool=True, sort_first: bool=True) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 402,
+        "name": "queue_sort",
+        "sig": "queue_sort(by: str='series_season') -> dict",
+        "doc": "Sắp xếp lại các job đang chờ trong hàng:",
+        "kind": "func"
+      },
+      {
+        "line": 419,
+        "name": "queue_move",
+        "sig": "queue_move(job_id: str, action: str) -> dict",
+        "doc": "Di chuyển vị trí của 1 job trong hàng chờ:",
+        "kind": "func"
+      },
+      {
+        "line": 449,
+        "name": "queue_reorder",
+        "sig": "queue_reorder(new_order: list[str]) -> dict",
+        "doc": "Gán lại toàn bộ thứ tự cho hàng chờ theo danh sách client gửi.",
+        "kind": "func"
+      },
+      {
+        "line": 461,
+        "name": "queue_add_group",
+        "sig": "queue_add_group(group_id: str, opts: dict | None=None, skip_done: bool=True) -> dict",
+        "doc": "Enqueue mọi member của group theo group_index tăng dần.",
+        "kind": "func"
+      },
+      {
+        "line": 500,
+        "name": "queue_front",
+        "sig": "queue_front(job_id: str) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 508,
+        "name": "queue_remove",
+        "sig": "queue_remove(job_ids: list[str]) -> dict",
+        "doc": "Bỏ job khỏi hàng chờ (không stop current).",
+        "kind": "func"
+      },
+      {
+        "line": 521,
+        "name": "queue_update_opts",
+        "sig": "queue_update_opts(updates: dict[str, dict]) -> dict",
+        "doc": "Đổi opts của job ĐANG CHỜ tại chỗ (giữ thứ tự, không đụng current) — thay cho remove+add.",
+        "kind": "func"
+      },
+      {
+        "line": 533,
+        "name": "queue_clear",
+        "sig": "queue_clear() -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 541,
+        "name": "queue_stop",
+        "sig": "queue_stop() -> dict",
+        "doc": "Clear queue + báo worker dừng; gọi _stop_job(current) nếu server đã wire.",
+        "kind": "func"
+      },
+      {
+        "line": 563,
+        "name": "set_stop_hook",
+        "sig": "set_stop_hook(fn: Callable[[str], None] | None) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 567,
+        "name": "set_clear_stop_hook",
+        "sig": "set_clear_stop_hook(fn: Callable[[str], None] | None) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 572,
+        "name": "_ensure_worker_unlocked",
+        "sig": "_ensure_worker_unlocked() -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 583,
+        "name": "_ensure_worker",
+        "sig": "_ensure_worker() -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 588,
+        "name": "_worker_loop",
+        "sig": "_worker_loop() -> None",
+        "doc": "",
+        "kind": "func"
+      }
+    ]
+  },
+  "llm": {
+    "path": "Z:\\PinelineV5\\engines\\llm.py",
+    "count": 23,
+    "funcs": [
+      {
+        "line": 58,
+        "name": "_settings",
+        "sig": "_settings() -> tuple[str, str, str]",
+        "doc": "(base, key, model) đọc LÚC GỌI (file config trước env) — sửa pineline.config.json",
+        "kind": "func"
+      },
+      {
+        "line": 69,
+        "name": "_llama_base",
+        "sig": "_llama_base() -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 77,
+        "name": "get_llama_models",
+        "sig": "get_llama_models(llama_base: str | None=None) -> list[str]",
+        "doc": "Lấy danh sách các model đang load trên llama-server (:8083).",
+        "kind": "func"
+      },
+      {
+        "line": 95,
+        "name": "get_ollama_models",
+        "sig": "get_ollama_models(ollama_base: str | None=None) -> list[str]",
+        "doc": "Lấy danh sách model trên Ollama (:11434).",
+        "kind": "func"
+      },
+      {
+        "line": 108,
+        "name": "list_available_models",
+        "sig": "list_available_models() -> dict",
+        "doc": "Trả về toàn bộ model khả dụng (llama-server 8083, ollama 11434, config).",
+        "kind": "func"
+      },
+      {
+        "line": 158,
+        "name": "_is_loopback_base",
+        "sig": "_is_loopback_base(url: str) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 163,
+        "name": "is_local",
+        "sig": "is_local(model: str | None) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 170,
+        "name": "is_chatgpt",
+        "sig": "is_chatgpt(model: str | None) -> bool",
+        "doc": "Model route qua Aurora / Chat2Api (pool account Free). Tiền tố chatgpt/ hoặc aurora/.",
+        "kind": "func"
+      },
+      {
+        "line": 176,
+        "name": "_chatgpt_settings",
+        "sig": "_chatgpt_settings() -> tuple[list[str], str, str]",
+        "doc": "(bases, key, default_model) cho Aurora pool.",
+        "kind": "func"
+      },
+      {
+        "line": 204,
+        "name": "_jwt_expired",
+        "sig": "_jwt_expired(token: str) -> bool",
+        "doc": "True nếu JWT có claim exp đã qua (token local hết hạn không được đè Aurora pool).",
+        "kind": "func"
+      },
+      {
+        "line": 219,
+        "name": "_chatgpt_token_file",
+        "sig": "_chatgpt_token_file() -> str",
+        "doc": "Đọc access token tùy chọn từ data/chatgpt_token.txt (bỏ qua nếu JWT hết hạn).",
+        "kind": "func"
+      },
+      {
+        "line": 238,
+        "name": "_chatgpt_chat",
+        "sig": "_chatgpt_chat(model: str, messages: list[dict], temperature: float, max_tokens: int, json_mode: bool, retries: int, timeout: int) -> str",
+        "doc": "Gọi Aurora/Chat2Api (OpenAI-compatible). Pool Free xoay phía server Aurora.",
+        "kind": "func"
+      },
+      {
+        "line": 315,
+        "name": "aurora_upload_file",
+        "sig": "aurora_upload_file(path: str | Path, purpose: str='assistants') -> dict",
+        "doc": "Upload file lên Aurora `POST /v1/files` (cần ChatGPT access_token thật).",
+        "kind": "func"
+      },
+      {
+        "line": 391,
+        "name": "_file_unread_response",
+        "sig": "_file_unread_response(text: str) -> bool",
+        "doc": "GPT trả JSON/text báo không đọc được file đã upload (thường do lệch account pool).",
+        "kind": "func"
+      },
+      {
+        "line": 411,
+        "name": "chatgpt_chat_with_file",
+        "sig": "chatgpt_chat_with_file(file_id: str, prompt: str, model: str | None=None, temperature: float=0.1, max_tokens: int=8192, json_mode: bool=True, timeout: int=300, base: str | None=None, account_id: str | None=None) -> str",
+        "doc": "Hỏi GPT kèm file đã upload (`type: input_file` + `file_id`) — 1 lần đọc file.",
+        "kind": "func"
+      },
+      {
+        "line": 513,
+        "name": "ensure_ollama_model",
+        "sig": "ensure_ollama_model(name: str) -> None",
+        "doc": "Model Ollama chưa pull -> TỰ pull (lần đầu, có thể vài GB). Auto cho bước dịch.",
+        "kind": "func"
+      },
+      {
+        "line": 535,
+        "name": "free_ollama_vram",
+        "sig": "free_ollama_vram(reason: str='') -> None",
+        "doc": "Alias — nhả VRAM (Ollama + torch) trước/sau bước GPU.",
+        "kind": "func"
+      },
+      {
+        "line": 541,
+        "name": "unload_local",
+        "sig": "unload_local(model: str | None) -> None",
+        "doc": "Nhả model Ollama khỏi VRAM (RTX 3060 12GB không chứa nổi LLM + TTS cùng",
+        "kind": "func"
+      },
+      {
+        "line": 550,
+        "name": "_ollama_num_ctx",
+        "sig": "_ollama_num_ctx() -> int",
+        "doc": "Gemma3/4 mặc định context 131072. Cấp KV 128k trên RTX 3060 12GB -> tràn",
+        "kind": "func"
+      },
+      {
+        "line": 560,
+        "name": "_ollama_chat",
+        "sig": "_ollama_chat(model, messages, temperature, max_tokens, json_mode, retries, timeout) -> str",
+        "doc": "Gọi Ollama qua endpoint GỐC /api/chat + TẮT thinking (think=False).",
+        "kind": "func"
+      },
+      {
+        "line": 612,
+        "name": "chat",
+        "sig": "chat(messages: list[dict], model: str | None=None, temperature: float=0.3, max_tokens: int=8192, json_mode: bool=False, retries: int=4, timeout: int=300, **kwargs) -> str",
+        "doc": "Gửi messages, trả về text của assistant. Tự retry khi lỗi mạng/429/5xx.",
+        "kind": "func"
+      },
+      {
+        "line": 765,
+        "name": "chat_with_meta",
+        "sig": "chat_with_meta(messages: list[dict], model: str | None=None, temperature: float=0.3, max_tokens: int=8192, json_mode: bool=False, timeout: int=300) -> tuple[str, dict]",
+        "doc": "Giống chat() OpenAI-path nhưng trả (content, meta) gồm usage/timings/TPS.",
+        "kind": "func"
+      },
+      {
+        "line": 822,
+        "name": "parse_json",
+        "sig": "parse_json(text: str)",
+        "doc": "Bóc JSON kể cả khi model bọc trong ```json ... ```, trailing commas hoặc kèm chữ thừa.",
+        "kind": "func"
+      }
+    ]
+  },
+  "pronoun_consistency": {
+    "path": "Z:\\PinelineV5\\engines\\pronoun_consistency.py",
+    "count": 30,
+    "funcs": [
+      {
+        "line": 30,
+        "name": "_cfg",
+        "sig": "_cfg(key: str, default: str | None=None) -> str | None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 38,
+        "name": "analyze_enabled",
+        "sig": "analyze_enabled() -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 43,
+        "name": "analyze_model",
+        "sig": "analyze_model() -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 54,
+        "name": "chunk_size",
+        "sig": "chunk_size() -> int",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 61,
+        "name": "analyze_mode",
+        "sig": "analyze_mode() -> str",
+        "doc": "file = upload SRT ZH 1 lần (Aurora /v1/files). fast = mẫu+lô. full = quét hết.",
+        "kind": "func"
+      },
+      {
+        "line": 66,
+        "name": "max_chunks",
+        "sig": "max_chunks() -> int",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 73,
+        "name": "min_chunks_before_stop",
+        "sig": "min_chunks_before_stop() -> int",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 80,
+        "name": "early_stop_enabled",
+        "sig": "early_stop_enabled() -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 85,
+        "name": "is_pronouns_locked",
+        "sig": "is_pronouns_locked(plan: dict | None) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 94,
+        "name": "mark_locked",
+        "sig": "mark_locked(plan: dict, source: str='analyze_full_zh') -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 110,
+        "name": "export_zh_lines",
+        "sig": "export_zh_lines(segments_or_rows: list[dict]) -> list[dict]",
+        "doc": "Chuẩn hoá [{i, zh}] từ asr segments hoặc script rows.",
+        "kind": "func"
+      },
+      {
+        "line": 128,
+        "name": "write_zh_export",
+        "sig": "write_zh_export(work_dir: Path, lines: list[dict]) -> Path",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 138,
+        "name": "write_zh_srt",
+        "sig": "write_zh_srt(work_dir: Path, lines: list[dict], segments: list[dict] | None=None) -> Path",
+        "doc": "Xuất sub.zh.srt để Aurora upload (API.md: POST /v1/files).",
+        "kind": "func"
+      },
+      {
+        "line": 174,
+        "name": "_apply_analyze_delta_to_plan",
+        "sig": "_apply_analyze_delta_to_plan(plan: dict, data: dict, source: str) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 193,
+        "name": "analyze_via_srt_file",
+        "sig": "analyze_via_srt_file(work_dir: Path, plan: dict, lines: list[dict], segments: list[dict] | None=None, model: str | None=None) -> dict",
+        "doc": "Upload sub.zh.srt → GPT đọc 1 lần → glossary pronouns (Aurora file QA).",
+        "kind": "func"
+      },
+      {
+        "line": 281,
+        "name": "select_analyze_lines",
+        "sig": "select_analyze_lines(lines: list[dict], mode: str | None=None) -> list[dict]",
+        "doc": "fast: phủ đầu/giữa/cuối + câu có hô ngữ — ít lô hơn full scan.",
+        "kind": "func"
+      },
+      {
+        "line": 323,
+        "name": "_slim_memory",
+        "sig": "_slim_memory(memory: dict) -> dict",
+        "doc": "Giảm token gửi Aurora mỗi lô.",
+        "kind": "func"
+      },
+      {
+        "line": 347,
+        "name": "_merge_pronouns",
+        "sig": "_merge_pronouns(base: list, incoming: list) -> list",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 375,
+        "name": "_merge_chars",
+        "sig": "_merge_chars(base: list, incoming: list) -> list",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 393,
+        "name": "_analyze_chunk",
+        "sig": "_analyze_chunk(chunk: list[dict], memory: dict, model: str, genre_hint: str) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 430,
+        "name": "analyze_full_zh",
+        "sig": "analyze_full_zh(work_dir: str | Path, plan: dict | None=None, segments: list[dict] | None=None, model: str | None=None, force: bool=False) -> dict",
+        "doc": "A) Quét toàn bộ ZH theo lô + memory → cập nhật plan + lock pronouns.",
+        "kind": "func"
+      },
+      {
+        "line": 597,
+        "name": "lock_banner",
+        "sig": "lock_banner(plan: dict | None) -> str",
+        "doc": "Block inject vào plan_block / batch khi đã lock.",
+        "kind": "func"
+      },
+      {
+        "line": 623,
+        "name": "review_lock_rules",
+        "sig": "review_lock_rules(plan: dict | None) -> str",
+        "doc": "Prompt ép 31B review: khi đã lock thì CẤM đổi self/call.",
+        "kind": "func"
+      },
+      {
+        "line": 639,
+        "name": "fix_preserves_locked_register",
+        "sig": "fix_preserves_locked_register(vi_nhap: str, vi_fix: str) -> bool",
+        "doc": "True nếu bản sửa không đổi thanh ngữ chính so với nháp (khi đang lock).",
+        "kind": "func"
+      },
+      {
+        "line": 658,
+        "name": "filter_review_fixes_for_lock",
+        "sig": "filter_review_fixes_for_lock(fixes: dict[int, str], rows: list[dict], plan: dict | None) -> dict[int, str]",
+        "doc": "Khi pronouns_locked: loại fix làm đổi thanh ngữ so với vi_nhap.",
+        "kind": "func"
+      },
+      {
+        "line": 681,
+        "name": "ledger_from_prev",
+        "sig": "ledger_from_prev(prev_ctx: list[dict] | None) -> str",
+        "doc": "B) Ledger từ vài câu VI trước — nhắc model giữ thanh ngữ đang dùng.",
+        "kind": "func"
+      },
+      {
+        "line": 706,
+        "name": "_forms_in",
+        "sig": "_forms_in(vi: str) -> set[str]",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 718,
+        "name": "find_pronoun_jumps",
+        "sig": "find_pronoun_jumps(rows: list[dict], window: int=JUMP_WINDOW) -> list[dict]",
+        "doc": "C) QA: trong cửa sổ gần nhau, vừa có {anh,em} vừa có {ông} ngôi hô / tôi lệch kiểu.",
+        "kind": "func"
+      },
+      {
+        "line": 761,
+        "name": "ensure_analyze_before_translate",
+        "sig": "ensure_analyze_before_translate(work_dir: str | Path, plan: dict, segments: list[dict] | None=None, force: bool=False) -> tuple[dict, dict]",
+        "doc": "Gọi từ translate.run_translate sau khi có plan.",
+        "kind": "func"
+      },
+      {
+        "line": 784,
+        "name": "run_post_translate_consistency",
+        "sig": "run_post_translate_consistency(work_dir: str | Path, rows: list[dict], plan: dict | None, fix_with_gpt: bool=True) -> dict",
+        "doc": "C+D sau dịch/polish: post-pass + QA jumps + GPT vá đỏ.",
+        "kind": "func"
+      }
+    ]
+  },
+  "hongguo_bridge": {
+    "path": "Z:\\PinelineV5\\agents\\hongguo_bridge.py",
+    "count": 84,
+    "funcs": [
+      {
+        "line": 67,
+        "name": "_save_merge_state",
+        "sig": "_save_merge_state() -> None",
+        "doc": "Gọi khi đang giữ _merge_lock.",
+        "kind": "func"
+      },
+      {
+        "line": 82,
+        "name": "_load_merge_state",
+        "sig": "_load_merge_state() -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 106,
+        "name": "_set_phase",
+        "sig": "_set_phase(name: str | None, phase: str='', pct: float | None=None) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 121,
+        "name": "season_stem",
+        "sig": "season_stem(title: str) -> str",
+        "doc": "Bỏ hậu tố mùa để gom series cùng tên gốc.",
+        "kind": "func"
+      },
+      {
+        "line": 136,
+        "name": "franchise_core",
+        "sig": "franchise_core(title: str) -> str",
+        "doc": "Lấy tên thương hiệu/series chuẩn để nhóm mùa chính xác mà không gộp nhầm thể loại (như 高武：, 游戏入侵：).",
+        "kind": "func"
+      },
+      {
+        "line": 147,
+        "name": "_parse_cn_int",
+        "sig": "_parse_cn_int(s: str) -> int | None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 167,
+        "name": "season_timeline_key",
+        "sig": "season_timeline_key(title: str, series_id: str | None=None) -> tuple",
+        "doc": "Thứ tự phát hành ≈ series_id (snowflake). Phụ: cung/第N季 để ổn định khi thiếu id.",
+        "kind": "func"
+      },
+      {
+        "line": 188,
+        "name": "order_franchise_items",
+        "sig": "order_franchise_items(items: list[dict]) -> list[dict]",
+        "doc": "Sort theo thời gian phát hành (series_id) + gắn SS1→SSN.",
+        "kind": "func"
+      },
+      {
+        "line": 271,
+        "name": "web_search_hongguoduanju",
+        "sig": "web_search_hongguoduanju(q: str, timeout: float=20) -> list[dict]",
+        "doc": "Search trên hongguoduanju.com — thường ra đủ 第N季 mà /dl/search sót.",
+        "kind": "func"
+      },
+      {
+        "line": 334,
+        "name": "_ingest_web_into",
+        "sig": "_ingest_web_into(by_id: dict[str, dict], q: str, core_filter: str | None=None) -> int",
+        "doc": "Ingest web results; nếu có core_filter chỉ giữ title cùng thương hiệu.",
+        "kind": "func"
+      },
+      {
+        "line": 363,
+        "name": "web_expand_queries",
+        "sig": "web_expand_queries(q: str) -> list[str]",
+        "doc": "Query web tối thiểu nhưng phủ cao: exact + stem + vài mốc mùa.",
+        "kind": "func"
+      },
+      {
+        "line": 389,
+        "name": "web_expand_into",
+        "sig": "web_expand_into(by_id: dict[str, dict], q: str, workers: int=6) -> int",
+        "doc": "Chạy song song vài web search → gộp vào by_id (lọc theo core).",
+        "kind": "func"
+      },
+      {
+        "line": 419,
+        "name": "_load_title_cache",
+        "sig": "_load_title_cache() -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 437,
+        "name": "_save_title_cache",
+        "sig": "_save_title_cache(data: dict) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 447,
+        "name": "lookup_series",
+        "sig": "lookup_series(series_id: str, base: str=DEFAULT_BASE) -> dict",
+        "doc": "Lấy meta từ series_id (khi search không ra).",
+        "kind": "func"
+      },
+      {
+        "line": 463,
+        "name": "resolve_text",
+        "sig": "resolve_text(text: str, base: str=DEFAULT_BASE) -> dict",
+        "doc": "Parse link/share → series. Nhận URL detail/player hoặc series_id thuần.",
+        "kind": "func"
+      },
+      {
+        "line": 496,
+        "name": "_cache_put",
+        "sig": "_cache_put(r: dict) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 511,
+        "name": "_fill_missing_from_cache",
+        "sig": "_fill_missing_from_cache(by_id: dict[str, dict], stem: str, base: str) -> None",
+        "doc": "Với stem gốc, dò cache/seed cho 第1–15季 nếu search bỏ sót.",
+        "kind": "func"
+      },
+      {
+        "line": 549,
+        "name": "expand_queries",
+        "sig": "expand_queries(q: str) -> list[str]",
+        "doc": "Sinh thêm query để bắt mùa đổi tên (灵界篇/仙界篇…).",
+        "kind": "func"
+      },
+      {
+        "line": 579,
+        "name": "_base_port",
+        "sig": "_base_port(base: str) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 589,
+        "name": "_read_process_env_win",
+        "sig": "_read_process_env_win(pid: int) -> dict[str, str]",
+        "doc": "Đọc môi trường process khác (x64) qua PEB — lấy HG_UI_TOKEN.",
+        "kind": "func"
+      },
+      {
+        "line": 645,
+        "name": "_hongguo_pids",
+        "sig": "_hongguo_pids() -> list[int]",
+        "doc": "PID process Hongguo Downloader (pythonw trong thư mục cài đặt).",
+        "kind": "func"
+      },
+      {
+        "line": 663,
+        "name": "discover_ui_token",
+        "sig": "discover_ui_token(force: bool=False) -> str | None",
+        "doc": "Lấy HG_UI_TOKEN: env Pineline → cache → env process Downloader.",
+        "kind": "func"
+      },
+      {
+        "line": 696,
+        "name": "_auth_headers",
+        "sig": "_auth_headers(base: str) -> dict[str, str]",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 707,
+        "name": "_is_ui_auth_error",
+        "sig": "_is_ui_auth_error(detail: Any) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 718,
+        "name": "_req",
+        "sig": "_req(method: str, base: str, path: str, payload: dict | None=None, query: dict | None=None, timeout: float=_TIMEOUT, _retry_auth: bool=True) -> Any",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 773,
+        "name": "ping",
+        "sig": "ping(base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 809,
+        "name": "search",
+        "sig": "search(q: str, base: str=DEFAULT_BASE, expand: bool=True) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 936,
+        "name": "status",
+        "sig": "status(base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 940,
+        "name": "cancel",
+        "sig": "cancel(base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 944,
+        "name": "submit",
+        "sig": "submit(series_ids: list[str], base: str=DEFAULT_BASE, scores: dict | None=None) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 954,
+        "name": "library_update",
+        "sig": "library_update(base: str=DEFAULT_BASE, names: list[str] | None=None) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 961,
+        "name": "seasons_decline",
+        "sig": "seasons_decline(series_ids: list[str], base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 968,
+        "name": "rank",
+        "sig": "rank(category: str='all', board: str='recommend', offset: int=0, size: int=100, base: str=DEFAULT_BASE) -> dict",
+        "doc": "Bảng hot giống app Hongguo Downloader (GET /dl/rank).",
+        "kind": "func"
+      },
+      {
+        "line": 1023,
+        "name": "genres",
+        "sig": "genres(limit: int=25) -> list[str]",
+        "doc": "Lấy danh sách các thể loại phim từ Hongguo Catalog Explorer.",
+        "kind": "func"
+      },
+      {
+        "line": 1040,
+        "name": "catalog",
+        "sig": "catalog(genre: str='', sort: str='newest', status: str='', q: str='', page: int=1, size: int=100) -> dict",
+        "doc": "Khám phá kho phim Hongguo Catalog (Explorer).",
+        "kind": "func"
+      },
+      {
+        "line": 1104,
+        "name": "rank_episodes",
+        "sig": "rank_episodes(series_ids: list[str], base: str=DEFAULT_BASE) -> dict",
+        "doc": "Bổ sung số tập cho list rank (POST /dl/rank-episodes).",
+        "kind": "func"
+      },
+      {
+        "line": 1113,
+        "name": "preview_series",
+        "sig": "preview_series(series_id: str, ep: int=1, fresh: bool=False, base: str=DEFAULT_BASE) -> dict",
+        "doc": "URL MP4 tập miễn phí (hongguoduanju) — GET /dl/preview. Không cần tải về.",
+        "kind": "func"
+      },
+      {
+        "line": 1127,
+        "name": "library",
+        "sig": "library(base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1155,
+        "name": "_output_dir",
+        "sig": "_output_dir(base: str) -> Path | None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1164,
+        "name": "inspect_series_folder",
+        "sig": "inspect_series_folder(folder: Path) -> dict",
+        "doc": "Quét folder series: có file (merged)? còn bao nhiêu mảnh tập?",
+        "kind": "func"
+      },
+      {
+        "line": 1205,
+        "name": "safe_child",
+        "sig": "safe_child(root: Path | None, name: str) -> Path | None",
+        "doc": "root/name chỉ khi name là 1 cấp thư mục ngay dưới root.",
+        "kind": "func"
+      },
+      {
+        "line": 1220,
+        "name": "resolve_preview_path",
+        "sig": "resolve_preview_path(name: str, base: str=DEFAULT_BASE) -> Path | None",
+        "doc": "Đường dẫn file xem thử trong thư viện (merged hoặc tập đầu).",
+        "kind": "func"
+      },
+      {
+        "line": 1233,
+        "name": "resolve_poster_path",
+        "sig": "resolve_poster_path(name: str, base: str=DEFAULT_BASE) -> Path | None",
+        "doc": "poster.jpg/png trong folder series (local).",
+        "kind": "func"
+      },
+      {
+        "line": 1248,
+        "name": "fetch_poster",
+        "sig": "fetch_poster(name: str, base: str=DEFAULT_BASE) -> tuple[bytes, str]",
+        "doc": "Bytes poster: ưu tiên /dl/poster (auth), fallback file local.",
+        "kind": "func"
+      },
+      {
+        "line": 1286,
+        "name": "fetch_img_proxy",
+        "sig": "fetch_img_proxy(url: str, base: str=DEFAULT_BASE) -> tuple[bytes, str]",
+        "doc": "Proxy ảnh cover: ByteDance/Hongguo đi qua :8000/img; ảnh ngoài tự fetch trực tiếp.",
+        "kind": "func"
+      },
+      {
+        "line": 1339,
+        "name": "_trash_root",
+        "sig": "_trash_root(folder: Path) -> Path",
+        "doc": "Thùng rác NGOÀI thư viện (D:\\Lib → D:\\Lib_trash): Hongguo/Pineline quét thư viện",
+        "kind": "func"
+      },
+      {
+        "line": 1348,
+        "name": "purge_trash",
+        "sig": "purge_trash(folder: Path, days: float=TRASH_KEEP_DAYS) -> int",
+        "doc": "Xoá hẳn các lô trong thùng rác cũ hơn `days` ngày. Trả số lô đã xoá.",
+        "kind": "func"
+      },
+      {
+        "line": 1374,
+        "name": "merged_covers_fragments",
+        "sig": "merged_covers_fragments(folder: Path, merged_file: str | None=None) -> dict",
+        "doc": "Kiểm file gộp có chứa đủ các tập lẻ đang nằm trong folder không.",
+        "kind": "func"
+      },
+      {
+        "line": 1410,
+        "name": "_move_to_trash",
+        "sig": "_move_to_trash(folder: Path, files: list[Path]) -> tuple[list[str], list[str], Path]",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1424,
+        "name": "cleanup_fragments",
+        "sig": "cleanup_fragments(folder: Path) -> dict",
+        "doc": "Dọn tập lẻ sau khi đã có (merged) ĐỦ nội dung: chỉ file đúng mẫu tên tập,",
+        "kind": "func"
+      },
+      {
+        "line": 1456,
+        "name": "_list_episode_frags",
+        "sig": "_list_episode_frags(folder: Path) -> list[Path]",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1472,
+        "name": "_probe_wh",
+        "sig": "_probe_wh(path: Path) -> tuple[int, int] | None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1494,
+        "name": "_probe_dur",
+        "sig": "_probe_dur(path: Path) -> float",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1507,
+        "name": "_frame_wh_at",
+        "sig": "_frame_wh_at(path: Path, t: float) -> tuple[int, int] | None",
+        "doc": "Decode 1 frame tại t — bắt size thật (kể cả mid-stream đổi res).",
+        "kind": "func"
+      },
+      {
+        "line": 1533,
+        "name": "_pick_h264_encoder",
+        "sig": "_pick_h264_encoder() -> list[str]",
+        "doc": "Args -c:v … cho normalize (ưu tiên NVENC).",
+        "kind": "func"
+      },
+      {
+        "line": 1550,
+        "name": "_scale_vf",
+        "sig": "_scale_vf(w: int, h: int) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1558,
+        "name": "episode_resolutions",
+        "sig": "episode_resolutions(folder: Path) -> dict[str, Any]",
+        "doc": "Quét độ phân giải từng tập mảnh. mixed=True nếu lệch nhau.",
+        "kind": "func"
+      },
+      {
+        "line": 1580,
+        "name": "merged_has_mixed_res",
+        "sig": "merged_has_mixed_res(path: Path, samples: int=0) -> dict[str, Any]",
+        "doc": "Kiểm tra file (merged) có đổi res giữa chừng không.",
+        "kind": "func"
+      },
+      {
+        "line": 1612,
+        "name": "normalize_merged_file",
+        "sig": "normalize_merged_file(path: Path, target_wh: tuple[int, int] | None=None, on_pct: Callable[[float], None] | None=None) -> dict[str, Any]",
+        "doc": "Re-encode 1 file (merged) về canvas cố định (scale+pad).",
+        "kind": "func"
+      },
+      {
+        "line": 1686,
+        "name": "merge_series_normalized",
+        "sig": "merge_series_normalized(folder: Path, on_pct: Callable[[float], None] | None=None, target_wh: tuple[int, int] | None=None) -> dict[str, Any]",
+        "doc": "Merge các tập mảnh về 1 canvas (scale+pad) rồi concat.",
+        "kind": "func"
+      },
+      {
+        "line": 1774,
+        "name": "mark_done",
+        "sig": "mark_done(name: str, merged_file: str | None=None, removed: int=0) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1784,
+        "name": "merge_one",
+        "sig": "merge_one(name: str, base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1791,
+        "name": "merge_status",
+        "sig": "merge_status(base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1795,
+        "name": "open_library",
+        "sig": "open_library(name: str | None=None, base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1800,
+        "name": "delete_library_series",
+        "sig": "delete_library_series(names: list[str], base: str=DEFAULT_BASE) -> dict",
+        "doc": "Xoá vĩnh viễn thư mục series tại ổ đĩa D:\\Lib để giải phóng dung lượng.",
+        "kind": "func"
+      },
+      {
+        "line": 1878,
+        "name": "merge_resume",
+        "sig": "merge_resume(base: str | None=None) -> bool",
+        "doc": "Hàng đợi còn (nạp lại sau restart) mà không có worker → chạy tiếp, chỉ khi Hongguo đang mở",
+        "kind": "func"
+      },
+      {
+        "line": 1895,
+        "name": "merge_queue_state",
+        "sig": "merge_queue_state(base: str=DEFAULT_BASE) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1917,
+        "name": "merge_queue_add",
+        "sig": "merge_queue_add(names: list[str], base: str=DEFAULT_BASE, skip_done: bool=True) -> dict",
+        "doc": "Chỉ xếp hàng rồi trả về ngay — kiểm tra/chuẩn hoá/dọn tập đều do worker làm (UI thấy tiến độ).",
+        "kind": "func"
+      },
+      {
+        "line": 1960,
+        "name": "merge_queue_clear",
+        "sig": "merge_queue_clear() -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1969,
+        "name": "_start_worker",
+        "sig": "_start_worker(base: str) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1980,
+        "name": "_finish",
+        "sig": "_finish(name: str) -> None",
+        "doc": "Kết thúc 1 series (xong hoặc lỗi): bỏ current, xoá phase, đếm vào batch, lưu state.",
+        "kind": "func"
+      },
+      {
+        "line": 1995,
+        "name": "_merge_worker",
+        "sig": "_merge_worker(base: str) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2241,
+        "name": "_hist",
+        "sig": "_hist(name: str, status: str, detail: str='') -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2265,
+        "name": "_baike_get",
+        "sig": "_baike_get(url: str, timeout: float=25) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2271,
+        "name": "_baike_clean_title",
+        "sig": "_baike_clean_title(t: str) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2278,
+        "name": "_titles_same_franchise",
+        "sig": "_titles_same_franchise(root: str, other: str) -> bool",
+        "doc": "True nếu other cùng họ với root (bỏ ranking nhiễu trong 同系列).",
+        "kind": "func"
+      },
+      {
+        "line": 2301,
+        "name": "baike_search",
+        "sig": "baike_search(q: str, timeout: float=25) -> list[dict]",
+        "doc": "Search https://www.duanjubaike.net/so.html?keyword=…",
+        "kind": "func"
+      },
+      {
+        "line": 2357,
+        "name": "baike_info",
+        "sig": "baike_info(series_id: str, timeout: float=25) -> dict",
+        "doc": "Trang info-{id}: meta + 同系列 (đã lọc nhiễu ranking).",
+        "kind": "func"
+      },
+      {
+        "line": 2548,
+        "name": "baike_deep",
+        "sig": "baike_deep(series_id: str | None=None, title: str | None=None, timeout: float=25) -> dict",
+        "doc": "Lấy info sâu từ baike: ưu tiên series_id, không có thì search theo title.",
+        "kind": "func"
+      },
+      {
+        "line": 2587,
+        "name": "baike_versions",
+        "sig": "baike_versions(q: str, timeout: float=25) -> dict",
+        "doc": "Q → search baike → chọn hit khớp nhất → danh sách version (đã lọc).",
+        "kind": "func"
+      },
+      {
+        "line": 2640,
+        "name": "_norm_title_key",
+        "sig": "_norm_title_key(t: str) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2647,
+        "name": "_hongguo_match_version",
+        "sig": "_hongguo_match_version(ver: dict, base: str=DEFAULT_BASE) -> tuple[dict | None, str]",
+        "doc": "Map 1 version baike → Hongguo. Ưu tiên series_id, rồi search đúng tên.",
+        "kind": "func"
+      },
+      {
+        "line": 2743,
+        "name": "search_via_baike",
+        "sig": "search_via_baike(q: str, base: str=DEFAULT_BASE) -> dict",
+        "doc": "Baike nhận diện → versions → match từng cái trên Hongguo.",
+        "kind": "func"
+      }
+    ]
+  },
+  "server": {
+    "path": "Z:\\PinelineV5\\server.py",
+    "count": 35,
+    "funcs": [
+      {
+        "line": 80,
+        "name": "_maybe_auto_split_guarded",
+        "sig": "_maybe_auto_split_guarded(job_id: str, **kwargs)",
+        "doc": "Wrap maybe_auto_split_job với lock chống gọi chồng cùng job_id.",
+        "kind": "func"
+      },
+      {
+        "line": 162,
+        "name": "_job_any_busy",
+        "sig": "_job_any_busy(job_id: str) -> str | None",
+        "doc": "Trả tên stage đang claim, hoặc None.",
+        "kind": "func"
+      },
+      {
+        "line": 171,
+        "name": "_claim_stage",
+        "sig": "_claim_stage(job_id: str, stage: str) -> bool",
+        "doc": "Giữ chỗ trước khi submit thread — chống bấm 2-3 lần tạo nhiều task.",
+        "kind": "func"
+      },
+      {
+        "line": 180,
+        "name": "_release_stage",
+        "sig": "_release_stage(job_id: str, stage: str) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 217,
+        "name": "_manifest_running",
+        "sig": "_manifest_running(work_dir: Path) -> str | None",
+        "doc": "Stage đang 'running' trong manifest (nếu có).",
+        "kind": "func"
+      },
+      {
+        "line": 309,
+        "name": "_heal_stale_running",
+        "sig": "_heal_stale_running(work_dir: Path) -> list[str]",
+        "doc": "Sửa stage status=running mồ côi (kill/crash/skip không mark_done).",
+        "kind": "func"
+      },
+      {
+        "line": 380,
+        "name": "_next_incomplete_stage",
+        "sig": "_next_incomplete_stage(work_dir: Path) -> str | None",
+        "doc": "Bước WIRED đầu tiên chưa done (để mark_running đúng — không ép lại ASR).",
+        "kind": "func"
+      },
+      {
+        "line": 390,
+        "name": "_run_engine",
+        "sig": "_run_engine(script: str, work_dir: Path, *args: str) -> None",
+        "doc": "Chạy engine NẶNG (ASR/TTS) ở TIẾN TRÌNH RIÊNG.",
+        "kind": "func"
+      },
+      {
+        "line": 1254,
+        "name": "_auto_pipeline",
+        "sig": "_auto_pipeline(job_id: str, audio_mode: str, voice_vol: float, orig_vol: float, use_ocr: bool, fit: bool=True, resolution: str='source', translate_mode: str | None=None, render_kw: dict | None=None, asr_engine: str | None=None)",
+        "doc": "1-CLICK (chạy ở hàng _dl): tải (nếu cần) -> đẩy phần GPU sang hàng _gpu.",
+        "kind": "func"
+      },
+      {
+        "line": 1341,
+        "name": "_run_requested_review",
+        "sig": "_run_requested_review(wd: Path, target: str) -> dict | None",
+        "doc": "Rà soát do Agent/user yêu cầu (manifest.agent.review_request): rà tên nhân vật theo bảng",
+        "kind": "func"
+      },
+      {
+        "line": 1402,
+        "name": "_save_series_glossary",
+        "sig": "_save_series_glossary(wd: Path) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1413,
+        "name": "_auto_gpu",
+        "sig": "_auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float, orig_vol: float, use_ocr: bool, fit: bool=True, resolution: str='source', translate_mode: str | None=None, render_kw: dict | None=None, asr_engine: str | None=None)",
+        "doc": "Phần GPU của 1-click (hàng _gpu, tuần tự): ASR -> Dịch -> TTS -> [Tách nền]",
+        "kind": "func"
+      },
+      {
+        "line": 1882,
+        "name": "_create",
+        "sig": "_create(url: str, target: str, cookies_from_browser: str | None, group: dict | None=None) -> str",
+        "doc": "Tạo 1 job ở trạng thái CHỜ (chưa chạy). Người dùng bấm ▶ Bắt đầu mới chạy.",
+        "kind": "func"
+      },
+      {
+        "line": 1902,
+        "name": "_create_local_shell",
+        "sig": "_create_local_shell(target: str, *, job_key: str, title: str | None=None, orig_path: str | None=None, group: dict | None=None) -> tuple[str, Path]",
+        "doc": "Tạo job local (không URL). job_key ổn định theo path để resume cùng file.",
+        "kind": "func"
+      },
+      {
+        "line": 1997,
+        "name": "create_job",
+        "sig": "create_job(job: NewJob)",
+        "doc": "Thêm link -> tạo job CHỜ. 1 link ra NHIỀU video (multi-P/playlist) -> gom",
+        "kind": "func"
+      },
+      {
+        "line": 2201,
+        "name": "api_queue_jobs_add",
+        "sig": "api_queue_jobs_add(req: JobQueueReq)",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2839,
+        "name": "_save_tts_voice",
+        "sig": "_save_tts_voice(work_dir: Path, voice: str) -> None",
+        "doc": "Lưu giọng vào manifest + sidecar — KHÔNG được wipe stages khác.",
+        "kind": "func"
+      },
+      {
+        "line": 2844,
+        "name": "_save_tts_speed",
+        "sig": "_save_tts_speed(work_dir: Path, speed: float) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2848,
+        "name": "_save_tts_engine",
+        "sig": "_save_tts_engine(work_dir: Path, engine: str) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 2906,
+        "name": "_resolve_voice",
+        "sig": "_resolve_voice(work_dir: Path, voice: str | None) -> str",
+        "doc": "Giọng: arg → stages.tts → tts_config → queue_opts/opts → list[0].",
+        "kind": "func"
+      },
+      {
+        "line": 2931,
+        "name": "_resolve_queue_voice",
+        "sig": "_resolve_queue_voice(work_dir: Path, voice: str | None) -> str",
+        "doc": "Queue chỉ dùng giọng được chọn rõ ràng hoặc đã lưu cho chính job.",
+        "kind": "func"
+      },
+      {
+        "line": 2996,
+        "name": "_asr_script",
+        "sig": "_asr_script(engine: str) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 3033,
+        "name": "_save_asr_engine",
+        "sig": "_save_asr_engine(work_dir: Path, engine: str) -> None",
+        "doc": "Lưu engine. Nếu đã có sidecar tương ứng → promote luôn (tránh lệch nhãn/nội dung).",
+        "kind": "func"
+      },
+      {
+        "line": 3063,
+        "name": "_run_translate_engine",
+        "sig": "_run_translate_engine(work_dir: Path, batch: int | None=None, target: str | None=None, force: bool=False, model: str | None=None, mode: str | None=None, review_only: bool=False, review_force: bool=False) -> None",
+        "doc": "Chạy stage dịch ở TIẾN TRÌNH RIÊNG (subprocess) giống như ASR và TTS.",
+        "kind": "func"
+      },
+      {
+        "line": 3098,
+        "name": "_resolve_asr_engine",
+        "sig": "_resolve_asr_engine(work_dir: Path, engine: str | None) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 3135,
+        "name": "_do_tts",
+        "sig": "_do_tts(work_dir: Path, voice: str, speed: float, engine: str, force: bool)",
+        "doc": "Chạy TTS clone tiếng Việt (vieneu/omnivoice). Điều phối worker venv riêng",
+        "kind": "func"
+      },
+      {
+        "line": 3151,
+        "name": "_do_render",
+        "sig": "_do_render(work_dir: Path, force: bool=True, audio_mode: str='voice_bgm', voice_vol: float=0.2, orig_vol: float=0.6, add_sub: bool=True, fit: bool=True, resolution: str='source', flip: str='', zoom: float=1.12, motion: bool=True, lut: bool=True, grain: str='weak', brand: bool=False, brand_text: str='', frame: str='off', brand_mode: str='off', brand_logo: str='off', vbitrate: str='8M', speed_factor: float=1.0)",
+        "doc": "Ghép giọng (assemble nếu chưa) rồi render video localize (che+sub+trộn nền).",
+        "kind": "func"
+      },
+      {
+        "line": 3737,
+        "name": "_queue_run_one",
+        "sig": "_queue_run_one(job_id: str, opts: dict) -> tuple[str, str]",
+        "doc": "Run one queued job synchronously through mux and return status + detail.",
+        "kind": "func"
+      },
+      {
+        "line": 4104,
+        "name": "_promote_asr_source",
+        "sig": "_promote_asr_source(work_dir: Path, source: str) -> dict",
+        "doc": "Copy sidecar → asr.json + sub.zh.srt; backup asr.json cũ.",
+        "kind": "func"
+      },
+      {
+        "line": 4334,
+        "name": "select_asr_source",
+        "sig": "select_asr_source(job_id: str, req: AsrSelectReq)",
+        "doc": "Promote file ASR (vd asr.fun_nano.json) → asr.json + sub.zh.srt.",
+        "kind": "func"
+      },
+      {
+        "line": 4358,
+        "name": "_do_context_studio",
+        "sig": "_do_context_studio(work_dir: Path, use_llm: bool=True) -> dict",
+        "doc": "Chạy PRE-SCAN → ghi pack vào work_dir.",
+        "kind": "func"
+      },
+      {
+        "line": 4476,
+        "name": "run_context_studio_api",
+        "sig": "run_context_studio_api(job_id: str, req: ContextStudioReq)",
+        "doc": "Chạy Context Studio PRE-SCAN → glossary/style_lock/qa_flags trong work/<job>.",
+        "kind": "func"
+      },
+      {
+        "line": 4849,
+        "name": "_place_source",
+        "sig": "_place_source(src: Path, work_dir: Path, move: bool) -> tuple[Path, str]",
+        "doc": "Trả (đường dẫn video job dùng, cách đặt: direct/move/link/copy).",
+        "kind": "func"
+      },
+      {
+        "line": 4862,
+        "name": "_finalize_imported_source",
+        "sig": "_finalize_imported_source(work_dir: Path, dest: Path, *, orig_name: str | None=None, source_kind: str='imported', source_mode: str | None=None) -> dict",
+        "doc": "Ghi meta + mark download done. `dest` có thể nằm ngoài job (source_mode=direct: file thư viện).",
+        "kind": "func"
+      },
+      {
+        "line": 4906,
+        "name": "_find_video",
+        "sig": "_find_video(work_dir: Path) -> Path | None",
+        "doc": "Tìm file video đã tải: ưu tiên video_path trong manifest, fallback glob.",
+        "kind": "func"
+      }
+    ]
+  },
+  "manifest": {
+    "path": "Z:\\PinelineV5\\core\\manifest.py",
+    "count": 15,
+    "funcs": [
+      {
+        "line": 26,
+        "name": "_now",
+        "sig": "_now() -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 39,
+        "name": "_lock_for",
+        "sig": "_lock_for(path: Path) -> threading.Lock",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 52,
+        "name": "_merge3",
+        "sig": "_merge3(base, mine, theirs)",
+        "doc": "Gộp 3 chiều dict JSON. Key mình không đổi so với lúc load → lấy bản đĩa (người khác",
+        "kind": "func"
+      },
+      {
+        "line": 77,
+        "name": "_xproc_lock",
+        "sig": "_xproc_lock(path: Path)",
+        "doc": "Khoá liên tiến trình (server + subprocess asr/tts cùng ghi). Không lấy được thì vẫn ghi",
+        "kind": "func"
+      },
+      {
+        "line": 97,
+        "name": "Manifest.__init__",
+        "sig": "Manifest.__init__(self, work_dir: str | Path)",
+        "doc": "",
+        "kind": "method"
+      },
+      {
+        "line": 104,
+        "name": "Manifest.load",
+        "sig": "Manifest.load(self) -> None",
+        "doc": "",
+        "kind": "method"
+      },
+      {
+        "line": 124,
+        "name": "Manifest._read_disk",
+        "sig": "Manifest._read_disk(self) -> dict | None",
+        "doc": "",
+        "kind": "method"
+      },
+      {
+        "line": 135,
+        "name": "Manifest.update",
+        "sig": "Manifest.update(self, fn) -> bool",
+        "doc": "Đọc lại từ đĩa → fn(data) → ghi, trong khoá (thread + liên tiến trình).",
+        "kind": "method"
+      },
+      {
+        "line": 148,
+        "name": "Manifest.save",
+        "sig": "Manifest.save(self) -> None",
+        "doc": "",
+        "kind": "method"
+      },
+      {
+        "line": 164,
+        "name": "Manifest._write_locked",
+        "sig": "Manifest._write_locked(self, data: dict) -> None",
+        "doc": "Ghi atomic; gọi khi đang giữ _lock_for(self.path).",
+        "kind": "method"
+      },
+      {
+        "line": 201,
+        "name": "Manifest.stage",
+        "sig": "Manifest.stage(self, name: str) -> dict | None",
+        "doc": "",
+        "kind": "method"
+      },
+      {
+        "line": 204,
+        "name": "Manifest.is_done",
+        "sig": "Manifest.is_done(self, name: str) -> bool",
+        "doc": "",
+        "kind": "method"
+      },
+      {
+        "line": 208,
+        "name": "Manifest.mark_running",
+        "sig": "Manifest.mark_running(self, name: str) -> None",
+        "doc": "Giữ config cũ (voice/speed/engine/n_done...) — chỉ đổi status/started_at.",
+        "kind": "method"
+      },
+      {
+        "line": 220,
+        "name": "Manifest.mark_done",
+        "sig": "Manifest.mark_done(self, name: str, **payload) -> dict",
+        "doc": "",
+        "kind": "method"
+      },
+      {
+        "line": 232,
+        "name": "Manifest.mark_failed",
+        "sig": "Manifest.mark_failed(self, name: str, error) -> None",
+        "doc": "",
+        "kind": "method"
+      }
+    ]
+  },
+  "download": {
+    "path": "Z:\\PinelineV5\\engines\\download.py",
+    "count": 20,
+    "funcs": [
+      {
+        "line": 54,
+        "name": "_request_stop",
+        "sig": "_request_stop(work_dir) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 59,
+        "name": "_is_stopped",
+        "sig": "_is_stopped(work_dir) -> bool",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 64,
+        "name": "_clear_stop",
+        "sig": "_clear_stop(work_dir) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 69,
+        "name": "_kill_job_aria2c",
+        "sig": "_kill_job_aria2c(work_dir) -> None",
+        "doc": "Kill tiến trình aria2c đang tải cho ĐÚNG job này (nhận diện qua job_id/đường",
+        "kind": "func"
+      },
+      {
+        "line": 91,
+        "name": "_aria2_downloaded",
+        "sig": "_aria2_downloaded(ctrl_path) -> int",
+        "doc": "Byte ĐÃ TẢI THẬT theo file điều khiển .aria2. Khi tải đa kết nối, file .part",
+        "kind": "func"
+      },
+      {
+        "line": 113,
+        "name": "_clean_incomplete_fragments",
+        "sig": "_clean_incomplete_fragments(work_dir) -> list",
+        "doc": "Xoá RIÊNG các mảnh tải DỞ (file .part + control .aria2) để tải lại sạch bằng",
+        "kind": "func"
+      },
+      {
+        "line": 127,
+        "name": "_delete_sources",
+        "sig": "_delete_sources(work_dir) -> bool",
+        "doc": "Xoá mọi source.* ; trả True nếu SẠCH (không còn file nào kẹt/khoá).",
+        "kind": "func"
+      },
+      {
+        "line": 141,
+        "name": "_format_sel",
+        "sig": "_format_sel(max_height: int | None=None, *, hevc: bool=False) -> str",
+        "doc": "Selector yt-dlp. max_height giới hạn chiều cao; hevc=True ưu tiên H.265 cùng độ phân giải.",
+        "kind": "func"
+      },
+      {
+        "line": 172,
+        "name": "_cfg_max_height",
+        "sig": "_cfg_max_height() -> int | None",
+        "doc": "DOWNLOAD_MAX_HEIGHT từ env/config (vd 720/480). 0/off = không giới hạn.",
+        "kind": "func"
+      },
+      {
+        "line": 190,
+        "name": "_cfg_prefer_hevc",
+        "sig": "_cfg_prefer_hevc() -> bool",
+        "doc": "DOWNLOAD_PREFER_HEVC=1 → ưu tiên H.265 cùng độ phân giải (file nhẹ, CDN đỡ đứt).",
+        "kind": "func"
+      },
+      {
+        "line": 202,
+        "name": "_auto_height_for_duration",
+        "sig": "_auto_height_for_duration(duration_sec: float | None, cap: int | None) -> int | None",
+        "doc": "Phim rất dài (Bilibili multi-season) → 720p AVC dễ ~3GB+, CDN hay đứt.",
+        "kind": "func"
+      },
+      {
+        "line": 216,
+        "name": "_probe_duration",
+        "sig": "_probe_duration(url: str, base_opts: dict) -> float | None",
+        "doc": "Lấy duration nhanh (không tải) để chọn format.",
+        "kind": "func"
+      },
+      {
+        "line": 232,
+        "name": "detect_platform",
+        "sig": "detect_platform(url: str) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 243,
+        "name": "normalize_url",
+        "sig": "normalize_url(url: str) -> str",
+        "doc": "Chuyển link Bilibili kiểu mới về format yt-dlp hiểu (từ code Galaxy).",
+        "kind": "func"
+      },
+      {
+        "line": 252,
+        "name": "job_id_from_url",
+        "sig": "job_id_from_url(url: str) -> str",
+        "doc": "Job id mặc định = hash URL. Chạy lại cùng URL -> cùng thư mục -> resume.",
+        "kind": "func"
+      },
+      {
+        "line": 257,
+        "name": "find_cookie_file",
+        "sig": "find_cookie_file(platform: str, cookies_dir: str | Path | None) -> str | None",
+        "doc": "Tìm file cookie theo nền tảng trong cookies_dir (vd bilibili_cookies.txt).",
+        "kind": "func"
+      },
+      {
+        "line": 271,
+        "name": "get_aria2c_path",
+        "sig": "get_aria2c_path() -> str | None",
+        "doc": "Tìm aria2c -> trả ĐƯỜNG DẪN TUYỆT ĐỐI (yt-dlp tìm external_downloader trong",
+        "kind": "func"
+      },
+      {
+        "line": 281,
+        "name": "apply_speed_opts",
+        "sig": "apply_speed_opts(opts: dict, conn: int=4) -> dict",
+        "doc": "Tải mảnh song song + aria2c nếu có (args tune từ code Galaxy).",
+        "kind": "func"
+      },
+      {
+        "line": 305,
+        "name": "download_video",
+        "sig": "download_video(url: str, work_dir: str | Path, cookies: str | None=None, cookies_dir: str | Path | None='cookies', cookies_from_browser: str | None=None, proxy: str | None=None, force: bool=False, conn: int=4, fresh: bool=False) -> dict",
+        "doc": "Tải 1 video về work_dir. Trả về dict trạng thái stage (video_path + metadata).",
+        "kind": "func"
+      },
+      {
+        "line": 659,
+        "name": "main",
+        "sig": "main(argv=None)",
+        "doc": "",
+        "kind": "func"
+      }
+    ]
+  },
+  "clone_tts": {
+    "path": "Z:\\PinelineV5\\engines\\clone_tts.py",
+    "count": 38,
+    "funcs": [
+      {
+        "line": 55,
+        "name": "resolve_engine_python",
+        "sig": "resolve_engine_python(engine: str) -> str",
+        "doc": "Tìm python.exe của engine. Config sai path (thường sau install) -> thử chỗ mặc định.",
+        "kind": "func"
+      },
+      {
+        "line": 91,
+        "name": "_load_registry",
+        "sig": "_load_registry() -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 97,
+        "name": "list_clone_voices",
+        "sig": "list_clone_voices() -> list[str]",
+        "doc": "Tên các giọng clone đã có ref audio hợp lệ.",
+        "kind": "func"
+      },
+      {
+        "line": 107,
+        "name": "_resolve_ref",
+        "sig": "_resolve_ref(ref: str) -> Path | None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 116,
+        "name": "voice_ref_text",
+        "sig": "voice_ref_text(voice: str) -> tuple[Path, str] | None",
+        "doc": "(ref_path, ref_text) của 1 giọng, hoặc None.",
+        "kind": "func"
+      },
+      {
+        "line": 127,
+        "name": "enroll_voice",
+        "sig": "enroll_voice(name: str, ref_path: str | Path, ref_text: str) -> str",
+        "doc": "Đăng ký giọng clone vào voices/f5_voices.json (VieNeu + OmniVoice dùng chung).",
+        "kind": "func"
+      },
+      {
+        "line": 149,
+        "name": "_is_trivial_vi",
+        "sig": "_is_trivial_vi(text: str | None) -> bool",
+        "doc": "True nếu không có chữ thật (vd ',', '...', '!!!') — không nên gọi TTS.",
+        "kind": "func"
+      },
+      {
+        "line": 155,
+        "name": "vi_for_tts",
+        "sig": "vi_for_tts(text: str | None) -> str",
+        "doc": "Chuẩn bị chữ cho VieNeu/Omni: gộp số có dấu nghìn để đọc đúng.",
+        "kind": "func"
+      },
+      {
+        "line": 180,
+        "name": "_write_silence_wav",
+        "sig": "_write_silence_wav(path: Path, dur_sec: float, sr: int=48000) -> float",
+        "doc": "Ghi wav im lặng đúng độ dài timeline (tối thiểu 0.15s để qua kiểm tra dur).",
+        "kind": "func"
+      },
+      {
+        "line": 195,
+        "name": "_silence_entry",
+        "sig": "_silence_entry(s: dict, out_dir: Path, engine: str) -> dict",
+        "doc": "Placeholder im lặng cho câu vô nghĩa / wav hỏng — đủ slot timeline, không báo thiếu.",
+        "kind": "func"
+      },
+      {
+        "line": 203,
+        "name": "_dur",
+        "sig": "_dur(path: Path) -> float",
+        "doc": "Độ dài wav (giây). Ưu tiên wave; fallback ffprobe.",
+        "kind": "func"
+      },
+      {
+        "line": 221,
+        "name": "_entry_from_wav",
+        "sig": "_entry_from_wav(s: dict, path: Path, engine: str) -> dict | None",
+        "doc": "Tạo entry tts.json từ file wav đã có. None nếu file hỏng/quá ngắn.",
+        "kind": "func"
+      },
+      {
+        "line": 232,
+        "name": "_unlink_quiet",
+        "sig": "_unlink_quiet(path: Path) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 239,
+        "name": "_drop_runaway_from_done",
+        "sig": "_drop_runaway_from_done(segments: list, done: dict[int, dict], out_dir: Path) -> int",
+        "doc": "Resume/recheck: bỏ clip hú khỏi done + xóa wav → TTS sẽ đọc lại.",
+        "kind": "func"
+      },
+      {
+        "line": 258,
+        "name": "_pack_clip",
+        "sig": "_pack_clip(s: dict, path: Path, engine: str, speed: float, skip_pp: bool) -> dict | None",
+        "doc": "Postprocess + entry. None nếu hỏng. Caller xử lý runaway.",
+        "kind": "func"
+      },
+      {
+        "line": 267,
+        "name": "_recheck_pack_and_retry",
+        "sig": "_recheck_pack_and_retry(engine: str, ref: Path, ref_text: str, out_dir: Path, speed: float, segments: list, done: dict[int, dict], packed_ids: list[int], pre_done: set[int], total_target: int, voice: str, m) -> tuple[int, int]",
+        "doc": "Đóng gói todo vừa TTS; runaway -> xóa -> retry tối đa N lần -> silence slot.",
+        "kind": "func"
+      },
+      {
+        "line": 342,
+        "name": "_clip_key",
+        "sig": "_clip_key(vi: str, voice: str, engine: str, speed: float) -> str",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 347,
+        "name": "_load_keys",
+        "sig": "_load_keys(out_dir: Path) -> dict[str, str] | None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 355,
+        "name": "_save_keys",
+        "sig": "_save_keys(out_dir: Path, keys: dict[str, str]) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 365,
+        "name": "_stamp_keys",
+        "sig": "_stamp_keys(done: dict[int, dict], keys: dict[int, str] | None) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 371,
+        "name": "_scan_done_from_disk",
+        "sig": "_scan_done_from_disk(out_dir: Path, segments: list, engine: str, done: dict[int, dict], disk_keys: dict[str, str] | None=None, keyof: dict[int, str] | None=None) -> dict[int, dict]",
+        "doc": "Resume: nhận diện seg_XXXX.wav đã ghi (sau khi Dừng) dù chưa kịp ghi tts.json.",
+        "kind": "func"
+      },
+      {
+        "line": 392,
+        "name": "_postprocess_clip",
+        "sig": "_postprocess_clip(path: Path, engine: str, speed: float) -> None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 403,
+        "name": "_salvage_progress",
+        "sig": "_salvage_progress(m, segments, done, tts_path, out_dir, engine, voice, speed, pre_done: set[int], err: BaseException | None=None, keys: dict[int, str] | None=None) -> None",
+        "doc": "Khi dừng/crash: gom wav đã có -> tts.json, status pending (để bấm Tiếp tục).",
+        "kind": "func"
+      },
+      {
+        "line": 462,
+        "name": "run_clone_tts",
+        "sig": "run_clone_tts(work_dir: str | Path, engine: str, voice: str, speed: float=1.0, force: bool=False) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 616,
+        "name": "_cleanup_audio",
+        "sig": "_cleanup_audio(path: Path) -> None",
+        "doc": "Làm sạch clip gen ra:",
+        "kind": "func"
+      },
+      {
+        "line": 646,
+        "name": "_trim_onset",
+        "sig": "_trim_onset(path: Path) -> bool",
+        "doc": "Cắt 'âm rác đầu' của OmniVoice: nếu đoạn tiếng ĐẦU TIÊN ngắn (<0.45s) và có",
+        "kind": "func"
+      },
+      {
+        "line": 683,
+        "name": "_apply_speed",
+        "sig": "_apply_speed(path: Path, speed: float) -> None",
+        "doc": "Đổi tốc độ đọc bằng rubberband giữ formant (fallback atempo). speed>1 nhanh, <1 chậm.",
+        "kind": "func"
+      },
+      {
+        "line": 711,
+        "name": "_run_worker",
+        "sig": "_run_worker(engine: str, ref: Path, ref_text: str, out_dir: Path, speed: float, lines: list, on_prog=None) -> None",
+        "doc": "Chạy worker venv cho `lines`=[(i,text)], ghi out_dir/seg_XXXX.wav. Raise nếu lỗi.",
+        "kind": "func"
+      },
+      {
+        "line": 840,
+        "name": "synth_one",
+        "sig": "synth_one(engine: str, voice: str, text: str, out_path: str | Path, speed: float=1.0) -> Path",
+        "doc": "Đọc 1 câu bằng engine+giọng -> ghi ra out_path (dùng cho nghe thử / đọc lại 1 clip).",
+        "kind": "func"
+      },
+      {
+        "line": 865,
+        "name": "resynth_clip",
+        "sig": "resynth_clip(work_dir: str | Path, i: int, engine: str, voice: str, speed: float=1.0) -> dict",
+        "doc": "Đọc lại DUY NHẤT câu index i -> tts/seg_i.wav + vá tts.json. Trả entry.",
+        "kind": "func"
+      },
+      {
+        "line": 885,
+        "name": "_norm_txt",
+        "sig": "_norm_txt(s: str) -> str",
+        "doc": "Chuẩn hoá để so khớp: thường hoá, bỏ dấu câu, gộp khoảng trắng.",
+        "kind": "func"
+      },
+      {
+        "line": 893,
+        "name": "_similar",
+        "sig": "_similar(a: str, b: str) -> float",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 901,
+        "name": "_asr_check",
+        "sig": "_asr_check(clips_texts: list, device: str=None)",
+        "doc": "Nghe ngược list [(wav_path, expected_vi)] -> [(score, transcript)]. Whisper small.",
+        "kind": "func"
+      },
+      {
+        "line": 920,
+        "name": "verify_and_fix",
+        "sig": "verify_and_fix(work_dir, engine: str, voice: str, speed: float=1.0, min_score: float=0.55, max_retries: int=2) -> dict",
+        "doc": "TỰ KIỂM & SỬA: ASR nghe ngược từng clip, câu nào lệch nhiều so với bản dịch",
+        "kind": "func"
+      },
+      {
+        "line": 975,
+        "name": "_roughness",
+        "sig": "_roughness(path: Path) -> float",
+        "doc": "Độ 'nhám/méo' của clip: HF-ratio ở các khung CÓ CAO ĐỘ (voiced) — loại âm gió",
+        "kind": "func"
+      },
+      {
+        "line": 1003,
+        "name": "fix_glitches",
+        "sig": "fix_glitches(work_dir, engine: str, voice: str, speed: float=1.0, retries: int=2, abs_thresh: float=0.06, rel: float=1.8) -> dict",
+        "doc": "TỰ PHÁT HIỆN & SỬA câu bị vỡ/méo (âm): đo độ nhám voiced-frame, câu nào nhám",
+        "kind": "func"
+      },
+      {
+        "line": 1063,
+        "name": "_prog",
+        "sig": "_prog(m, n_done, total, engine, phase, voice: str | None=None, speed: float | None=None)",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 1079,
+        "name": "_finalize",
+        "sig": "_finalize(m, segments, done, tts_path, out_dir, engine, voice, speed, keys=None)",
+        "doc": "",
+        "kind": "func"
+      }
+    ]
+  },
+  "mux": {
+    "path": "Z:\\PinelineV5\\engines\\mux.py",
+    "count": 5,
+    "funcs": [
+      {
+        "line": 31,
+        "name": "_find_video",
+        "sig": "_find_video(work_dir: Path, m: Manifest) -> Path | None",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 40,
+        "name": "_pick_dub",
+        "sig": "_pick_dub(work_dir: Path, m: Manifest) -> Path",
+        "doc": "Chọn track lồng tiếng: audio ngoài > dub_fit.wav > (tự ghép fit).",
+        "kind": "func"
+      },
+      {
+        "line": 59,
+        "name": "_has_audio",
+        "sig": "_has_audio(path: Path) -> bool",
+        "doc": "Video gốc có luồng audio không (để biết có ducking được không).",
+        "kind": "func"
+      },
+      {
+        "line": 72,
+        "name": "run_mux",
+        "sig": "run_mux(work_dir: str | Path, orig_vol: float=0.35, out_name: str='output.mp4', force: bool=False) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 124,
+        "name": "main",
+        "sig": "main(argv=None)",
+        "doc": "",
+        "kind": "func"
+      }
+    ]
+  },
+  "routes_ui": {
+    "path": "Z:\\PinelineV5\\http_routes\\routes_ui.py",
+    "count": 8,
+    "funcs": [
+      {
+        "line": 29,
+        "name": "find_index",
+        "sig": "find_index() -> Path | None",
+        "doc": "UI chính: static/ui/index3.html (fallback root / cwd).",
+        "kind": "func"
+      },
+      {
+        "line": 43,
+        "name": "index",
+        "sig": "index()",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 56,
+        "name": "ui3",
+        "sig": "ui3()",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 62,
+        "name": "ui4",
+        "sig": "ui4()",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 67,
+        "name": "_html_file",
+        "sig": "_html_file(name: str) -> HTMLResponse",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 81,
+        "name": "ui_hongguo",
+        "sig": "ui_hongguo()",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 86,
+        "name": "ui_hongguo2",
+        "sig": "ui_hongguo2()",
+        "doc": "Hongguo2 — IA 2 cột Discover | Ops (không thay hongguo.html).",
+        "kind": "func"
+      },
+      {
+        "line": 92,
+        "name": "ui_workflow",
+        "sig": "ui_workflow()",
+        "doc": "",
+        "kind": "func"
+      }
+    ]
+  },
+  "asr": {
+    "path": "Z:\\PinelineV5\\engines\\asr\\asr.py",
+    "count": 13,
+    "funcs": [
+      {
+        "line": 46,
+        "name": "_audio_marker",
+        "sig": "_audio_marker(wav: Path) -> Path",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 50,
+        "name": "_src_id",
+        "sig": "_src_id(src: Path) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 56,
+        "name": "extract_audio",
+        "sig": "extract_audio(src: str | Path, out_wav: str | Path) -> str",
+        "doc": "Tách audio về 16kHz mono PCM — chuẩn đầu vào Whisper. Ghi .partial rồi replace + marker nguồn.",
+        "kind": "func"
+      },
+      {
+        "line": 78,
+        "name": "_wav_seconds",
+        "sig": "_wav_seconds(p: Path) -> float",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 91,
+        "name": "_probe_seconds",
+        "sig": "_probe_seconds(p: Path) -> float",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 100,
+        "name": "audio_wav_stale",
+        "sig": "audio_wav_stale(src: str | Path, wav: str | Path, keep_legacy: bool=False) -> bool",
+        "doc": "audio.wav có sẵn không dùng được: rỗng, marker khác nguồn / khác filter mốc, hoặc (chưa có",
+        "kind": "func"
+      },
+      {
+        "line": 130,
+        "name": "ensure_audio_wav",
+        "sig": "ensure_audio_wav(src: str | Path, wav: str | Path, force: bool=False, keep_legacy: bool=False) -> bool",
+        "doc": "Trích audio.wav khi thiếu / hỏng / khác nguồn (hoặc force). True nếu vừa trích.",
+        "kind": "func"
+      },
+      {
+        "line": 144,
+        "name": "resolve_asr_source",
+        "sig": "resolve_asr_source(work_dir: str | Path, video_src: str | Path | None=None, force_demucs: bool=False, device: str='cuda') -> Path",
+        "doc": "Xác định nguồn audio sạch và chuẩn xác cho ASR.",
+        "kind": "func"
+      },
+      {
+        "line": 197,
+        "name": "_cut_wav_from",
+        "sig": "_cut_wav_from(src_wav: Path, out_wav: Path, start_sec: float) -> None",
+        "doc": "Cắt phần còn lại từ start_sec (resume ASR giữa chừng).",
+        "kind": "func"
+      },
+      {
+        "line": 206,
+        "name": "pick_device",
+        "sig": "pick_device(device: str) -> tuple[str, str]",
+        "doc": "Chọn cuda nếu có GPU, không thì cpu. Trả (device, compute_type).",
+        "kind": "func"
+      },
+      {
+        "line": 219,
+        "name": "_salvage_asr",
+        "sig": "_salvage_asr(m: Manifest, asr_path: Path, rows: list, wav: Path | None, total: float, err: BaseException | None=None) -> None",
+        "doc": "Crash/treo: giữ asr.json đã có, status pending để bấm Tiếp tục.",
+        "kind": "func"
+      },
+      {
+        "line": 247,
+        "name": "run_asr",
+        "sig": "run_asr(work_dir: str | Path, model_size: str='large-v3', lang: str='zh', device: str='auto', compute_type: str | None=None, force: bool=False) -> dict",
+        "doc": "",
+        "kind": "func"
+      },
+      {
+        "line": 421,
+        "name": "main",
+        "sig": "main(argv=None)",
+        "doc": "",
+        "kind": "func"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1226 @@
+{
+  "job_queue": [
+    {
+      "name": "get_job_info",
+      "doc": "Metadata hàng chờ: ưu tiên films.db (series_ui/season_ui), fallback manifest.",
+      "line": 23
+    },
+    {
+      "name": "get_jobs_info",
+      "doc": "Batch metadata cho nhiều job — 1 query DB + fallback file từng id thiếu.",
+      "line": 83
+    },
+    {
+      "name": "job_sort_key",
+      "doc": "Khóa sắp xếp: (group_id|series_norm, season P1..Pn, title).",
+      "line": 108
+    },
+    {
+      "name": "_reset_for_tests",
+      "doc": "Chỉ dùng trong pytest.",
+      "line": 126
+    },
+    {
+      "name": "queue_busy",
+      "doc": "True nếu worker đang chạy hoặc còn job trong hàng — dùng GPU gate heal/watch.",
+      "line": 223
+    },
+    {
+      "name": "current_detail",
+      "doc": "Stage/progress/ETA thô — đọc manifest của đúng 1 job (live).",
+      "line": 229
+    },
+    {
+      "name": "build_queue_items",
+      "doc": "Metadata pending — 1 batch films.db (+ fallback), không N lần parse manifest.",
+      "line": 285
+    },
+    {
+      "name": "queue_state",
+      "doc": "Trạng thái hàng chờ. enrich=True → queue_items/current_info qua batch DB.",
+      "line": 307
+    },
+    {
+      "name": "http_queue_state",
+      "doc": "Payload GET /api/queue/jobs: state + live current_detail + labels ngắn.",
+      "line": 331
+    },
+    {
+      "name": "queue_sort",
+      "doc": "Sắp xếp lại các job đang chờ trong hàng:",
+      "line": 402
+    },
+    {
+      "name": "queue_move",
+      "doc": "Di chuyển vị trí của 1 job trong hàng chờ:",
+      "line": 419
+    },
+    {
+      "name": "queue_reorder",
+      "doc": "Gán lại toàn bộ thứ tự cho hàng chờ theo danh sách client gửi.",
+      "line": 449
+    },
+    {
+      "name": "queue_add_group",
+      "doc": "Enqueue mọi member của group theo group_index tăng dần.",
+      "line": 461
+    },
+    {
+      "name": "queue_remove",
+      "doc": "Bỏ job khỏi hàng chờ (không stop current).",
+      "line": 508
+    },
+    {
+      "name": "queue_update_opts",
+      "doc": "Đổi opts của job ĐANG CHỜ tại chỗ (giữ thứ tự, không đụng current) — thay cho remove+add.",
+      "line": 521
+    },
+    {
+      "name": "queue_stop",
+      "doc": "Clear queue + báo worker dừng; gọi _stop_job(current) nếu server đã wire.",
+      "line": 541
+    },
+    {
+      "name": "set_runner",
+      "doc": "(no docstring)",
+      "line": 149
+    },
+    {
+      "name": "is_wired_done",
+      "doc": "(no docstring)",
+      "line": 154
+    },
+    {
+      "name": "_persist_path",
+      "doc": "(no docstring)",
+      "line": 167
+    },
+    {
+      "name": "_save",
+      "doc": "(no docstring)",
+      "line": 171
+    },
+    {
+      "name": "_load",
+      "doc": "(no docstring)",
+      "line": 188
+    },
+    {
+      "name": "_hist_push",
+      "doc": "(no docstring)",
+      "line": 216
+    },
+    {
+      "name": "queue_add",
+      "doc": "(no docstring)",
+      "line": 350
+    },
+    {
+      "name": "queue_front",
+      "doc": "(no docstring)",
+      "line": 500
+    },
+    {
+      "name": "queue_clear",
+      "doc": "(no docstring)",
+      "line": 533
+    }
+  ],
+  "manifest": [
+    {
+      "name": "_merge3",
+      "doc": "Gộp 3 chiều dict JSON. Key mình không đổi so với lúc load → lấy bản đĩa (người khác",
+      "line": 52
+    },
+    {
+      "name": "_xproc_lock",
+      "doc": "Khoá liên tiến trình (server + subprocess asr/tts cùng ghi). Không lấy được thì vẫn ghi",
+      "line": 77
+    },
+    {
+      "name": "Manifest.update",
+      "doc": "Đọc lại từ đĩa → fn(data) → ghi, trong khoá (thread + liên tiến trình).",
+      "line": 135
+    },
+    {
+      "name": "Manifest._write_locked",
+      "doc": "Ghi atomic; gọi khi đang giữ _lock_for(self.path).",
+      "line": 164
+    },
+    {
+      "name": "Manifest.mark_running",
+      "doc": "Giữ config cũ (voice/speed/engine/n_done...) — chỉ đổi status/started_at.",
+      "line": 208
+    },
+    {
+      "name": "_now",
+      "doc": "(no docstring)",
+      "line": 26
+    },
+    {
+      "name": "_lock_for",
+      "doc": "(no docstring)",
+      "line": 39
+    },
+    {
+      "name": "Manifest.__init__",
+      "doc": "(no docstring)",
+      "line": 97
+    },
+    {
+      "name": "Manifest.load",
+      "doc": "(no docstring)",
+      "line": 104
+    },
+    {
+      "name": "Manifest._read_disk",
+      "doc": "(no docstring)",
+      "line": 124
+    },
+    {
+      "name": "Manifest.save",
+      "doc": "(no docstring)",
+      "line": 148
+    },
+    {
+      "name": "Manifest.stage",
+      "doc": "(no docstring)",
+      "line": 201
+    },
+    {
+      "name": "Manifest.is_done",
+      "doc": "(no docstring)",
+      "line": 204
+    },
+    {
+      "name": "Manifest.mark_done",
+      "doc": "(no docstring)",
+      "line": 220
+    },
+    {
+      "name": "Manifest.mark_failed",
+      "doc": "(no docstring)",
+      "line": 232
+    }
+  ],
+  "download": [
+    {
+      "name": "_kill_job_aria2c",
+      "doc": "Kill tiến trình aria2c đang tải cho ĐÚNG job này (nhận diện qua job_id/đường",
+      "line": 69
+    },
+    {
+      "name": "_aria2_downloaded",
+      "doc": "Byte ĐÃ TẢI THẬT theo file điều khiển .aria2. Khi tải đa kết nối, file .part",
+      "line": 91
+    },
+    {
+      "name": "_clean_incomplete_fragments",
+      "doc": "Xoá RIÊNG các mảnh tải DỞ (file .part + control .aria2) để tải lại sạch bằng",
+      "line": 113
+    },
+    {
+      "name": "_delete_sources",
+      "doc": "Xoá mọi source.* ; trả True nếu SẠCH (không còn file nào kẹt/khoá).",
+      "line": 127
+    },
+    {
+      "name": "_format_sel",
+      "doc": "Selector yt-dlp. max_height giới hạn chiều cao; hevc=True ưu tiên H.265 cùng độ phân giải.",
+      "line": 141
+    },
+    {
+      "name": "_cfg_max_height",
+      "doc": "DOWNLOAD_MAX_HEIGHT từ env/config (vd 720/480). 0/off = không giới hạn.",
+      "line": 172
+    },
+    {
+      "name": "_cfg_prefer_hevc",
+      "doc": "DOWNLOAD_PREFER_HEVC=1 → ưu tiên H.265 cùng độ phân giải (file nhẹ, CDN đỡ đứt).",
+      "line": 190
+    },
+    {
+      "name": "_auto_height_for_duration",
+      "doc": "Phim rất dài (Bilibili multi-season) → 720p AVC dễ ~3GB+, CDN hay đứt.",
+      "line": 202
+    },
+    {
+      "name": "_probe_duration",
+      "doc": "Lấy duration nhanh (không tải) để chọn format.",
+      "line": 216
+    },
+    {
+      "name": "normalize_url",
+      "doc": "Chuyển link Bilibili kiểu mới về format yt-dlp hiểu (từ code Galaxy).",
+      "line": 243
+    },
+    {
+      "name": "job_id_from_url",
+      "doc": "Job id mặc định = hash URL. Chạy lại cùng URL -> cùng thư mục -> resume.",
+      "line": 252
+    },
+    {
+      "name": "find_cookie_file",
+      "doc": "Tìm file cookie theo nền tảng trong cookies_dir (vd bilibili_cookies.txt).",
+      "line": 257
+    },
+    {
+      "name": "get_aria2c_path",
+      "doc": "Tìm aria2c -> trả ĐƯỜNG DẪN TUYỆT ĐỐI (yt-dlp tìm external_downloader trong",
+      "line": 271
+    },
+    {
+      "name": "apply_speed_opts",
+      "doc": "Tải mảnh song song + aria2c nếu có (args tune từ code Galaxy).",
+      "line": 281
+    },
+    {
+      "name": "download_video",
+      "doc": "Tải 1 video về work_dir. Trả về dict trạng thái stage (video_path + metadata).",
+      "line": 305
+    },
+    {
+      "name": "_request_stop",
+      "doc": "(no docstring)",
+      "line": 54
+    },
+    {
+      "name": "_is_stopped",
+      "doc": "(no docstring)",
+      "line": 59
+    },
+    {
+      "name": "_clear_stop",
+      "doc": "(no docstring)",
+      "line": 64
+    },
+    {
+      "name": "detect_platform",
+      "doc": "(no docstring)",
+      "line": 232
+    },
+    {
+      "name": "main",
+      "doc": "(no docstring)",
+      "line": 659
+    }
+  ],
+  "asr": [
+    {
+      "name": "extract_audio",
+      "doc": "Tách audio về 16kHz mono PCM — chuẩn đầu vào Whisper. Ghi .partial rồi replace + marker nguồn.",
+      "line": 56
+    },
+    {
+      "name": "audio_wav_stale",
+      "doc": "audio.wav có sẵn không dùng được: rỗng, marker khác nguồn / khác filter mốc, hoặc (chưa có",
+      "line": 100
+    },
+    {
+      "name": "ensure_audio_wav",
+      "doc": "Trích audio.wav khi thiếu / hỏng / khác nguồn (hoặc force). True nếu vừa trích.",
+      "line": 130
+    },
+    {
+      "name": "resolve_asr_source",
+      "doc": "Xác định nguồn audio sạch và chuẩn xác cho ASR.",
+      "line": 144
+    },
+    {
+      "name": "_cut_wav_from",
+      "doc": "Cắt phần còn lại từ start_sec (resume ASR giữa chừng).",
+      "line": 197
+    },
+    {
+      "name": "pick_device",
+      "doc": "Chọn cuda nếu có GPU, không thì cpu. Trả (device, compute_type).",
+      "line": 206
+    },
+    {
+      "name": "_salvage_asr",
+      "doc": "Crash/treo: giữ asr.json đã có, status pending để bấm Tiếp tục.",
+      "line": 219
+    },
+    {
+      "name": "_audio_marker",
+      "doc": "(no docstring)",
+      "line": 46
+    },
+    {
+      "name": "_src_id",
+      "doc": "(no docstring)",
+      "line": 50
+    },
+    {
+      "name": "_wav_seconds",
+      "doc": "(no docstring)",
+      "line": 78
+    },
+    {
+      "name": "_probe_seconds",
+      "doc": "(no docstring)",
+      "line": 91
+    },
+    {
+      "name": "run_asr",
+      "doc": "(no docstring)",
+      "line": 247
+    },
+    {
+      "name": "main",
+      "doc": "(no docstring)",
+      "line": 421
+    }
+  ],
+  "translate": [
+    {
+      "name": "_tmodel",
+      "doc": "TRANSLATE_MODEL đọc lúc gọi (server import module 1 lần — MODEL ở trên bị đóng băng).",
+      "line": 59
+    },
+    {
+      "name": "_meaning_rules",
+      "doc": "Quy tắc chống dịch đen / lệch ngữ cảnh (lồng tiếng phim).",
+      "line": 84
+    },
+    {
+      "name": "_style_rules",
+      "doc": "Quy tắc Manhua / short-drama: cứng Hán Việt + mềm hiện đại + xưng hô.",
+      "line": 147
+    },
+    {
+      "name": "_character_rules",
+      "doc": "Chống nhầm nhân vật / sai giới tính khi dịch thoại.",
+      "line": 179
+    },
+    {
+      "name": "_is_ancient_fantasy_genre",
+      "doc": "True khi phương án/genre thuộc tu tiên·cổ trang·wuxia·xianxia (không mixed đô thị).",
+      "line": 201
+    },
+    {
+      "name": "_mixed_address_rules",
+      "doc": "Đô thị dị năng + võ/KH: xưng hô hiện đại + cổ phong Hán Việt.",
+      "line": 239
+    },
+    {
+      "name": "_ancient_address_rules",
+      "doc": "Chỉ inject khi genre tu tiên/cổ — không áp cho đô thị hiện đại.",
+      "line": 260
+    },
+    {
+      "name": "_translate_rules",
+      "doc": "Gộp nghĩa + văn phong + nhân vật (+ xưng hô theo genre).",
+      "line": 281
+    },
+    {
+      "name": "_ocr_name_hints",
+      "doc": "Tên/chữ trên hình từ ocr.json (nếu có) — gợi ý cho PLAN.",
+      "line": 290
+    },
+    {
+      "name": "_resolve_translate_mode",
+      "doc": "Trả 'oneshot' | 'batch'.",
+      "line": 317
+    },
+    {
+      "name": "_has_cjk",
+      "doc": "Còn ký tự Hán trong bản dịch = model dịch sót/hỏng (đặc biệt model nhỏ local).",
+      "line": 345
+    },
+    {
+      "name": "_salvage_mixed_vi",
+      "doc": "Cứu VI lẫn Hán (vd «Đạt được 100% 增幅.») — không thì trả '' để vá lại.",
+      "line": 373
+    },
+    {
+      "name": "build_plan",
+      "doc": "LLM đọc toàn transcript -> phương án dịch: nhân vật, thuật ngữ, XƯNG HÔ, PHÂN CẢNH, tone.",
+      "line": 420
+    },
+    {
+      "name": "_plan_block",
+      "doc": "Đổ plan ra text nhét vào mọi prompt dịch. CHỐNG LỖI: model đôi khi trả",
+      "line": 588
+    },
+    {
+      "name": "_plan_block_for_qa",
+      "doc": "Plan block gọn cho pronoun-QA / GPT vá đỏ — chỉ genre+style+pronouns.",
+      "line": 700
+    },
+    {
+      "name": "_resolve_scene_context",
+      "doc": "Xác định phân cảnh hiện tại của lô câu thoại (Scene-based context injection).",
+      "line": 774
+    },
+    {
+      "name": "_norm_zh_cue",
+      "doc": "Chuẩn hóa cue ZH để khớp lock (bỏ dấu câu/space).",
+      "line": 867
+    },
+    {
+      "name": "ensure_hard_terms",
+      "doc": "Gắn seed chengyu/taunt vào glossary.terms (không đè bản tay đã có).",
+      "line": 875
+    },
+    {
+      "name": "hard_term_lock_map",
+      "doc": "zh_norm → vi bắt buộc (từ glossary type chengyu/idiom/combat_taunt/lock + seed).",
+      "line": 925
+    },
+    {
+      "name": "apply_hard_term_locks",
+      "doc": "Post-pass: cue ZH khớp lock → ghi đè VI (chuẩn, không phụ thuộc LLM).",
+      "line": 964
+    },
+    {
+      "name": "normalize_vi_thousands",
+      "doc": "Dấu nghìn chuẩn Việt: 31 000 / 31,000 → 31.000.",
+      "line": 1011
+    },
+    {
+      "name": "apply_style_polish",
+      "doc": "Post-pass deterministic: sửa calque / văn mẫu thường gặp (mixed short-drama).",
+      "line": 1027
+    },
+    {
+      "name": "_is_modernish_genre",
+      "doc": "Đô thị / mixed / hiện đại — cấm Ta–Ngươi cổ.",
+      "line": 1278
+    },
+    {
+      "name": "_char_aliases",
+      "doc": "vi_name_lower → {zh, vi, aliases…} để khớp tên trong câu.",
+      "line": 1302
+    },
+    {
+      "name": "_detox_modern_pronouns",
+      "doc": "Ép Ta/Ngươi → Tôi/Cậu cho thoại đô thị (giữ «ông ta/cô ta/chúng ta»).",
+      "line": 1336
+    }
+  ],
+  "pronoun_consistency": [
+    {
+      "name": "analyze_mode",
+      "doc": "file = upload SRT ZH 1 lần (Aurora /v1/files). fast = mẫu+lô. full = quét hết.",
+      "line": 61
+    },
+    {
+      "name": "export_zh_lines",
+      "doc": "Chuẩn hoá [{i, zh}] từ asr segments hoặc script rows.",
+      "line": 110
+    },
+    {
+      "name": "write_zh_srt",
+      "doc": "Xuất sub.zh.srt để Aurora upload (API.md: POST /v1/files).",
+      "line": 138
+    },
+    {
+      "name": "analyze_via_srt_file",
+      "doc": "Upload sub.zh.srt → GPT đọc 1 lần → glossary pronouns (Aurora file QA).",
+      "line": 193
+    },
+    {
+      "name": "select_analyze_lines",
+      "doc": "fast: phủ đầu/giữa/cuối + câu có hô ngữ — ít lô hơn full scan.",
+      "line": 281
+    },
+    {
+      "name": "_slim_memory",
+      "doc": "Giảm token gửi Aurora mỗi lô.",
+      "line": 323
+    },
+    {
+      "name": "analyze_full_zh",
+      "doc": "A) Quét toàn bộ ZH theo lô + memory → cập nhật plan + lock pronouns.",
+      "line": 430
+    },
+    {
+      "name": "lock_banner",
+      "doc": "Block inject vào plan_block / batch khi đã lock.",
+      "line": 597
+    },
+    {
+      "name": "review_lock_rules",
+      "doc": "Prompt ép 31B review: khi đã lock thì CẤM đổi self/call.",
+      "line": 623
+    },
+    {
+      "name": "fix_preserves_locked_register",
+      "doc": "True nếu bản sửa không đổi thanh ngữ chính so với nháp (khi đang lock).",
+      "line": 639
+    },
+    {
+      "name": "filter_review_fixes_for_lock",
+      "doc": "Khi pronouns_locked: loại fix làm đổi thanh ngữ so với vi_nhap.",
+      "line": 658
+    },
+    {
+      "name": "ledger_from_prev",
+      "doc": "B) Ledger từ vài câu VI trước — nhắc model giữ thanh ngữ đang dùng.",
+      "line": 681
+    },
+    {
+      "name": "find_pronoun_jumps",
+      "doc": "C) QA: trong cửa sổ gần nhau, vừa có {anh,em} vừa có {ông} ngôi hô / tôi lệch kiểu.",
+      "line": 718
+    },
+    {
+      "name": "ensure_analyze_before_translate",
+      "doc": "Gọi từ translate.run_translate sau khi có plan.",
+      "line": 761
+    },
+    {
+      "name": "run_post_translate_consistency",
+      "doc": "C+D sau dịch/polish: post-pass + QA jumps + GPT vá đỏ.",
+      "line": 784
+    },
+    {
+      "name": "_cfg",
+      "doc": "(no docstring)",
+      "line": 30
+    },
+    {
+      "name": "analyze_enabled",
+      "doc": "(no docstring)",
+      "line": 38
+    },
+    {
+      "name": "analyze_model",
+      "doc": "(no docstring)",
+      "line": 43
+    },
+    {
+      "name": "chunk_size",
+      "doc": "(no docstring)",
+      "line": 54
+    },
+    {
+      "name": "max_chunks",
+      "doc": "(no docstring)",
+      "line": 66
+    },
+    {
+      "name": "min_chunks_before_stop",
+      "doc": "(no docstring)",
+      "line": 73
+    },
+    {
+      "name": "early_stop_enabled",
+      "doc": "(no docstring)",
+      "line": 80
+    },
+    {
+      "name": "is_pronouns_locked",
+      "doc": "(no docstring)",
+      "line": 85
+    },
+    {
+      "name": "mark_locked",
+      "doc": "(no docstring)",
+      "line": 94
+    },
+    {
+      "name": "write_zh_export",
+      "doc": "(no docstring)",
+      "line": 128
+    }
+  ],
+  "clone_tts": [
+    {
+      "name": "resolve_engine_python",
+      "doc": "Tìm python.exe của engine. Config sai path (thường sau install) -> thử chỗ mặc định.",
+      "line": 55
+    },
+    {
+      "name": "list_clone_voices",
+      "doc": "Tên các giọng clone đã có ref audio hợp lệ.",
+      "line": 97
+    },
+    {
+      "name": "voice_ref_text",
+      "doc": "(ref_path, ref_text) của 1 giọng, hoặc None.",
+      "line": 116
+    },
+    {
+      "name": "enroll_voice",
+      "doc": "Đăng ký giọng clone vào voices/f5_voices.json (VieNeu + OmniVoice dùng chung).",
+      "line": 127
+    },
+    {
+      "name": "_is_trivial_vi",
+      "doc": "True nếu không có chữ thật (vd ',', '...', '!!!') — không nên gọi TTS.",
+      "line": 149
+    },
+    {
+      "name": "vi_for_tts",
+      "doc": "Chuẩn bị chữ cho VieNeu/Omni: gộp số có dấu nghìn để đọc đúng.",
+      "line": 155
+    },
+    {
+      "name": "_write_silence_wav",
+      "doc": "Ghi wav im lặng đúng độ dài timeline (tối thiểu 0.15s để qua kiểm tra dur).",
+      "line": 180
+    },
+    {
+      "name": "_silence_entry",
+      "doc": "Placeholder im lặng cho câu vô nghĩa / wav hỏng — đủ slot timeline, không báo thiếu.",
+      "line": 195
+    },
+    {
+      "name": "_dur",
+      "doc": "Độ dài wav (giây). Ưu tiên wave; fallback ffprobe.",
+      "line": 203
+    },
+    {
+      "name": "_entry_from_wav",
+      "doc": "Tạo entry tts.json từ file wav đã có. None nếu file hỏng/quá ngắn.",
+      "line": 221
+    },
+    {
+      "name": "_drop_runaway_from_done",
+      "doc": "Resume/recheck: bỏ clip hú khỏi done + xóa wav → TTS sẽ đọc lại.",
+      "line": 239
+    },
+    {
+      "name": "_pack_clip",
+      "doc": "Postprocess + entry. None nếu hỏng. Caller xử lý runaway.",
+      "line": 258
+    },
+    {
+      "name": "_recheck_pack_and_retry",
+      "doc": "Đóng gói todo vừa TTS; runaway -> xóa -> retry tối đa N lần -> silence slot.",
+      "line": 267
+    },
+    {
+      "name": "_scan_done_from_disk",
+      "doc": "Resume: nhận diện seg_XXXX.wav đã ghi (sau khi Dừng) dù chưa kịp ghi tts.json.",
+      "line": 371
+    },
+    {
+      "name": "_salvage_progress",
+      "doc": "Khi dừng/crash: gom wav đã có -> tts.json, status pending (để bấm Tiếp tục).",
+      "line": 403
+    },
+    {
+      "name": "_cleanup_audio",
+      "doc": "Làm sạch clip gen ra:",
+      "line": 616
+    },
+    {
+      "name": "_trim_onset",
+      "doc": "Cắt 'âm rác đầu' của OmniVoice: nếu đoạn tiếng ĐẦU TIÊN ngắn (<0.45s) và có",
+      "line": 646
+    },
+    {
+      "name": "_apply_speed",
+      "doc": "Đổi tốc độ đọc bằng rubberband giữ formant (fallback atempo). speed>1 nhanh, <1 chậm.",
+      "line": 683
+    },
+    {
+      "name": "_run_worker",
+      "doc": "Chạy worker venv cho `lines`=[(i,text)], ghi out_dir/seg_XXXX.wav. Raise nếu lỗi.",
+      "line": 711
+    },
+    {
+      "name": "synth_one",
+      "doc": "Đọc 1 câu bằng engine+giọng -> ghi ra out_path (dùng cho nghe thử / đọc lại 1 clip).",
+      "line": 840
+    },
+    {
+      "name": "resynth_clip",
+      "doc": "Đọc lại DUY NHẤT câu index i -> tts/seg_i.wav + vá tts.json. Trả entry.",
+      "line": 865
+    },
+    {
+      "name": "_norm_txt",
+      "doc": "Chuẩn hoá để so khớp: thường hoá, bỏ dấu câu, gộp khoảng trắng.",
+      "line": 885
+    },
+    {
+      "name": "_asr_check",
+      "doc": "Nghe ngược list [(wav_path, expected_vi)] -> [(score, transcript)]. Whisper small.",
+      "line": 901
+    },
+    {
+      "name": "verify_and_fix",
+      "doc": "TỰ KIỂM & SỬA: ASR nghe ngược từng clip, câu nào lệch nhiều so với bản dịch",
+      "line": 920
+    },
+    {
+      "name": "_roughness",
+      "doc": "Độ 'nhám/méo' của clip: HF-ratio ở các khung CÓ CAO ĐỘ (voiced) — loại âm gió",
+      "line": 975
+    }
+  ],
+  "mux": [
+    {
+      "name": "_pick_dub",
+      "doc": "Chọn track lồng tiếng: audio ngoài > dub_fit.wav > (tự ghép fit).",
+      "line": 40
+    },
+    {
+      "name": "_has_audio",
+      "doc": "Video gốc có luồng audio không (để biết có ducking được không).",
+      "line": 59
+    },
+    {
+      "name": "_find_video",
+      "doc": "(no docstring)",
+      "line": 31
+    },
+    {
+      "name": "run_mux",
+      "doc": "(no docstring)",
+      "line": 72
+    },
+    {
+      "name": "main",
+      "doc": "(no docstring)",
+      "line": 124
+    }
+  ],
+  "split_parts": [
+    {
+      "name": "free_bytes",
+      "doc": "Dung lượng trống trên volume chứa `path` (tạo parent nếu chưa có).",
+      "line": 41
+    },
+    {
+      "name": "estimate_split_need_bytes",
+      "doc": "Ước lượng chỗ cần cho split copy-mode (= gần bằng size nguồn + margin).",
+      "line": 50
+    },
+    {
+      "name": "probe_duration",
+      "doc": "Lấy thời lượng video tính bằng giây.",
+      "line": 74
+    },
+    {
+      "name": "calculate_part_plan",
+      "doc": "Tính toán danh sách (start_sec, end_sec) cho từng part.",
+      "line": 90
+    },
+    {
+      "name": "find_best_cut_point",
+      "doc": "Tìm điểm khoảng lặng (silence) gần nhất với target_cut_sec trong phạm vi ±search_radius_sec.",
+      "line": 111
+    },
+    {
+      "name": "compute_smart_plan",
+      "doc": "Tính plan hoàn chỉnh có điểm cắt thông minh (tránh đứt câu thoại).",
+      "line": 152
+    },
+    {
+      "name": "split_video_to_parts",
+      "doc": "Cắt video thành các part theo smart plan (lossless copy).",
+      "line": 194
+    },
+    {
+      "name": "_hardlink_alias",
+      "doc": "Tạo alias cùng inode với primary. Không bao giờ copy2 (tránh nhân đôi GB).",
+      "line": 331
+    },
+    {
+      "name": "cleanup_split_parts_dir",
+      "doc": "Xoá thư mục `_split_parts` dở (orphan GB sau fail / ENOSPC).",
+      "line": 361
+    },
+    {
+      "name": "merge_parts_to_full",
+      "doc": "Nối danh sách các part đã render hoàn chỉnh thành 1 file full (lossless copy 30s).",
+      "line": 373
+    },
+    {
+      "name": "split_job_to_subjobs",
+      "doc": "Tự động chia một job video dài thành các sub-jobs (Part 1, Part 2...).",
+      "line": 412
+    },
+    {
+      "name": "merge_job_parts",
+      "doc": "Kiểm tra các sub-job của job_id, nếu tất cả đã render xong thì ghép thành output_full.mp4.",
+      "line": 576
+    },
+    {
+      "name": "is_split_subjob",
+      "doc": "Part đã tách (…_p01) — không auto-split lần nữa.",
+      "line": 675
+    },
+    {
+      "name": "maybe_auto_split_job",
+      "doc": "Tự detect thời lượng video sau khi có source:",
+      "line": 688
+    },
+    {
+      "name": "try_auto_merge_parent",
+      "doc": "Sau khi một part mux xong: nếu mọi part done → merge output_full trên job cha.",
+      "line": 792
+    },
+    {
+      "name": "_is_disk_full_text",
+      "doc": "(no docstring)",
+      "line": 36
+    },
+    {
+      "name": "assert_enough_space_for_split",
+      "doc": "(no docstring)",
+      "line": 56
+    },
+    {
+      "name": "_unlink_quiet",
+      "doc": "(no docstring)",
+      "line": 66
+    },
+    {
+      "name": "main",
+      "doc": "(no docstring)",
+      "line": 818
+    }
+  ],
+  "hongguo_bridge": [
+    {
+      "name": "_save_merge_state",
+      "doc": "Gọi khi đang giữ _merge_lock.",
+      "line": 67
+    },
+    {
+      "name": "season_stem",
+      "doc": "Bỏ hậu tố mùa để gom series cùng tên gốc.",
+      "line": 121
+    },
+    {
+      "name": "franchise_core",
+      "doc": "Lấy tên thương hiệu/series chuẩn để nhóm mùa chính xác mà không gộp nhầm thể loại (như 高武：, 游戏入侵：).",
+      "line": 136
+    },
+    {
+      "name": "season_timeline_key",
+      "doc": "Thứ tự phát hành ≈ series_id (snowflake). Phụ: cung/第N季 để ổn định khi thiếu id.",
+      "line": 167
+    },
+    {
+      "name": "order_franchise_items",
+      "doc": "Sort theo thời gian phát hành (series_id) + gắn SS1→SSN.",
+      "line": 188
+    },
+    {
+      "name": "web_search_hongguoduanju",
+      "doc": "Search trên hongguoduanju.com — thường ra đủ 第N季 mà /dl/search sót.",
+      "line": 271
+    },
+    {
+      "name": "_ingest_web_into",
+      "doc": "Ingest web results; nếu có core_filter chỉ giữ title cùng thương hiệu.",
+      "line": 334
+    },
+    {
+      "name": "web_expand_queries",
+      "doc": "Query web tối thiểu nhưng phủ cao: exact + stem + vài mốc mùa.",
+      "line": 363
+    },
+    {
+      "name": "web_expand_into",
+      "doc": "Chạy song song vài web search → gộp vào by_id (lọc theo core).",
+      "line": 389
+    },
+    {
+      "name": "lookup_series",
+      "doc": "Lấy meta từ series_id (khi search không ra).",
+      "line": 447
+    },
+    {
+      "name": "resolve_text",
+      "doc": "Parse link/share → series. Nhận URL detail/player hoặc series_id thuần.",
+      "line": 463
+    },
+    {
+      "name": "_fill_missing_from_cache",
+      "doc": "Với stem gốc, dò cache/seed cho 第1–15季 nếu search bỏ sót.",
+      "line": 511
+    },
+    {
+      "name": "expand_queries",
+      "doc": "Sinh thêm query để bắt mùa đổi tên (灵界篇/仙界篇…).",
+      "line": 549
+    },
+    {
+      "name": "_read_process_env_win",
+      "doc": "Đọc môi trường process khác (x64) qua PEB — lấy HG_UI_TOKEN.",
+      "line": 589
+    },
+    {
+      "name": "_hongguo_pids",
+      "doc": "PID process Hongguo Downloader (pythonw trong thư mục cài đặt).",
+      "line": 645
+    },
+    {
+      "name": "discover_ui_token",
+      "doc": "Lấy HG_UI_TOKEN: env Pineline → cache → env process Downloader.",
+      "line": 663
+    },
+    {
+      "name": "rank",
+      "doc": "Bảng hot giống app Hongguo Downloader (GET /dl/rank).",
+      "line": 968
+    },
+    {
+      "name": "genres",
+      "doc": "Lấy danh sách các thể loại phim từ Hongguo Catalog Explorer.",
+      "line": 1023
+    },
+    {
+      "name": "catalog",
+      "doc": "Khám phá kho phim Hongguo Catalog (Explorer).",
+      "line": 1040
+    },
+    {
+      "name": "rank_episodes",
+      "doc": "Bổ sung số tập cho list rank (POST /dl/rank-episodes).",
+      "line": 1104
+    },
+    {
+      "name": "preview_series",
+      "doc": "URL MP4 tập miễn phí (hongguoduanju) — GET /dl/preview. Không cần tải về.",
+      "line": 1113
+    },
+    {
+      "name": "inspect_series_folder",
+      "doc": "Quét folder series: có file (merged)? còn bao nhiêu mảnh tập?",
+      "line": 1164
+    },
+    {
+      "name": "safe_child",
+      "doc": "root/name chỉ khi name là 1 cấp thư mục ngay dưới root.",
+      "line": 1205
+    },
+    {
+      "name": "resolve_preview_path",
+      "doc": "Đường dẫn file xem thử trong thư viện (merged hoặc tập đầu).",
+      "line": 1220
+    },
+    {
+      "name": "resolve_poster_path",
+      "doc": "poster.jpg/png trong folder series (local).",
+      "line": 1233
+    }
+  ],
+  "routes_ui": [
+    {
+      "name": "find_index",
+      "doc": "UI chính: static/ui/index3.html (fallback root / cwd).",
+      "line": 29
+    },
+    {
+      "name": "ui_hongguo2",
+      "doc": "Hongguo2 — IA 2 cột Discover | Ops (không thay hongguo.html).",
+      "line": 86
+    },
+    {
+      "name": "index",
+      "doc": "(no docstring)",
+      "line": 43
+    },
+    {
+      "name": "ui3",
+      "doc": "(no docstring)",
+      "line": 56
+    },
+    {
+      "name": "ui4",
+      "doc": "(no docstring)",
+      "line": 62
+    },
+    {
+      "name": "_html_file",
+      "doc": "(no docstring)",
+      "line": 67
+    },
+    {
+      "name": "ui_hongguo",
+      "doc": "(no docstring)",
+      "line": 81
+    },
+    {
+      "name": "ui_workflow",
+      "doc": "(no docstring)",
+      "line": 92
+    }
+  ],
+  "server": [
+    {
+      "name": "_maybe_auto_split_guarded",
+      "doc": "Wrap maybe_auto_split_job với lock chống gọi chồng cùng job_id.",
+      "line": 80
+    },
+    {
+      "name": "_job_any_busy",
+      "doc": "Trả tên stage đang claim, hoặc None.",
+      "line": 162
+    },
+    {
+      "name": "_claim_stage",
+      "doc": "Giữ chỗ trước khi submit thread — chống bấm 2-3 lần tạo nhiều task.",
+      "line": 171
+    },
+    {
+      "name": "_manifest_running",
+      "doc": "Stage đang 'running' trong manifest (nếu có).",
+      "line": 217
+    },
+    {
+      "name": "_heal_stale_running",
+      "doc": "Sửa stage status=running mồ côi (kill/crash/skip không mark_done).",
+      "line": 309
+    },
+    {
+      "name": "_next_incomplete_stage",
+      "doc": "Bước WIRED đầu tiên chưa done (để mark_running đúng — không ép lại ASR).",
+      "line": 380
+    },
+    {
+      "name": "_run_engine",
+      "doc": "Chạy engine NẶNG (ASR/TTS) ở TIẾN TRÌNH RIÊNG.",
+      "line": 390
+    },
+    {
+      "name": "_auto_pipeline",
+      "doc": "1-CLICK (chạy ở hàng _dl): tải (nếu cần) -> đẩy phần GPU sang hàng _gpu.",
+      "line": 1254
+    },
+    {
+      "name": "_run_requested_review",
+      "doc": "Rà soát do Agent/user yêu cầu (manifest.agent.review_request): rà tên nhân vật theo bảng",
+      "line": 1341
+    },
+    {
+      "name": "_auto_gpu",
+      "doc": "Phần GPU của 1-click (hàng _gpu, tuần tự): ASR -> Dịch -> TTS -> [Tách nền]",
+      "line": 1413
+    },
+    {
+      "name": "_create",
+      "doc": "Tạo 1 job ở trạng thái CHỜ (chưa chạy). Người dùng bấm ▶ Bắt đầu mới chạy.",
+      "line": 1882
+    },
+    {
+      "name": "_create_local_shell",
+      "doc": "Tạo job local (không URL). job_key ổn định theo path để resume cùng file.",
+      "line": 1902
+    },
+    {
+      "name": "create_job",
+      "doc": "Thêm link -> tạo job CHỜ. 1 link ra NHIỀU video (multi-P/playlist) -> gom",
+      "line": 1997
+    },
+    {
+      "name": "_save_tts_voice",
+      "doc": "Lưu giọng vào manifest + sidecar — KHÔNG được wipe stages khác.",
+      "line": 2839
+    },
+    {
+      "name": "_resolve_voice",
+      "doc": "Giọng: arg → stages.tts → tts_config → queue_opts/opts → list[0].",
+      "line": 2906
+    },
+    {
+      "name": "_resolve_queue_voice",
+      "doc": "Queue chỉ dùng giọng được chọn rõ ràng hoặc đã lưu cho chính job.",
+      "line": 2931
+    },
+    {
+      "name": "_save_asr_engine",
+      "doc": "Lưu engine. Nếu đã có sidecar tương ứng → promote luôn (tránh lệch nhãn/nội dung).",
+      "line": 3033
+    },
+    {
+      "name": "_run_translate_engine",
+      "doc": "Chạy stage dịch ở TIẾN TRÌNH RIÊNG (subprocess) giống như ASR và TTS.",
+      "line": 3063
+    },
+    {
+      "name": "_do_tts",
+      "doc": "Chạy TTS clone tiếng Việt (vieneu/omnivoice). Điều phối worker venv riêng",
+      "line": 3135
+    },
+    {
+      "name": "_do_render",
+      "doc": "Ghép giọng (assemble nếu chưa) rồi render video localize (che+sub+trộn nền).",
+      "line": 3151
+    },
+    {
+      "name": "_queue_run_one",
+      "doc": "Run one queued job synchronously through mux and return status + detail.",
+      "line": 3737
+    },
+    {
+      "name": "_promote_asr_source",
+      "doc": "Copy sidecar → asr.json + sub.zh.srt; backup asr.json cũ.",
+      "line": 4104
+    },
+    {
+      "name": "select_asr_source",
+      "doc": "Promote file ASR (vd asr.fun_nano.json) → asr.json + sub.zh.srt.",
+      "line": 4334
+    },
+    {
+      "name": "_do_context_studio",
+      "doc": "Chạy PRE-SCAN → ghi pack vào work_dir.",
+      "line": 4358
+    },
+    {
+      "name": "run_context_studio_api",
+      "doc": "Chạy Context Studio PRE-SCAN → glossary/style_lock/qa_flags trong work/<job>.",
+      "line": 4476
+    },
+    {
+      "name": "_place_source",
+      "doc": "Trả (đường dẫn video job dùng, cách đặt: direct/move/link/copy).",
+      "line": 4849
+    },
+    {
+      "name": "_finalize_imported_source",
+      "doc": "Ghi meta + mark download done. `dest` có thể nằm ngoài job (source_mode=direct: file thư viện).",
+      "line": 4862
+    },
+    {
+      "name": "_find_video",
+      "doc": "Tìm file video đã tải: ưu tiên video_path trong manifest, fallback glob.",
+      "line": 4906
+    },
+    {
+      "name": "_release_stage",
+      "doc": "(no docstring)",
+      "line": 180
+    },
+    {
+      "name": "_save_series_glossary",
+      "doc": "(no docstring)",
+      "line": 1402
+    },
+    {
+      "name": "api_queue_jobs_add",
+      "doc": "(no docstring)",
+      "line": 2201
+    },
+    {
+      "name": "_save_tts_speed",
+      "doc": "(no docstring)",
+      "line": 2844
+    },
+    {
+      "name": "_save_tts_engine",
+      "doc": "(no docstring)",
+      "line": 2848
+    },
+    {
+      "name": "_asr_script",
+      "doc": "(no docstring)",
+      "line": 2996
+    },
+    {
+      "name": "_resolve_asr_engine",
+      "doc": "(no docstring)",
+      "line": 3098
+    }
+  ]
+}

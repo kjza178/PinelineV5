@@ -5,6 +5,7 @@
 - **Root:** `Z:\PinelineV5`
 - **Format mỗi atom:** file → key fn/class → trigger → I/O + side effects → next atom
 - **Nguồn:** đọc code live (không đoán)
+- **Chi tiết từng hàm (signature / line / full list):** → [2026-11-06-v5-func-catalog.md](./2026-11-06-v5-func-catalog.md) (spine CALL ORDER + 2118 funcs)
 
 ```mermaid
 flowchart LR
