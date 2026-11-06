@@ -4,6 +4,8 @@ Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần resta
 
 ## 2026-11-06
 
+- **V5 part atoms expanded** (~15:55). Overwrite `docs/reviews/2026-11-06-v5-part-atoms.md` — finest-grain atoms (file/fn/trigger/I-O/next) cho entry, core/, HTTP attach+bodies, engines, `_auto_pipeline`/`_auto_gpu`/queue/split, agents, UI→API, `work/<id>/`. Mermaid pipeline. **Không restart**.
+
 - **SAFE autofix eng-swarm** (~15:45). Backup `Z:\PinelineV2_codebak\2026-11-06_v5-swarm-autofix\`. Port ENOSPC/`DiskFullError`/`assert_enough_space` + no re-encode-on-disk-full + cleanup mid-split từ V2 → `engines/split_parts.py`; `_AUTO_SPLIT_ACTIVE` + `_maybe_auto_split_guarded` trong `server.py`; default `PORT=8805`; uploader `WORK_DIR`/`TEMP` → `D:\PinelineV5_work`/`D:\PinelineV5_tmp`. Tests `tests/test_split_enospc_guard.py`. Fix `docs/fixes/2026-11-06-v5-enospc-port.md`. **Không restart** (user); nạp khi restart :8805 sau.
 
 - **Eng-swarm docs index** (~15:40). `docs/reviews/README.md` (link eng-swarm + part-atoms); `docs/ARCHITECTURE.md` section *Engineering swarm* → `.cursor/skills/v5-eng-swarm`. **Không restart**.

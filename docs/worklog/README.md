@@ -6,7 +6,7 @@ Các ngày từ 2026-09-25 đến 2026-10-06 được dựng lại ngày 6/10 t�
 
 | Ngày | Chủ đề |
 |---|---|
-| [2026-11-06](./2026-11-06.md) | Merge hardlink; hongguo2; pronoun-qa; eng-swarm first run + docs index |
+| [2026-11-06](./2026-11-06.md) | Merge hardlink; hongguo2; pronoun-qa; eng-swarm; part-atoms expanded |
 | [2026-11-05](./2026-11-05.md) | `core/` package; uploadLimitExceeded stop-queue port từ V2 |
 | [2026-11-04](./2026-11-04.md) | V5 Phase A/B/C/D layout (engines flat+asr), queue SSOT, film_db meta, hardsub/thumb |
 | [2026-11-02](./2026-11-02.md) | Review V4 thừa/thiếu + port cập nhật từ V2 |

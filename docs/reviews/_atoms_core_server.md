@@ -1,0 +1,299 @@
+## core/ + server.py
+
+### core/__init__.py
+- (no functions)
+
+### core/batch_config.py
+- _now — (no doc) — L90
+- _coerce — (no doc) — L94
+- load — File hỏng/đang ghi dở → trả bản đọc tốt gần nhất (không rơi về DEFAULTS: Auto-pilot — L117
+- resolve_job_opts — Opts của 1 job = config batch hiện tại ⊕ từng lớp (lớp sau đè lớp trước, bỏ None/pin_opts). — L141
+- _norm_zoom — (no doc) — L155
+- render_kwargs — Tham số render (_do_render / MuxReq) từ opts đã resolve. — L168
+- meta — (no doc) — L194
+- _write — (no doc) — L204
+- update — Gộp patch vào config hiện tại. Key lạ / giá trị sai → ValueError. — L213
+- reset — (no doc) — L233
+- parse_kv — 'audio_mode=voice_bgm orig_vol=0.3 brand_text="Kênh A"' → dict. — L239
+- describe — (no doc) — L251
+
+### core/config.py
+- _load_cfg — Nạp lại pineline.config.json khi file đổi (tránh setdefault env khóa giá trị cũ). — L20
+- save_config — Cập nhật pineline.config.json an toàn + đồng bộ runtime. — L44
+- _from_file_keys — (no doc) — L85
+- inject_env — Chép pineline.config.json (rồi config.json) vào os.environ để tiến trình con kế thừa. — L89
+- get — env var  >  config.json  >  default. — L115
+- llm_settings — LLM cho job (dịch/review) — đọc lúc gọi để sửa pineline.config.json có hiệu lực không cần restart. — L140
+- pass_llm_model — Model cho pass ngắn (name/pronoun). Ưu tiên NAME_MODEL/PRONOUN_MODEL → CHATGPT_* → REVIEW → LLM. — L155
+- agent_llm — LLM cho agent chat / feeder: AGENT_* rồi LLM_* (cả hai file trước env). — L172
+- venv_python — Đường dẫn python trong venv, đúng theo OS. — L185
+
+### core/fileio.py
+- atomic_write_text — (no doc) — L16
+- atomic_write_json — (no doc) — L39
+- read_json_checkpoint — Đọc checkpoint JSON. Hỏng → đổi tên thành .corrupt-<ts> (giữ để cứu) và trả default, — L43
+- file_lock — (no doc) — L60
+
+### core/film_db.py
+- _utc — (no doc) — L109
+- norm_path — (no doc) — L113
+- connect — (no doc) — L117
+- log_event — (no doc) — L153
+- _status_of — (no doc) — L163
+- _series_season — (no doc) — L177
+- _num — (no doc) — L187
+- _is_upload_lock_active — Kiểm tra nhanh xem .upload.lock của job còn thuộc về tiến trình đang sống không. — L194
+- row_from_manifest — (no doc) — L216
+- sync_one — Đồng bộ tức thì 1 job từ work/<job_id>/manifest.json vào films.db. — L282
+- sync — Quét manifest → upsert films; ghi event khi trạng thái đổi. Trả {new, changed, total}. — L322
+- needs_series_ids — (no doc) — L381
+- sync_uploads — Link YouTube từ Z:\yt_uploader\upload_history.jsonl và queue_state.json. — L387
+- source_keys — (no doc) — L473
+- series_ids — (no doc) — L478
+- update_block_status — Cập nhật trạng thái bản quyền (clean/blocked/claim/private/unknown) và lý do cho 1 phim. — L483
+- query — (no doc) — L503
+- get — (no doc) — L537
+- get_lite — 1 row films, không kèm events — cho queue/sort. — L548
+- get_many — Batch SELECT films theo job_id (không events). Giữ thứ tự ưu tiên theo input. — L555
+- delete_film — Xoá 1 film khỏi database và tuỳ chọn xoá thư mục work trên ổ đĩa. — L578
+- delete_films — Xoá nhiều film theo danh sách job_id. — L599
+- purge_missing — Xoá toàn bộ hoặc các job chưa hoàn thành mà thư mục work đã bị xoá (work_exists = 0). — L622
+- stats — (no doc) — L637
+- to_csv — (no doc) — L657
+- _dur — (no doc) — L669
+- format_stats — (no doc) — L676
+- format_rows — (no doc) — L690
+- format_detail — (no doc) — L704
+- upsert_library_block — Lưu hoặc cập nhật trạng thái bản quyền phim trong Thư viện gốc. — L726
+- get_library_block — (no doc) — L792
+- list_pending_rechecks — Lấy danh sách các bản ghi đang chờ recheck (status='testing'). — L798
+- list_library_blocks — Trả về dict name -> record của tất cả các bộ đã check trong Thư viện. — L807
+- delete_library_block — (no doc) — L814
+- sync_library_blocks_from_yt_queue — Đồng bộ trạng thái bản quyền từ Z:\yt_uploader\queue_state.json cho các video D:\Lib. — L820
+
+### core/job_meta.py
+- parse_season_from_text — Bóc số phần/mùa từ title (Phần N / P N / 第N季). — L12
+- norm_series_key — Chuẩn hoá tên bộ để sort. — L41
+- extract_ui_meta — Trả title/series/season/group_* theo semantics hàng chờ (VI). — L55
+- info_from_manifest_dict — (no doc) — L121
+- info_from_film_row — Map films.db row → shape get_job_info. None nếu row thiếu title. — L134
+
+### core/job_queue.py
+- get_job_info — Metadata hàng chờ: ưu tiên films.db (series_ui/season_ui), fallback manifest. — L23
+- get_jobs_info — Batch metadata cho nhiều job — 1 query DB + fallback file từng id thiếu. — L83
+- job_sort_key — Khóa sắp xếp: (group_id|series_norm, season P1..Pn, title). — L108
+- _reset_for_tests — Chỉ dùng trong pytest. — L126
+- set_runner — (no doc) — L149
+- is_wired_done — (no doc) — L154
+- _persist_path — (no doc) — L167
+- _save — (no doc) — L171
+- _load — (no doc) — L188
+- _hist_push — (no doc) — L216
+- queue_busy — True nếu worker đang chạy hoặc còn job trong hàng — dùng GPU gate heal/watch. — L223
+- current_detail — Stage/progress/ETA thô — đọc manifest của đúng 1 job (live). — L229
+- build_queue_items — Metadata pending — 1 batch films.db (+ fallback), không N lần parse manifest. — L285
+- queue_state — Trạng thái hàng chờ. enrich=True → queue_items/current_info qua batch DB. — L307
+- http_queue_state — Payload GET /api/queue/jobs: state + live current_detail + labels ngắn. — L331
+- queue_add — (no doc) — L350
+- queue_sort — Sắp xếp lại các job đang chờ trong hàng: — L402
+- queue_move — Di chuyển vị trí của 1 job trong hàng chờ: — L419
+- queue_reorder — Gán lại toàn bộ thứ tự cho hàng chờ theo danh sách client gửi. — L449
+- queue_add_group — Enqueue mọi member của group theo group_index tăng dần. — L461
+- queue_front — (no doc) — L500
+- queue_remove — Bỏ job khỏi hàng chờ (không stop current). — L508
+- queue_update_opts — Đổi opts của job ĐANG CHỜ tại chỗ (giữ thứ tự, không đụng current) — thay cho remove+add. — L521
+- queue_clear — (no doc) — L533
+- queue_stop — Clear queue + báo worker dừng; gọi _stop_job(current) nếu server đã wire. — L541
+- set_stop_hook — (no doc) — L563
+- set_clear_stop_hook — (no doc) — L567
+- _ensure_worker_unlocked — (no doc) — L572
+- _ensure_worker — (no doc) — L583
+- _worker_loop — (no doc) — L588
+
+### core/manifest.py
+- _now — (no doc) — L26
+- _lock_for — (no doc) — L39
+- _merge3 — Gộp 3 chiều dict JSON. Key mình không đổi so với lúc load → lấy bản đĩa (người khác — L52
+- _xproc_lock — Khoá liên tiến trình (server + subprocess asr/tts cùng ghi). Không lấy được thì vẫn ghi — L77
+- Manifest.__init__ — (no doc) — L97
+- Manifest.load — (no doc) — L104
+- Manifest._read_disk — (no doc) — L124
+- Manifest.update — Đọc lại từ đĩa → fn(data) → ghi, trong khoá (thread + liên tiến trình). — L135
+- Manifest.save — (no doc) — L148
+- Manifest._write_locked — Ghi atomic; gọi khi đang giữ _lock_for(self.path). — L164
+- Manifest.stage — (no doc) — L201
+- Manifest.is_done — (no doc) — L204
+- Manifest.mark_running — Giữ config cũ (voice/speed/engine/n_done...) — chỉ đổi status/started_at. — L208
+- Manifest.mark_done — (no doc) — L220
+- Manifest.mark_failed — (no doc) — L232
+
+### server.py
+- _maybe_auto_split_guarded — Wrap maybe_auto_split_job với lock chống gọi chồng cùng job_id. — L80
+- _mux_output_ok — (no doc) — L103
+- _part_pipeline_complete — Part/job đã mux + output, không stale → không chạy lại GPU pipeline. — L111
+- _ensure_parent_mux_merged_done — Heal UI parent: Full đã merge mà mux còn running@80%. — L132
+- _job_any_busy — Trả tên stage đang claim, hoặc None. — L162
+- _claim_stage — Giữ chỗ trước khi submit thread — chống bấm 2-3 lần tạo nhiều task. — L171
+- _release_stage — (no doc) — L180
+- _busy_response — 409 nếu job đang có claim hoặc stage 'running' trong manifest, ngược lại None. — L187
+- _submit_claimed — Claim (job, stage) rồi submit; nhả claim khi xong. Trả 409 nếu đã có claim. — L198
+- _manifest_running — Stage đang 'running' trong manifest (nếu có). — L217
+- _job_proc_alive — True nếu còn subprocess engine/ffmpeg đăng ký cho job. — L229
+- _path_key — Khoá so đường dẫn: work là junction → D:, psutil.cwd() trả đường Z: chưa resolve. — L237
+- _json_rows — (no doc) — L249
+- _stage_complete_on_disk — Artifact ĐỦ (không phải bản dở sau Dừng/crash) — điều kiện để tự nâng stage lên done. — L257
+- _stage_has_artifact — Artifact đĩa đủ để coi stage đã xong (dùng heal stale running). — L285
+- _heal_stale_running — Sửa stage status=running mồ côi (kill/crash/skip không mark_done). — L309
+- _next_incomplete_stage — Bước WIRED đầu tiên chưa done (để mark_running đúng — không ép lại ASR). — L380
+- _run_engine — Chạy engine NẶNG (ASR/TTS) ở TIẾN TRÌNH RIÊNG. — L390
+- _iter_job_engine_procs — Quét toàn hệ thống process Python đang chạy engine cho job_id (kể cả orphan). — L474
+- _kill_job_engine_procs — Kill process engine trùng job (system-wide). Trả số process đã kill. — L520
+- _kill_all_orphan_engine_procs — Kill toàn bộ orphan engine process trong WORK_ROOT (1 lượt quét duy nhất system-wide). — L535
+- _noisy_log — Lọc log rác TTS (ref_text dài, tqdm...). Giữ gen_text + [ok]/[tts]/lỗi. — L577
+- _kill_job_children — Kill MỌI tiến trình liên quan job (asr/clone_tts/demucs/ffmpeg/aria2c), — L589
+- _stop_job — Dừng mọi việc đang chạy của 1 job + đưa stage 'running' về 'pending'. — L664
+- _clear_stop — (no doc) — L750
+- _stage_artifact_payload — Nếu đĩa đã có kết quả bước → payload để mark_done. None = chưa có artifact. — L764
+- _heal_stages_from_disk — Misclick/Dừng giữa chừng: file đã ĐỦ mà status còn pending/failed → đánh done. — L824
+- _force_mark_stage — Đánh dấu 1 bước done ngay (không chạy lại). — L846
+- _url_host — (no doc) — L876
+- _local_only_guard — Chỉ phục vụ máy này: Host lạ = DNS rebinding; Origin/Referer lạ trên /api = trang web — L885
+- _quiet_conn_reset — Trên Windows, khi client (UI poll) đóng kết nối đột ngột giữa request, event — L902
+- _reset_stale_running — Khi server khởi động, KHÔNG có thread nào đang chạy. Vậy mọi stage còn ghi — L919
+- _start_queue_worker — Worker hàng đợi chỉ chạy SAU khi reset stage treo + kill engine orphan; chạy lúc import — L957
+- _resume_hg_merge — Hàng đợi gộp Hongguo nạp lại từ work/logs/hg_merge_state.json → chạy tiếp nếu Hongguo đang mở — L965
+- _startup_fix_tts — Khôi phục voice/progress TTS sau crash — không mất cấu hình. — L977
+- _process_gpu — Phần NẶNG (GPU/LLM): ASR -> Dịch. Chạy ở hàng đợi _gpu (tuần tự). — L1209
+- run_pipeline — TẢI (hàng đợi _dl, song song). Tải xong -> đẩy ASR+Dịch sang hàng đợi _gpu — L1236
+- _auto_pipeline — 1-CLICK (chạy ở hàng _dl): tải (nếu cần) -> đẩy phần GPU sang hàng _gpu. — L1254
+- _run_requested_review — Rà soát do Agent/user yêu cầu (manifest.agent.review_request): rà tên nhân vật theo bảng — L1341
+- _save_series_glossary — (no doc) — L1402
+- _auto_gpu — Phần GPU của 1-click (hàng _gpu, tuần tự): ASR -> Dịch -> TTS -> [Tách nền] — L1413
+- _has_cjk — (no doc) — L1559
+- _extract_vi_title — Bóc tách tên tiếng Việt từ response LLM có thể dài dòng / giải thích. — L1563
+- _translate_title — Dịch tiêu đề gốc (Trung) sang tiếng Việt bằng gemma4 local, lưu title_vi. — L1593
+- _maybe_translate_title — Kích hoạt dịch tiêu đề (lazy) nếu còn tiếng Trung. Bỏ qua khi ASR/TTS đang — L1640
+- _asr_labels_from_source — Suy engine + model từ tên file sidecar (nguồn sự thật). — L1658
+- _sync_asr_labels — Ép engine/model khớp asr_source (+ n_segments từ asr.json nếu có). — L1676
+- _apply_hybrid_asr_overlay — Hybrid FA: UI đọc stages.asr — overlay % từ asr.*.progress.json nếu sidecar đang chạy. — L1714
+- read_job — (no doc) — L1739
+- _create — Tạo 1 job ở trạng thái CHỜ (chưa chạy). Người dùng bấm ▶ Bắt đầu mới chạy. — L1882
+- _job_id_local — (no doc) — L1898
+- _create_local_shell — Tạo job local (không URL). job_key ổn định theo path để resume cùng file. — L1902
+- _list_local_videos — Liệt kê file video trong folder (sắp tên tự nhiên). — L1924
+- _import_local_video_file — Copy/move 1 file video → job local. Trả dict ok/job_id hoặc error. — L1950
+- create_job — Thêm link -> tạo job CHỜ. 1 link ra NHIỀU video (multi-P/playlist) -> gom — L1997
+- _patch_job_group — Ghi/xoá group_* trong manifest.request. Trả False nếu job không tồn tại. — L2023
+- _renumber_group — Sắp lại group_index 1..N theo index cũ (hoặc created). Trả job_ids còn trong nhóm. — L2053
+- jobs_group — Gom job thành series / thêm vào nhóm / đổi tên / tách. — L2086
+- api_queue_jobs_add — (no doc) — L2201
+- api_queue_jobs_add_group — (no doc) — L2217
+- api_queue_jobs_opts — {"opts_by_job": {job_id: opts}} — đổi opts job đang chờ tại chỗ (nguyên tử, giữ thứ tự). — L2232
+- api_queue_jobs_remove — (no doc) — L2252
+- _queue_current_detail — Alias → job_queue.current_detail (giữ tên cũ cho test/monkeypatch). — L2259
+- api_queue_jobs_sort — (no doc) — L2264
+- api_queue_jobs_move — (no doc) — L2272
+- api_queue_jobs_reorder — (no doc) — L2287
+- api_queue_jobs_state — (no doc) — L2299
+- api_queue_jobs_stop — (no doc) — L2303
+- api_queue_jobs_clear — (no doc) — L2307
+- create_local_job_path — Tạo job từ file HOẶC folder video local. — L2311
+- create_local_job_batch — Import nhiều path (file + folder). Mỗi folder → 1 group riêng. — L2381
+- api_fs_list_dirs — Liệt kê folder con trực tiếp (1 cấp) để tick chọn import. — L2463
+- api_fs_pick_dir — Mở hộp thoại Windows chọn folder (native). Chạy process riêng để không kẹt uvicorn. — L2516
+- api_fs_pick_dirs — Hộp thoại chọn NHIỀU folder cùng lúc (Ctrl/Shift). Trả paths[]. — L2589
+- create_local_job_upload — Tạo job từ upload video (không cần link). File lớn nên dùng /local-path. — L2654
+- start_job — Chạy tự động các bước còn lại (download -> asr -> dịch) cho 1 job. — L2691
+- _run_stage — Chạy ĐÚNG 1 bước (người dùng tự chọn). download -> hàng _dl; còn lại -> _gpu. — L2766
+- _save_tts_voice — Lưu giọng vào manifest + sidecar — KHÔNG được wipe stages khác. — L2839
+- _save_tts_speed — (no doc) — L2844
+- _save_tts_engine — (no doc) — L2848
+- _patch_tts_fields — Ghi field TTS an toàn: đọc đĩa trực tiếp, merge, atomic write. Không dùng — L2852
+- _job_cfg_opts — Gộp opts + queue_opts (queue_opts thắng) — resolve voice/speed/engine. — L2895
+- _resolve_voice — Giọng: arg → stages.tts → tts_config → queue_opts/opts → list[0]. — L2906
+- _resolve_queue_voice — Queue chỉ dùng giọng được chọn rõ ràng hoặc đã lưu cho chính job. — L2931
+- _resolve_speed — (no doc) — L2955
+- _asr_script — (no doc) — L2996
+- _patch_asr_fields — Ghi field ASR an toàn (không wipe stages khác). — L3000
+- _save_asr_engine — Lưu engine. Nếu đã có sidecar tương ứng → promote luôn (tránh lệch nhãn/nội dung). — L3033
+- _run_translate_engine — Chạy stage dịch ở TIẾN TRÌNH RIÊNG (subprocess) giống như ASR và TTS. — L3063
+- _resolve_asr_engine — (no doc) — L3098
+- _resolve_tts_engine — (no doc) — L3110
+- _do_tts — Chạy TTS clone tiếng Việt (vieneu/omnivoice). Điều phối worker venv riêng — L3135
+- _do_render — Ghép giọng (assemble nếu chưa) rồi render video localize (che+sub+trộn nền). — L3151
+- run_stage — Chạy riêng 1 bước của job (chủ động chọn bước nào làm). Kiểm tra điều kiện — L3294
+- stop_job — DỪNG mọi việc đang chạy của job (kill subprocess asr/tts/demucs/ffmpeg/aria2c — L3387
+- mark_job_done — Đánh dấu bước (hoặc cả job) = done NGAY — không chạy lại / không chờ. — L3407
+- translate_fill — VÁ câu trống ở bước Dịch: chạy lại dịch với LÔ NHỎ (25) — run_translate tự — L3464
+- edit_script_line — Sửa tay zh và/hoặc vi: ghi script.json + regen SRT. Không đụng TTS clip — L3510
+- clean_script_spam — Rút chuỗi 哈/呃 spam trong script.json (ASR lỗi) + prefill vi trivial nếu trống. — L3613
+- set_tts_voice — Lưu giọng TTS đã chọn vào manifest (để nút Chạy / tự động dùng đúng giọng). — L3651
+- run_all — 1-CLICK: chạy tự động toàn bộ pipeline từ bước còn thiếu tới hết. — L3665
+- _queue_run_one — Run one queued job synchronously through mux and return status + detail. — L3737
+- set_asr_engine — Lưu engine ASR (hybrid_fa / fun_asr_nano / …) cho job. — L4022
+- _list_asr_sources — Liệt kê asr.json + asr.*.json có dữ liệu (bỏ progress/meta/chars/bak). — L4051
+- _promote_asr_source — Copy sidecar → asr.json + sub.zh.srt; backup asr.json cũ. — L4104
+- _invalidate_translate_for_asr — Backup script + đánh dấu translate lệch khi đổi asr_source. — L4224
+- _translate_asr_sync_info — UI: script có khớp asr.json không? — L4268
+- list_asr_sources — Danh sách file ASR có sẵn để chọn (Nano / FireRed / …). — L4317
+- select_asr_source — Promote file ASR (vd asr.fun_nano.json) → asr.json + sub.zh.srt. — L4334
+- _context_studio_input — Ưu tiên asr.json → sub.zh.srt. — L4349
+- _do_context_studio — Chạy PRE-SCAN → ghi pack vào work_dir. — L4358
+- get_context_studio — Xem pack Context Studio (summary + style_lock + characters). — L4421
+- run_context_studio_api — Chạy Context Studio PRE-SCAN → glossary/style_lock/qa_flags trong work/<job>. — L4476
+- get_translate_alts — Pack analyze checklist + danh sách câu đa nghĩa (vi_alts.json). — L4510
+- run_translate_alts_api — Quét câu đa nghĩa theo chunk + pack analyze → vi_alts.json. — L4528
+- apply_alt_pick — Chốt một phương án alts[pick] → vi (+ regen SRT). — L4553
+- run_hardsub_asr_api — OCR hardsub → rà/sửa chữ ZH trên ASR (giữ timing). Không thay bước dịch. — L4611
+- get_hardsub_asr — (no doc) — L4640
+- _cookie_info — Đếm cookie + kiểm định dạng Netscape của 1 file cookie. — L4661
+- cookies_status — (no doc) — L4675
+- _header_to_netscape — Chuyển chuỗi header 'name=value; name2=value2' (copy từ DevTools) -> Netscape. — L4684
+- import_cookies — Nhập cookies bằng FILE (.txt Netscape từ extension) HOẶC dán TEXT vào popup. — L4700
+- list_jobs — (no doc) — L4745
+- job_detail — (no doc) — L4758
+- _audio_dur — Đo độ dài audio (giây) bằng ffprobe. Lỗi -> 0. — L4769
+- _probe_video — Rút width/height/duration/vcodec bằng ffprobe. Lỗi -> {}. — L4782
+- _clear_job_sources — Xoá source.* / mảnh .part cũ trước khi import. — L4806
+- _link_or_copy — Hard link nếu được (cùng ổ — không tốn thêm dung lượng); khác ổ / FS không hỗ trợ mới copy. — L4818
+- _direct_source_roots — (no doc) — L4829
+- _is_direct_source — File trong thư viện (SOURCE_DIRECT_ROOTS) → job đọc thẳng video_path, không đặt file vào job. — L4834
+- _place_source — Trả (đường dẫn video job dùng, cách đặt: direct/move/link/copy). — L4849
+- _finalize_imported_source — Ghi meta + mark download done. `dest` có thể nằm ngoài job (source_mode=direct: file thư viện). — L4862
+- _find_video — Tìm file video đã tải: ưu tiên video_path trong manifest, fallback glob. — L4906
+- job_video — Stream video đã tải để preview. FileResponse tự xử lý Range -> tua được. — L4918
+- _write_srt — Sinh .srt từ json nguồn, ghi ra sub.<lang>.srt. Trả (path, nội dung) hoặc — L4940
+- _clone_voice_list — Giọng clone dùng chung cho cả 2 engine (registry voices/f5_voices.json). — L4996
+- list_voices — Giọng clone (ref audio + lời) dùng chung — cả vieneu lẫn omnivoice đều — L5001
+- list_frames — Danh sách PNG khung trong assets/overlays/frames. — L5008
+- list_brand_logos — Logo kênh (assets/overlays/logos hoặc brand). — L5017
+- _ref_asr_enabled — ASR mẫu: mặc định tắt nếu chưa có model (tránh treo tải Whisper 2GB lúc Thêm giọng). — L5033
+- _probe_audio_dur — (no doc) — L5055
+- _transcribe_ref — Lấy transcript của clip mẫu (F5 cần ref_text). Model medium int8 nhẹ VRAM. — L5067
+- _prep_ref — Chuẩn hoá clip mẫu: cắt ≤max_dur, xuất wav 24k mono. Trả (wav, ref_text, dur). — L5081
+- clone_voice — Clone 1 giọng từ file mẫu (3-8s). Đăng ký vào registry chung (VieNeu/OmniVoice). — L5143
+- voice_sample — Đọc câu mẫu bằng engine+giọng (+ tốc độ) để nghe thử. Cache trên đĩa. — L5175
+- tts_wav_ok — Danh sách index seg_*.wav còn trên đĩa (size OK) — UI khỏi báo thiếu oan khi chưa có tts.json. — L5215
+- regen_tts — Lồng tiếng: mặc định RESUME (chỉ đọc câu thiếu). force=true -> đọc lại toàn bộ. — L5230
+- regen_clip — Đọc lại DUY NHẤT 1 câu (index i) khi clip đó lỗi. Nhanh, không đụng câu khác. — L5323
+- job_srt — Sinh .srt từ asr.json (zh) / script.json (vi), ghi ra file trong job rồi — L5339
+- _reveal_path — Mở trình quản lý file, bôi sẵn đúng file (nếu target là file) hoặc mở thư mục. — L5354
+- upload_source — Import source video qua upload (stream, không nhét cả file vào RAM). — L5373
+- import_source_path — Import source từ đường dẫn local (cùng máy server) — phù hợp file multi-GB. — L5410
+- upload_audio — Nhập 1 file audio lồng tiếng LÀM SẴN ở ngoài (từ SRT) để dùng cho mux. — L5449
+- delete_audio — Bỏ audio ngoài đã nhập -> quay lại dùng TTS nội bộ. — L5482
+- _translate_batch_size — Cỡ lô dịch — đọc TRANSLATE_BATCH (mặc định 20). Không hardcode 100. — L5498
+- _translate_flow — Luồng dịch: (tùy chọn) DỊCH NHÁP rồi (tùy chọn) SOÁT lại lượt 2. — L5510
+- retranslate_job — Dịch job: 1 lượt, HOẶC 2 lượt (nháp + soát), HOẶC chỉ soát bản có sẵn. — L5529
+- mux_job — Render video localize -> output.mp4 (che watermark/hardsub + sub Việt + OCR — L5580
+- assemble_job — Ghép clip TTS thành 1 track. — L5604
+- get_split_plan — Xem trước kế hoạch chia part + cờ will_auto_split theo batch_config. — L5625
+- api_split_job_parts — Chia video dài thành các sub-jobs (Part 1, Part 2...) chạy pipeline độc lập chống lệch time. — L5659
+- api_merge_job_parts — Ghép các sub-jobs đã render xong thành output_full.mp4 (concat lossless). — L5668
+- reveal_job — Mở thư mục job trong Explorer, chọn sẵn 1 file. Không truyền file -> chọn — L5677
+- job_file — Phục vụ 1 file BÊN TRONG work/<job_id>/ (asr.json, script.json, mp3...). — L5704
+- delete_job — Xoá 1 job = xoá cả thư mục work/<job_id>/ (video, audio, manifest...). — L5756
+- _reexport_route_symbols — (no doc) — L5798
+- _start_agent_watch — (no doc) — L5911
+- _start_auto_publisher — (no doc) — L5924
+- get_available_llm_models — Trả về danh sách toàn bộ các model LLM khả dụng (llama-server :8083, Ollama, 9router). — L5933
