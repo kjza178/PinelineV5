@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-07
 - **Job / khu vực:** Films UI (`/films/ui`), `/api/uploader/skip-current`, `yt_uploader` `skip_current.flag`, auto-publish oversized
-- **Status:** fixed (UI live; Python API chờ restart :8802 khi idle)
+- **Status:** fixed (UI live; **:8802 restarted ~01:40 PID 28936**)
 - **Backup:** zip `Z:\PinelineV2_backup_2026-11-07_0109.zip` · codebak `Z:\PinelineV2_codebak\2026-11-07_skip-upload-ux\`
 
 ## Triệu chứng

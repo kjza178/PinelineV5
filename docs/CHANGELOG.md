@@ -1,10 +1,45 @@
-﻿# Changelog
+# Changelog
 
 Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần restart gì. Chi tiết bug: docs/fixes/. Nhật ký phiên: docs/worklog/.
 
+## 2026-11-08
+
+- **Hongguo2 static/ui stale** (~02:35). User còn mở `/static/ui/hongguo2.html` (3 dropdown cũ). Chép đè root `hongguo2.html` → `static/ui/`. **Hard refresh** URL static hoặc dùng `/hongguo2`.
+
+- **Hongguo2 Browse = WinUI 7 facets** (~02:35). Backup zip `…_0229.zip` + `…_browse-feed-facets\`. Đọc screenshot + `feed.page?panel` + `FilterText` DLL. UI 7 dropdown (All genres…Any time); `select` map RPC; `hongguo_feed_labels.json` ZH→EN. Routes `/api/hg/feed` nhận facet query. Fix `docs/fixes/2026-11-08-hongguo2-browse-facets.md`. Sync V2/V4/V5. **Restart :8801** + hard refresh `/hongguo2`.
+
+- **Hongguo2 Browse filters → feed/catalog** (~02:10). Backup `…_hg2-browse-filters\`. Bỏ toast «map API khi có catalog». Filter Genre/Sort/Status: `board=browse` → RPC `feed.page`; `catalog_*` → Explorer (fallback rank + alias ZH/EN). Routes `/api/hg/genres|catalog|feed` (sau reload :8801). **Hard refresh `/hongguo2`**.
+
+- **Hongguo2 Download all seasons (2.x dialog)** (~01:55). Backup `…_hg2-download-all-seasons\`. Dialog chi tiết: S1…Sn, quality, episode grid, **Download all N seasons** → `POST /api/hg/submit` multi-id. RPC `series.seasons`/`qualities`; `lookup_series` đính kèm; submit +`quality`. Routes `/series/{id}/seasons|qualities` (cần reload :8801 để đăng ký; payload seasons đã có qua detail). Sync V2/V4/V5. **Hard refresh `/hongguo2`**.
+
+- **Hongguo2 img 422/403 + restart :8802** (~01:45). Backup `…_hg-img-u-param\`. `/api/hg/img` nhận `?u=` lẫn `?url=`; `fetch_img_proxy` dùng RPC `covers.get` (CDN fqnovel 403 khi fetch thẳng). UI hongguo2 → `?url=`. Restart sidecar PID mới; clear state upload part `p02`. **Hard refresh `/hongguo2`**. :8801 không restart (bridge reload mỗi request).
+
+- **Hongguo2 design match WinUI + skip split-part upload** (~01:40). Backup `…_hongguo2-design-part-upload\`. `hongguo2.html` gần app 2.x (logo, filters, rank pills trắng, disk/Yearly Unlimited, theme). `auto_publisher.is_auto_split_part` chặn enqueue/publish `…_pNN` / `Phần N/N`; purge queue (`ad50b61b4050_p02`). Fix `docs/fixes/2026-11-08-skip-split-part-upload.md`. Sync V2/V4/V5. **Hard refresh `/hongguo2`**. **Restart :8802 khi idle** để nạp `auto_publisher` (sidecar); :8801 không bắt buộc (HTML static).
+
 ## 2026-11-07
 
-- **Uploader Skip UX + oversized guard** (~01:15). Backup zip `…_0109.zip` + codebak `…_skip-upload-ux\`. Sticky `#up-skip-banner` + header Skip + Done/batch Skip; poll status 4s; `queue||items`; enqueue/auto-publish refuse >11.5h / ≥64GiB trừ confirm. Sync V4/V5 UI + `agents/auto_publisher`. Fix `docs/fixes/2026-11-07-uploader-skip-ux.md`. **Hard refresh Films**. **Không restart :8802** (chưa idle) — restart khi idle để nạp Python API.
+- **Hongguo2 UI 2.x skin (option B)** (~22:45). Backup `…_hongguo2-ui-2x\`. Revive `/hongguo2` → `hongguo2.html` (sidebar Browse/Ranking/New/Link/Downloads/Library + Settings license). Wire `/api/hg/*` + `/api/hg/license/*`; hot-path `@@license@@status|store|prove|clear` trong `hongguo_bridge` search/resolve (process chưa reload route). Sync V2/V4/V5 + `static/ui/hongguo2.html`. DECISIONS revive B. **Restart :8801** (đã hẹn `--after-current`) để `/hongguo2` hết 302; tạm: `/static/ui/hongguo2.html`.
+
+- **Hongguo 2.x UI plan (docs)** (~21:56). Spec `docs/superpowers/specs/2026-11-07-hongguo-2x-ui-plan.md` — screens↔`/api/hg/*`, license UX (no key echo), download gates, portability, P0/P1/P2; khuyến nghị extend `/hongguo` (không revive skin trừ khi user chọn). **Không restart.**
+
+- **Hongguo 2.x license prove (download unlock)** (~21:45). Backup `…_hg-license-prove\`. Key DPAPI `%LOCALAPPDATA%\Pineline\hg_typed_key.dpapi` (không log). `hongguo_license_ensure.ensure_licensed` + HTTP proof bridge → `Hongguo.Licensing` Activate → `license.prove` cùng helper `hongguo_rpc`. Hook `submit` / `library_download_new_seasons`. Host `%TEMP%\HgLicActivate_patch\HgLicActivate.exe`. Review cập nhật. Sync V2/V4/V5. **Restart :8801** (hoặc reload `/api/hg/*`).
+
+- **Hotfix mux `No module named 'core'`** (~21:18). Sync nhầm V5 `engines/render` → V2 flat `render.py`. Khôi phục V2/V4 từ bak `…_mux-heal-hstrack\V2_render.py`. Follow-up `docs/fixes/2026-11-07-mux-heal-hardsub-ocr.md`. **Không restart** (reload render mỗi mux). Remux `ad50b61b4050_p01`.
+
+- **Hongguo 2.x JSON-RPC bridge** (~21:10). Backup zip `…_2107.zip` + `…_hongguo-rpc\`. Thêm `hongguo_rpc.py` (stdio helper.jar); `hongguo_bridge` `HG_BACKEND=rpc|http|auto` map search/rank/library/status/submit/… → RPC, giữ shape `/api/hg/*`. Spec `docs/superpowers/specs/2026-11-07-hongguo-rpc-bridge-design.md`. Sync V2/V4/V5. **Restart :8801** để nạp module (reload importlib khi gọi `/api/hg/*` cũng được nếu bridge reload).
+
+- **Heal mux giả «Sẵn sàng» lúc OCR hardsub** (~18:20). Backup zip `…_1817.zip` + `…_mux-heal-hstrack\`. `_job_lineage_busy` (parent auto-split) + bỏ heal khi còn `_hstrack`; phase/`cur_text` hardsub trước encode. Fix `docs/fixes/2026-11-07-mux-heal-hardsub-ocr.md`. Sync V2/V4/V5. **Không restart :8801** (P3 đang `encode×3`) — nạp heal khi idle (cùng đợt hardsub_blur).
+
+- **Concat chỉ encode phần lệch resolution** (~04:13). Backup zip `…_0413.zip` + `…_concat-partial-norm\`. `_concat_videos_smart` fallback: khớp W×H → `-c:v copy`; lệch → scale+pad. Mode `normalized_canvas_partial`. Fix `docs/fixes/2026-11-07-concat-partial-norm.md`. Sync V4/V5. **Không restart** (feeder reload theo request; job gộp đang chạy vẫn logic cũ).
+
+- **Kênh Test exhausted che token Kênh 3** (~02:52). Backup zip `…_0251.zip` + `…_tc-exhausted-hint\`. `get_available_service` fallback project còn cờ exhausted khi auth phía còn quota fail; refresh sớm; xóa live `exhausted.json`. Fix `docs/fixes/2026-11-07-test-channel-exhausted-mask.md`. Sync V2→V4/V5. **Không restart** (:8802 reload module).
+
+- **Kênh Test Đổi kênh poll giả** (~02:40). Backup `…_tc-doi-kenh-poll\`. Poll chờ `connected_at` mới; OAuth `replace_identity`; bỏ ghi đè CHANNEL từ pool count. Fix `docs/fixes/2026-11-07-test-channel-doi-kenh.md`. **Hard refresh Films** (tele reload `test_channel`).
+
+- **Restart sidecar :8802** (~01:40). User yes. PID 35972→**28936**. Nạp preserve_order + oversized/skip Python. Smoke: `/config`, `/api/uploader/status`, `/api/settings` OK. **Không đụng :8801.**
+
+- **Uploader Skip UX + oversized guard** (~01:15). Backup zip `…_0109.zip` + codebak `…_skip-upload-ux\`. Sticky `#up-skip-banner` + header Skip + Done/batch Skip; poll status 4s; `queue||items`; enqueue/auto-publish refuse >11.5h / ≥64GiB trừ confirm. Sync V4/V5 UI + `agents/auto_publisher`. Fix `docs/fixes/2026-11-07-uploader-skip-ux.md`. **Hard refresh Films**. **Không restart :8802** (auto-pub stage còn uploading / chưa idle) — restart khi idle để nạp Python API.
+
 - **Combine part-order harden** (~01:25). Backup zip `…_0108.zip` + `…_combine-part-order\`. CN `第N季/集`, missing→0, secondary `created_at`/`job_id`, numbered ↑↓ + `preserve_order`/`explicit_order`. Sync V4/V5. Follow-up `docs/fixes/2026-11-07-combine-part-order.md`. **Hard refresh Films**. Sort-by-part: feeder reload (không cần :8801). **Hỏi restart :8802** nếu cần ↑↓ preserve_order trên process tele_cmd cũ.
 
 - **Combine sort Phần 1→N** (~01:20). Backup `…_combine-part-order\`. Modal/API không nối theo thứ tự tick; cảnh báo >11.5h; Skip đang upload trên batch Done. Fix `docs/fixes/2026-11-07-combine-part-order.md`. **Hard refresh Films** (feeder reload mỗi POST).
@@ -29,7 +64,6 @@ Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần resta
 
 ## 2026-11-07
 
-- **Uploader Skip UX + oversized guard** (~01:15). Backup zip `…_0109.zip` + codebak `…_skip-upload-ux\`. Sticky `#up-skip-banner` + header Skip + Done/batch Skip; poll status 4s; `queue||items`; enqueue/auto-publish refuse >11.5h / ≥64GiB trừ confirm. Sync V4/V5 UI + `agents/auto_publisher`. Fix `docs/fixes/2026-11-07-uploader-skip-ux.md`. **Hard refresh Films**. **Không restart :8802** (chưa idle) — restart khi idle để nạp Python API.
 - **Tool loop pipeline** (~00:30). `agent_tool_loop.py` + `pineline_run_stage_wait` / `pineline_pipeline_loop`. CLI HTTP smoke. Tests 4 passed. Review `docs/reviews/2026-11-07-tool-loop.md`. **Restart :8801** khi idle.
 
 - **Films UI jq HTML-escape + swarm** (~00:05). Backup `…_films-ui-jq-html\`. `jq` stringify + `&quot;` (onclick không còn cắt attribute); autopub load flat config; Settings/Uploader toast 404 rõ. Sync V4/V5. Fix `docs/fixes/2026-11-07-films-ui-syntax.md` · review `docs/reviews/2026-11-07-films-ui-swarm.md`. **Hard refresh `/films/ui`** (không restart). Còn mở: port `/api/settings` + `/api/uploader` vào :8802.

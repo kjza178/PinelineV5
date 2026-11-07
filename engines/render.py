@@ -2771,15 +2771,33 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
 
     band = None
     wm_fracs: list = []
+
+    def _mux_phase(phase: str, text: str, progress: float | None = None) -> None:
+        """Giữ mux=running + cur_text trong lúc dò hardsub (tránh heal/UI tưởng idle)."""
+        try:
+            st = m.data.setdefault("stages", {}).setdefault(STAGE, {})
+            st["status"] = "running"
+            st["phase"] = phase
+            st["cur_text"] = text
+            st["updated_at"] = time.time()
+            st.pop("healed", None)
+            if progress is not None:
+                st["progress"] = float(progress)
+            m.save()
+        except Exception:  # noqa: BLE001
+            pass
+
     if hardsub_blur:
         try:
             redetect = os.getenv("HARDSUB_REDETECT", "").strip() in ("1", "true", "yes")
+            _mux_phase("hardsub_band", "đang dò hardsub/watermark…", 2)
             band, wm_fracs = detect_overlays(work_dir, force=redetect)
         except Exception as e:  # noqa: BLE001
             print(f"[hardsub] dò lỗi ({e}) -> đáy mặc định, không ép 4 góc watermark")
     hs_track = None
     if hardsub_blur and (cfg("HARDSUB_MODE", "track") or "track").strip().lower() != "bar":
         try:
+            _mux_phase("hardsub_track", "đang dò hardsub track (OCR ~300 khung)…", 4)
             hs_track = detect_hardsub_track(work_dir, force=redetect)
         except Exception as e:  # noqa: BLE001
             print(f"[hardsub] dò toạ độ lỗi ({e}) -> blur dải cố định", flush=True)

@@ -144,16 +144,39 @@ def get_projects_health() -> dict[str, dict[str, Any]]:
         return {}
 
 
-def update_project_health(project_id: str, api_enabled: bool, channel_title: str = "", channel_id: str = "", email: str = "", enable_url: str = ""):
-    """Cập nhật trạng thái API của Project."""
+def update_project_health(
+    project_id: str,
+    api_enabled: bool,
+    channel_title: str | None = None,
+    channel_id: str | None = None,
+    email: str | None = None,
+    enable_url: str | None = None,
+    *,
+    replace_identity: bool = False,
+):
+    """Cập nhật trạng thái API của Project.
+
+    replace_identity=True (sau OAuth): ghi đè channel/email kể cả chuỗi rỗng,
+    tránh giữ cứng tên cũ «Sai Kira» khi đổi kênh.
+    """
     h = get_projects_health()
     cur = h.get(project_id) or {}
+    if replace_identity:
+        new_title = (channel_title or "").strip()
+        new_cid = (channel_id or "").strip()
+        new_email = (email or "").strip()
+    else:
+        new_title = (channel_title or "").strip() or cur.get("channel_title", "")
+        new_cid = (channel_id or "").strip() or cur.get("channel_id", "")
+        new_email = (email or "").strip() or cur.get("email", "")
     h[project_id] = {
         "api_enabled": api_enabled,
-        "channel_title": channel_title or cur.get("channel_title", ""),
-        "channel_id": channel_id or cur.get("channel_id", ""),
-        "email": email or cur.get("email", ""),
-        "enable_url": enable_url or cur.get("enable_url", ""),
+        "channel_title": new_title,
+        "channel_id": new_cid,
+        "email": new_email,
+        "enable_url": (enable_url or "").strip() or cur.get("enable_url", ""),
+        "checked_at": _today_utc(),
+        "updated_at": _utc_now(),
     }
     HEALTH_FILE.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -335,17 +358,9 @@ def get_today_uploads_count(force: bool = False) -> dict[str, int]:
         if not uploads_pl:
             return {"today_vn": 0, "today_utc": 0, "total_all": 0}
 
-        # Cập nhật CHANNEL_FILE nếu khác thông tin thực tế
-        ch_title = curr_ch.get("snippet", {}).get("title", "")
-        ch_id = curr_ch.get("id", "")
-        try:
-            old_info = json.loads(CHANNEL_FILE.read_text(encoding="utf-8")) if CHANNEL_FILE.is_file() else {}
-            if old_info.get("channel_id") != ch_id:
-                old_info["channel_id"] = ch_id
-                old_info["channel_title"] = ch_title
-                CHANNEL_FILE.write_text(json.dumps(old_info, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+        # Không ghi đè CHANNEL_FILE từ project «đầu pool» — sẽ làm UI tưởng Đổi kênh
+        # thất bại (ví dụ vừa OAuth proj_2 nhưng count lại kéo kênh proj_1).
+        # Identity kênh chỉ cập nhật trong finish_oauth / update_project_health.
 
         now_utc = datetime.now(timezone.utc)
         today_utc_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -399,10 +414,11 @@ def get_status() -> dict[str, Any]:
 
     return {
         "connected": connected,
-        "channel_title": info.get("channel_title") or "Sai Kira",
+        "channel_title": info.get("channel_title") or "",
         "email": info.get("email") or "",
         "channel_id": info.get("channel_id") or "",
         "connected_at": info.get("connected_at") or "",
+        "last_connected_project": info.get("last_connected_project") or "",
         "channel_limit_reached": ch_limit.get("reached", False),
         "channel_limit_info": ch_limit,
         "projects": projs,
@@ -554,8 +570,9 @@ def finish_oauth(code: str, redirect_uri: str, project_id: str | None = None) ->
     except Exception:
         pass
 
+    display_title = (channel_title or "").strip() or "(chưa lấy được tên kênh — kiểm tra quyền YouTube)"
     info = {
-        "channel_title": channel_title or "Sai Kira",
+        "channel_title": display_title,
         "channel_id": channel_id,
         "email": email,
         "connected_at": _utc_now(),
@@ -565,43 +582,92 @@ def finish_oauth(code: str, redirect_uri: str, project_id: str | None = None) ->
     update_project_health(
         project_id=project_id,
         api_enabled=True,
-        channel_title=channel_title or "Kênh Mới",
+        channel_title=channel_title or display_title,
         channel_id=channel_id,
-        email=email
+        email=email,
+        replace_identity=True,
     )
     return {"ok": True, "project_id": project_id, **info}
 
 
 def get_available_service():
-    """Lấy YouTube service từ project khả dụng đầu tiên trong pool (chưa hết quota hôm nay và đã bật API)."""
+    """Lấy YouTube service từ project khả dụng đầu tiên trong pool (chưa hết quota hôm nay và đã bật API).
+
+    Nếu mọi project còn quota đều fail auth (token chết), fallback sang project còn cờ
+    exhausted — tránh kẹt ở Acc token-revoked trong khi Kênh 1/2 chỉ bị cờ local.
+    """
     projs = list_projects()
     from google.auth.transport.requests import Request
 
-    available = [p for p in projs if p["connected"] and not p["exhausted_today"] and p.get("api_enabled", True)]
-    if not available:
-        connected = [p for p in projs if p["connected"]]
-        if not connected:
-            raise RuntimeError("Chưa có Project nào được đăng nhập. Vui lòng bấm '🔗 Đăng nhập Kênh Test'.")
+    connected = [p for p in projs if p["connected"]]
+    if not connected:
+        raise RuntimeError("Chưa có Project nào được đăng nhập. Vui lòng bấm '🔗 Đăng nhập Kênh Test'.")
+
+    preferred = [p for p in connected if not p["exhausted_today"] and p.get("api_enabled", True)]
+    exhausted_ok = [p for p in connected if p["exhausted_today"] and p.get("api_enabled", True)]
+    # Prefer quota-ok; nếu không còn / auth fail hết → thử exhausted (cờ có thể stale sau Reset Quota)
+    candidates = preferred + exhausted_ok
+    if not candidates:
         disabled_projs = [p for p in connected if not p.get("api_enabled", True)]
         if disabled_projs and len(disabled_projs) == len(connected):
-            raise RuntimeError(f"Các Project ({', '.join(p['name'] for p in disabled_projs)}) chưa bật 'YouTube Data API v3' trong Google Cloud Console.")
+            raise RuntimeError(
+                f"Các Project ({', '.join(p['name'] for p in disabled_projs)}) "
+                "chưa bật 'YouTube Data API v3' trong Google Cloud Console."
+            )
         raise RuntimeError("Toàn bộ các Google Cloud Project đều đã dùng hết quota upload hôm nay.")
 
-    for p in available:
+    errors: list[str] = []
+
+    def _try_build(p: dict[str, Any]):
         pid = p["id"]
+        name = p.get("name") or pid
         tok_file = TOKENS_DIR / f"{pid}.json"
+        if not tok_file.is_file():
+            raise RuntimeError(f"{name}: thiếu token")
+        creds_data = json.loads(tok_file.read_text(encoding="utf-8"))
+        creds = Credentials.from_authorized_user_info(creds_data, scopes=SCOPES)
+        # Refresh sớm để bắt invalid_grant (token local còn hạn nhưng grant đã thu hồi).
+        if creds.refresh_token:
+            creds.refresh(Request())
+            tok_file.write_text(creds.to_json(), encoding="utf-8")
+        elif creds.expired:
+            raise RuntimeError(f"{name}: access token hết hạn, không có refresh_token — đăng nhập lại")
+        yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
+        return yt, pid
+
+    for p in candidates:
+        name = p.get("name") or p["id"]
         try:
-            creds_data = json.loads(tok_file.read_text(encoding="utf-8"))
-            creds = Credentials.from_authorized_user_info(creds_data, scopes=SCOPES)
-            if creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                tok_file.write_text(creds.to_json(), encoding="utf-8")
-            yt = build("youtube", "v3", credentials=creds)
-            return yt, pid
-        except Exception:
+            return _try_build(p)
+        except Exception as e:  # noqa: BLE001
+            msg = str(e)
+            low = msg.lower()
+            if "invalid_grant" in low or "revoked" in low:
+                hint = "token hết hạn/bị thu hồi — mở Kênh Test → Đăng nhập lại project này"
+            elif "access_denied" in low or "accessnotconfigured" in low or "has not been used" in low:
+                hint = "chưa bật YouTube Data API v3 trên Google Cloud của project"
+            elif "quota" in low or "ratelimitexceeded" in low or "dailylimitexceeded" in low:
+                hint = "hết quota / rate limit"
+            elif msg.startswith(f"{name}:"):
+                hint = msg.split(":", 1)[1].strip()
+            else:
+                hint = msg[:180].replace("\n", " ")
+            tag = " [cờ hết quota]" if p.get("exhausted_today") else ""
+            errors.append(f"{name}{tag}: {hint}")
             continue
 
-    raise RuntimeError("Không thể khởi tạo YouTube API từ các Project khả dụng.")
+    detail = "; ".join(errors) if errors else "không có chi tiết"
+    if preferred and exhausted_ok:
+        detail += (
+            f". Đã thử cả {len(preferred)} project còn quota và {len(exhausted_ok)} project còn cờ exhausted."
+        )
+    elif not preferred and exhausted_ok:
+        detail += (
+            f". Chỉ còn project cờ hết quota ({len(exhausted_ok)}) — bấm ⚡ Reset Quota nếu GCP còn hạn mức."
+        )
+    raise RuntimeError(
+        "Không thể khởi tạo YouTube API từ các Project khả dụng. " + detail
+    )
 
 
 def get_read_service():

@@ -1,13 +1,13 @@
 # Hiện trạng PinelineV4 (port từ V2)
 
-_Cập nhật: 2026-11-07 ~01:15 — Skip UX sticky live trên Films; **chờ restart :8801** (hardsub_blur); **chờ restart :8802 khi idle** (oversized enqueue/auto-pub + skip message — PID 35972, auto-pub state từng `uploading`)_
+_Cập nhật: 2026-11-08 ~02:35 — Browse facets WinUI live (đã restart :8801); queue có job sau restart
 
 ## Dịch vụ
 
 | Dịch vụ | Cổng | PID | Khởi động bằng | Ghi chú |
 |---|---|---|---|---|
 | Pineline V4 `server.py` / desktop | **8804** | — (không listening 21:43 5/11) | `run_v4.bat` / `server.py` | TEMP `D:\PinelineV4_tmp`. `llm.py` pool-first file upload. |
-| Sidecar Auto-pilot + Telegram `agent_tele_cmd.py` | 8802 | **35972** (live; chưa restart sau Skip UX) | `python agent_tele_cmd.py` cwd V2 | Films Skip sticky UI live từ disk. Python oversized/skip refine chờ restart idle. |
+| Sidecar Auto-pilot + Telegram `agent_tele_cmd.py` | 8802 | **28936** (restart ~01:40 7/11) | `run_tele_cmd.bat` cwd V2 | Nạp preserve_order + oversized/skip refine; Settings/Uploader OK. |
 | Pineline V2 | **8801** | (restart ~21:17 6/11) | `restart_server.py --ignore-hg --clean-env` | Translate force `88d80ba0be0f` (~5%+); harden `_clear_stop` dual-path trên disk **chưa** nạp process. Llama :8083 không đụng. |
 | Pineline V5 | **8805** | — (không listening 21:43 5/11) | `server.py --port 8805` | TEMP `D:\PinelineV5_tmp`. |
 | Hongguo Downloader | 8000 | **20160** | app riêng | Cần UI token; API `/dl/*`. **Không kill.** |
@@ -49,7 +49,7 @@ Restart chỉ khi hàng đợi rảnh, hoặc user đồng ý (yes/no).
 ## Việc còn treo / cần user quyết
 
 - **Chờ restart :8801** — nạp `MuxReq`/`RunAllReq.hardsub_blur` + `as_bool` queue/render; thêm `TranslateReq.force` + dual-path `_clear_stop`. Live OpenAPI chưa có `hardsub_blur`. Fix `docs/fixes/2026-11-07-hardsub-blur-toggle.md`.
-- **Chờ restart :8802 khi idle** — nạp `uploader_settings_api` allow_huge + `auto_publisher` refuse oversized + `allow_oversized` trên trigger/combine. UI Skip sticky đã live (hard refresh). Fix `docs/fixes/2026-11-07-uploader-skip-ux.md`.
+- ~~Chờ restart :8802~~ — đã restart ~01:40 (PID 28936). Fix skip-ux + combine preserve_order.
 - ~~Chờ restart :8801 (hongguo2)~~ — đã restart 15:13 6/11; `/hongguo2` 200 + body Hongguo2.
 - **Hard refresh `/hongguo` + `/hongguo2`** — seasons board + trang Hongguo2 (HTML static) nếu browser còn cache cũ.
 - ~~Restart :8804~~ — đã lên 01:16 3/11 (cùng :8801/:8805); Aurora pool-file + pronoun/review lock đã trong process.

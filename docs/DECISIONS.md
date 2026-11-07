@@ -4,7 +4,11 @@ Mới nhất trên cùng. Mỗi mục: quyết định — bối cảnh/lý do. 
 
 ## 2026-11
 
-- **11-06 (Drop Hongguo2)** User: bỏ hongguo 2, quá tệ — update V4–V5. Route `/hongguo2` → 302 `/hongguo`; không còn nav/link thử nghiệm; deep-link Films UI → Hongguo gốc + `bootFromQuery`. File `hongguo2.html` giữ archive trên đĩa. Fix `docs/fixes/2026-11-06-drop-hongguo2.md`.
+- **11-07 (Revive Hongguo2 UI = option B)** User: làm lại UI giống app Hongguo Downloader 2.x (Browse / Ranking / New / Library…) cho `/hongguo2`. Supersede drop 11-06: route phục vụ `hongguo2.html` (WinUI skin); classic `/hongguo` giữ nguyên. License Settings + `/api/hg/license/*`; hot-path magic `@@license@@*` qua search/resolve tới khi :8801 reload. Backup `Z:\PinelineV2_codebak\2026-11-07_hongguo2-ui-2x\`.
+
+- **11-07 (Hongguo 2.x license prove)** User paste Hongguo key → activate+prove hợp lệ vào helper Pineline; key DPAPI local (không docs); hook download RPC. Không crack / không cướp stdin WinUI.
+
+- **11-06 (Drop Hongguo2)** *(superseded 11-07 revive B)* User: bỏ hongguo 2, quá tệ — update V4–V5. Route `/hongguo2` → 302 `/hongguo`; không còn nav/link thử nghiệm; deep-link Films UI → Hongguo gốc + `bootFromQuery`. File `hongguo2.html` giữ archive trên đĩa. Fix `docs/fixes/2026-11-06-drop-hongguo2.md`.
 
 - **11-06 (Films UI Mùa mới)** User: ok làm đi — bảng mùa mới chính ở Films UI (`/films/ui?tab=seasons`), filter chỉ mùa mới hơn max đã biết; Hongguo2 còn badge/compact + Update Lib. Fix follow-up `docs/fixes/2026-11-06-hg-watchlist-discover.md`. *(superseded: Hongguo2 đã drop.)*
 - **11-06 (hg_watchlist)** User: ok — tạo bảng meta trong `films.db` (`hg_watchlist`); xoá Lib giữ sid/core/title; «Tìm mùa mới» quét theo DB+watchlist, **không** gọi Hongguo Update all (tránh tải hàng nghìn tập). Nút «Cập nhật thư viện» giữ hành vi tải tập thiếu. Fix `docs/fixes/2026-11-06-hg-watchlist-discover.md`.

@@ -134,12 +134,36 @@ def _ensure_parent_mux_merged_done(work_dir: Path, n_parts: int | None = None) -
     _job_cache.pop(str(work_dir), None)
 
 
+def _split_parent_id(job_id: str) -> str | None:
+    """d693…_p03 → d693… ; job thường → None."""
+    import re
+    m = re.fullmatch(r"(.+)_p\d{2,}", str(job_id or ""))
+    return m.group(1) if m else None
+
+
 def _job_any_busy(job_id: str) -> str | None:
     """Trả tên stage đang claim, hoặc None."""
     with _STAGE_BUSY_LOCK:
         for j, s in _STAGE_BUSY:
             if j == job_id:
                 return s
+    return None
+
+
+def _job_lineage_busy(job_id: str) -> str | None:
+    """Busy của job hoặc parent auto-split (part chạy dưới claim của parent)."""
+    busy = _job_any_busy(job_id)
+    if busy:
+        return busy
+    parent = _split_parent_id(job_id)
+    if parent:
+        busy = _job_any_busy(parent)
+        if busy:
+            return busy
+        if parent in _AUTO_SPLIT_ACTIVE:
+            return "auto_split"
+    if job_id in _AUTO_SPLIT_ACTIVE:
+        return "auto_split"
     return None
 
 
@@ -289,8 +313,16 @@ def _heal_stale_running(work_dir: Path) -> list[str]:
     """
     work_dir = Path(work_dir)
     jid = work_dir.name
-    if _job_any_busy(jid) or _job_proc_alive(jid):
+    # Part chạy dưới claim parent (__all__ / auto-split) — đừng heal nhầm khi
+    # đang OCR hardsub (chưa có ffmpeg/output) → UI hiện "Sẵn sàng" giả.
+    if _job_lineage_busy(jid) or _job_proc_alive(jid):
         return []
+    hstrack = work_dir / "_hstrack"
+    try:
+        if hstrack.is_dir() and next(hstrack.glob("hs_*.jpg"), None) is not None:
+            return []
+    except OSError:
+        pass
     # partial đang ghi + ffmpeg sống → đang encode thật (không heal)
     partial = work_dir / "output.partial.mp4"
     if partial.exists() and (time.time() - partial.stat().st_mtime) < 30:
@@ -980,6 +1012,7 @@ class HgSubmitIn(BaseModel):
     series_ids: list[str]
     base: str | None = None
     scores: dict[str, str] | None = None
+    quality: str | None = None  # 1080p/720p/… — Hongguo 2.x downloads.add
 
 
 class HgMergeIn(BaseModel):
@@ -3392,7 +3425,13 @@ def _do_render(work_dir: Path, force: bool = True, audio_mode: str = "voice_bgm"
                 pass
         try:
             st = m_early.data["stages"].get("mux", {})
-            st["phase"] = "encode"
+            # hardsub track OCR ~20–30 phút/part 2.5h — UI phải thấy đang chạy, không phải encode
+            st["phase"] = "hardsub_track" if hardsub_blur else "encode"
+            st["status"] = "running"
+            st["cur_text"] = (
+                "đang dò hardsub track (OCR khung)…" if hardsub_blur else "đang chạy…"
+            )
+            st.pop("healed", None)
             st["updated_at"] = time.time()
             m_early.data["stages"]["mux"] = st
             m_early.save()

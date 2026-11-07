@@ -125,6 +125,36 @@ def _write_publish_queue(items: list[dict[str, Any]]) -> None:
         pass
 
 
+_SPLIT_PART_ID_RE = re.compile(r"^.+_p\d{2,}$", re.I)
+_SPLIT_PART_TITLE_RE = re.compile(r"Phần\s*\d+\s*/\s*\d+", re.I)
+
+
+def is_auto_split_part(job_id: str) -> bool:
+    """True nếu job là mảnh auto-split (…_p01) — chỉ parent Full được upload."""
+    jid = str(job_id or "").strip()
+    if not jid:
+        return False
+    if _SPLIT_PART_ID_RE.match(jid):
+        return True
+    mf = ROOT / "work" / jid / "manifest.json"
+    if not mf.is_file():
+        return False
+    try:
+        data = json.loads(mf.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    req = data.get("request") or {}
+    if req.get("parent_job_id"):
+        return True
+    title = str(
+        req.get("title")
+        or (data.get("meta") or {}).get("title")
+        or req.get("part_title")
+        or ""
+    )
+    return bool(_SPLIT_PART_TITLE_RE.search(title))
+
+
 def _enqueue_job_record(
     job_id: str,
     privacy: str | None = None,
@@ -135,6 +165,12 @@ def _enqueue_job_record(
     """Thêm job vào hàng chờ upload liên tiến trình (data/auto_publish_queue.json)."""
     job_id = str(job_id or "").strip()
     if not job_id:
+        return _read_publish_queue()
+    if is_auto_split_part(job_id):
+        print(
+            f"[auto-publish] Bỏ qua enqueue «{job_id}» — part auto-split (chỉ upload bản Full sau merge).",
+            flush=True,
+        )
         return _read_publish_queue()
     try:
         from fileio import file_lock
@@ -487,13 +523,25 @@ def format_youtube_title(ai_title: str, clean_name: str = "", season: int | None
         clipped = t[:max_len].rsplit(" ", 1)[0].rstrip(" ,.-:|–—")
         return clipped or t[:max_len]
 
-    prefix = f"Phần {s_num} | " if s_num else "Trọn Bộ | "
+    if s_num == -1:
+        prefix = "Phần Cuối | "
+    elif s_num:
+        prefix = f"Phần {s_num} | "
+    else:
+        prefix = "Trọn Bộ | "
     # Nếu đã có định dạng Phần X | hoặc Trọn Bộ | thì chuẩn hoá và đổi : thành -
-    if re.match(r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*\d*\s*[|:\-–—]\s*', title, re.IGNORECASE):
+    if re.match(r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*(?:\d+|Cuối)?\s*[|:\-–—]\s*', title, re.IGNORECASE):
         # Đổi dấu hai chấm thành gạch ngang
-        title = re.sub(r'^((?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*\d*\s*[|:\-–—]\s*[^:\-–—]+):\s*', r'\1 - ', title)
-        if s_num:
-            title = re.sub(r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*\d*\s*[|:\-–—]\s*', f'Phần {s_num} | ', title, flags=re.I)
+        title = re.sub(r'^((?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*(?:\d+|Cuối)?\s*[|:\-–—]\s*[^:\-–—]+):\s*', r'\1 - ', title)
+        if s_num == -1:
+            title = re.sub(
+                r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*(?:\d+|Cuối)?\s*[|:\-–—]\s*',
+                'Phần Cuối | ',
+                title,
+                flags=re.I,
+            )
+        elif s_num:
+            title = re.sub(r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*(?:\d+|Cuối)?\s*[|:\-–—]\s*', f'Phần {s_num} | ', title, flags=re.I)
         title = re.sub(r'\s{2,}', ' ', title).strip()
         return _truncate_word_safe(title, 95)
 
@@ -693,6 +741,14 @@ def enqueue_publish(
     job_id = str(job_id or "").strip()
     if not job_id:
         return {"ok": False, "error": "missing job_id"}
+    if is_auto_split_part(job_id):
+        return {
+            "ok": False,
+            "error": "skip_split_part",
+            "skipped_split_part": True,
+            "job_id": job_id,
+            "message": "Part auto-split (Phần N/N) không đưa vào upload — chờ merge Full.",
+        }
 
     try:
         film_db.sync_one(job_id)
@@ -817,6 +873,16 @@ def publish_job(
     job_id = str(job_id).strip()
     if not job_id:
         return {"ok": False, "error": "missing job_id"}
+    if is_auto_split_part(job_id):
+        _dequeue_job_record(job_id)
+        _sync_queue_state_badge()
+        return {
+            "ok": False,
+            "error": "skip_split_part",
+            "skipped_split_part": True,
+            "job_id": job_id,
+            "message": "Part auto-split không upload — chờ merge Full.",
+        }
 
     # Đảm bảo thông tin mới nhất của job đã có trong films.db trước khi kiểm tra
     try:
@@ -1002,9 +1068,14 @@ def _publish_job_internal(
         season_no = row.get("season")
         if season_no is None:
             from job_queue import get_job_info
-            season_no = get_job_info(job_id).get("season") or 1
+            season_no = get_job_info(job_id).get("season")
+            if season_no is None:
+                season_no = 1
 
-        if shared_meta and shared_thumb and shared_thumb.is_file():
+        # Phần Cuối: giữ title_vi, không gọi generate_part_metadata(season=1) → tránh «Phần 1 | Xuyên Không…»
+        is_final = (season_no == -1) or bool(re.search(r"phần\s*cuối|mùa\s*cuối", str(title_vi or ""), re.I))
+
+        if shared_meta and shared_thumb and shared_thumb.is_file() and not is_final:
             # === CÙNG SERIES ĐÃ CÓ MẪU: DÙNG CHUNG 1 THUMBNAIL 16:9 & TAGS SEO, SINH METADATA RIÊNG CHO PHẦN {X} ===
             print(f"[auto-publish] {job_id}: 🎯 Phát hiện cùng Series «{series_name}» (Group: {series_key}) -> DÙNG CHUNG 1 Master Thumbnail 16:9 & Bộ Tags SEO của Series!", flush=True)
             import shutil
@@ -1025,6 +1096,14 @@ def _publish_job_internal(
             final_desc = str(part_meta.get("description") or "").replace("\\n", "\n").strip()
             final_tags = part_meta.get("tags") or shared_meta.get("tags") or [series_name, "Phim Thuyết Minh", "Manhua Tiếng Việt"]
 
+            update_auto_state(current_stage="uploading", progress_percent=60)
+        elif shared_meta and shared_thumb and shared_thumb.is_file() and is_final:
+            print(f"[auto-publish] {job_id}: Phần Cuối — giữ title_vi, dùng master thumb/tags series «{series_name}»", flush=True)
+            import shutil
+            shutil.copyfile(str(shared_thumb), str(thumb_path))
+            final_title = format_youtube_title(title_vi or series_name, clean_name=series_name, season=-1)
+            final_desc = str(shared_meta.get("description") or f"{title_vi} - Phần cuối thuyết minh.").replace("\\n", "\n").strip()
+            final_tags = shared_meta.get("tags") or [series_name, "Phim Thuyết Minh", "Manhua Tiếng Việt"]
             update_auto_state(current_stage="uploading", progress_percent=60)
         else:
             # === TẬP ĐẦU TIÊN CỦA SERIES: SINH MỚI BẰNG AURORA VÀ LƯU LẠI LÀM MẪU DÙNG CHUNG ===
@@ -1297,11 +1376,17 @@ def _collect_and_enqueue_done_jobs() -> list[dict[str, Any]]:
         jid = f.get("job_id")
         if not jid:
             continue
+        if is_auto_split_part(jid):
+            continue
         if f.get("yt_url"):
             continue
         if not f.get("work_exists"):
             continue
         if is_job_uploading(jid):
+            continue
+        # Title kiểu «… - Phần 2/2» (kể cả khi id chưa có _pNN)
+        title = str(f.get("title_vi") or f.get("title") or f.get("title_zh") or "")
+        if _SPLIT_PART_TITLE_RE.search(title):
             continue
         mf = ROOT / "work" / jid / "manifest.json"
         if mf.is_file():
@@ -1326,6 +1411,16 @@ def _collect_and_enqueue_done_jobs() -> list[dict[str, Any]]:
         jid = f.get("job_id")
         if jid:
             _enqueue_job_record(jid)
+
+    # Gỡ part auto-split đã lọt queue cũ (…_pNN / «Phần N/N»)
+    try:
+        for it in list(_read_publish_queue()):
+            jid = str(it.get("job_id") or "")
+            if jid and is_auto_split_part(jid):
+                print(f"[auto-publish] Gỡ part khỏi queue upload: {jid}", flush=True)
+                _dequeue_job_record(jid)
+    except Exception:
+        pass
 
     _sync_queue_state_badge()
     return pending_upload

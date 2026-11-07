@@ -4,6 +4,9 @@ Báo cáo review / audit PinelineV5. Mới nhất trên cùng.
 
 | Ngày | File | Chủ đề |
 |---|---|---|
+| 2026-11-07 | [2026-11-07-hongguo-2x-post-restart-test.md](./2026-11-07-hongguo-2x-post-restart-test.md) | Post-:8801-restart Hongguo 2.x bridge test matrix (PASS/FAIL) |
+| 2026-11-07 | [2026-11-07-hongguo-lic-host-portability.md](./2026-11-07-hongguo-lic-host-portability.md) | Hongguo 2.x license prove stack — portability to other Windows PCs |
+| 2026-11-07 | [2026-11-07-hongguo-license-prove-review.md](./2026-11-07-hongguo-license-prove-review.md) | Hongguo 2.x legitimate license prove for bridge downloads |
 | 2026-11-06 | [func-sigs/](./func-sigs/) | AST signatures batch (translate, queue, llm, bridge, server orch, …) |
 | 2026-11-06 | [2026-11-06-v5-func-catalog.md](./2026-11-06-v5-func-catalog.md) | **Function-level map** — spine CALL ORDER + full per-fn catalog (2118) |
 | 2026-11-06 | [2026-11-06-v5-eng-swarm.md](./2026-11-06-v5-eng-swarm.md) | First eng-swarm run (vuln/bugs/invariants/coverage/PR) |

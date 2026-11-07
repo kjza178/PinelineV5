@@ -18,10 +18,10 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-import core.film_db as film_db
-import agents.meta_studio as meta_studio
+import film_db
+import meta_studio
 
-ROOT = Path(__file__).resolve().parent.parent  # project root (file lives in agents/)
+ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 CONFIG_FILE = DATA_DIR / "auto_publish_config.json"
 YT_DIR = Path(os.getenv("YT_UPLOADER_DIR") or r"Z:\yt_uploader")
@@ -100,7 +100,7 @@ def update_auto_state(**kwargs) -> dict[str, Any]:
         AUTO_STATE.update(kwargs)
         cur = dict(AUTO_STATE)
     try:
-        from core.fileio import atomic_write_json
+        from fileio import atomic_write_json
         atomic_write_json(STATE_FILE, cur)
     except Exception:
         pass
@@ -119,10 +119,40 @@ def _read_publish_queue() -> list[dict[str, Any]]:
 
 def _write_publish_queue(items: list[dict[str, Any]]) -> None:
     try:
-        from core.fileio import atomic_write_json
+        from fileio import atomic_write_json
         atomic_write_json(PUBLISH_QUEUE_FILE, items)
     except Exception:
         pass
+
+
+_SPLIT_PART_ID_RE = re.compile(r"^.+_p\d{2,}$", re.I)
+_SPLIT_PART_TITLE_RE = re.compile(r"Phần\s*\d+\s*/\s*\d+", re.I)
+
+
+def is_auto_split_part(job_id: str) -> bool:
+    """True nếu job là mảnh auto-split (…_p01) — chỉ parent Full được upload."""
+    jid = str(job_id or "").strip()
+    if not jid:
+        return False
+    if _SPLIT_PART_ID_RE.match(jid):
+        return True
+    mf = ROOT / "work" / jid / "manifest.json"
+    if not mf.is_file():
+        return False
+    try:
+        data = json.loads(mf.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    req = data.get("request") or {}
+    if req.get("parent_job_id"):
+        return True
+    title = str(
+        req.get("title")
+        or (data.get("meta") or {}).get("title")
+        or req.get("part_title")
+        or ""
+    )
+    return bool(_SPLIT_PART_TITLE_RE.search(title))
 
 
 def _enqueue_job_record(
@@ -136,8 +166,14 @@ def _enqueue_job_record(
     job_id = str(job_id or "").strip()
     if not job_id:
         return _read_publish_queue()
+    if is_auto_split_part(job_id):
+        print(
+            f"[auto-publish] Bỏ qua enqueue «{job_id}» — part auto-split (chỉ upload bản Full sau merge).",
+            flush=True,
+        )
+        return _read_publish_queue()
     try:
-        from core.fileio import file_lock
+        from fileio import file_lock
         with file_lock(QUEUE_LOCK_FILE, timeout=5.0, stale_sec=30.0):
             items = _read_publish_queue()
             existing = next((it for it in items if it.get("job_id") == job_id), None)
@@ -161,7 +197,7 @@ def _enqueue_job_record(
                 })
             # Sắp xếp hàng chờ theo thứ tự bộ & phần (P1 -> Pn)
             try:
-                from core.job_queue import job_sort_key
+                from job_queue import job_sort_key
                 items.sort(key=lambda x: job_sort_key(x.get("job_id") or ""))
             except Exception:
                 pass
@@ -186,7 +222,7 @@ def _dequeue_job_record(job_id: str) -> list[dict[str, Any]]:
     """Xoá job khỏi hàng chờ upload sau khi đã xử lý xong."""
     job_id = str(job_id or "").strip()
     try:
-        from core.fileio import file_lock
+        from fileio import file_lock
         with file_lock(QUEUE_LOCK_FILE, timeout=5.0, stale_sec=30.0):
             items = [it for it in _read_publish_queue() if it.get("job_id") != job_id]
             _write_publish_queue(items)
@@ -487,13 +523,25 @@ def format_youtube_title(ai_title: str, clean_name: str = "", season: int | None
         clipped = t[:max_len].rsplit(" ", 1)[0].rstrip(" ,.-:|–—")
         return clipped or t[:max_len]
 
-    prefix = f"Phần {s_num} | " if s_num else "Trọn Bộ | "
+    if s_num == -1:
+        prefix = "Phần Cuối | "
+    elif s_num:
+        prefix = f"Phần {s_num} | "
+    else:
+        prefix = "Trọn Bộ | "
     # Nếu đã có định dạng Phần X | hoặc Trọn Bộ | thì chuẩn hoá và đổi : thành -
-    if re.match(r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*\d*\s*[|:\-–—]\s*', title, re.IGNORECASE):
+    if re.match(r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*(?:\d+|Cuối)?\s*[|:\-–—]\s*', title, re.IGNORECASE):
         # Đổi dấu hai chấm thành gạch ngang
-        title = re.sub(r'^((?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*\d*\s*[|:\-–—]\s*[^:\-–—]+):\s*', r'\1 - ', title)
-        if s_num:
-            title = re.sub(r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*\d*\s*[|:\-–—]\s*', f'Phần {s_num} | ', title, flags=re.I)
+        title = re.sub(r'^((?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*(?:\d+|Cuối)?\s*[|:\-–—]\s*[^:\-–—]+):\s*', r'\1 - ', title)
+        if s_num == -1:
+            title = re.sub(
+                r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*(?:\d+|Cuối)?\s*[|:\-–—]\s*',
+                'Phần Cuối | ',
+                title,
+                flags=re.I,
+            )
+        elif s_num:
+            title = re.sub(r'^(?:Phần|Tập|Mùa|Trọn\s*Bộ)\s*(?:\d+|Cuối)?\s*[|:\-–—]\s*', f'Phần {s_num} | ', title, flags=re.I)
         title = re.sub(r'\s{2,}', ' ', title).strip()
         return _truncate_word_safe(title, 95)
 
@@ -639,7 +687,7 @@ def _revert_job_to_done(job_id: str, error_msg: str | None = None) -> None:
     """Hoàn trả trạng thái job về 'done' khi quá trình upload bị lỗi hoặc gián đoạn để không bị kẹt ở 'uploading'."""
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        from core.manifest import Manifest
+        from manifest import Manifest
         w_dir = ROOT / "work" / job_id
         if (w_dir / "manifest.json").is_file():
             m = Manifest(w_dir)
@@ -662,6 +710,7 @@ def _revert_job_to_done(job_id: str, error_msg: str | None = None) -> None:
 
 
 def _oversized_youtube_reasons(row: dict | None, out_path: str | Path | None) -> list[str]:
+    """Lý do file quá dài/nặng cho YouTube (dùng từ chối auto-publish)."""
     reasons: list[str] = []
     try:
         dur = float((row or {}).get("duration_sec") or 0)
@@ -692,12 +741,21 @@ def enqueue_publish(
     job_id = str(job_id or "").strip()
     if not job_id:
         return {"ok": False, "error": "missing job_id"}
+    if is_auto_split_part(job_id):
+        return {
+            "ok": False,
+            "error": "skip_split_part",
+            "skipped_split_part": True,
+            "job_id": job_id,
+            "message": "Part auto-split (Phần N/N) không đưa vào upload — chờ merge Full.",
+        }
 
     try:
         film_db.sync_one(job_id)
     except Exception as e_sync:
         print(f"[auto-publish] Cảnh báo sync_one({job_id}): {e_sync}", flush=True)
 
+    # Soft-refuse file quá dài trước khi xếp hàng (auto); manual UI truyền allow_oversized=True sau confirm.
     if not allow_oversized:
         row = film_db.get(job_id) or {}
         out_path = row.get("output_path")
@@ -718,7 +776,11 @@ def enqueue_publish(
             }
 
     items = _enqueue_job_record(
-        job_id, privacy=privacy, schedule_hours=schedule_hours, force=force, allow_oversized=allow_oversized
+        job_id,
+        privacy=privacy,
+        schedule_hours=schedule_hours,
+        force=force,
+        allow_oversized=allow_oversized,
     )
     _sync_queue_state_badge()
     print(f"[auto-publish] Đã xếp job {job_id} vào hàng đợi xuất bản (tổng hàng chờ: {len(items)}).", flush=True)
@@ -811,6 +873,16 @@ def publish_job(
     job_id = str(job_id).strip()
     if not job_id:
         return {"ok": False, "error": "missing job_id"}
+    if is_auto_split_part(job_id):
+        _dequeue_job_record(job_id)
+        _sync_queue_state_badge()
+        return {
+            "ok": False,
+            "error": "skip_split_part",
+            "skipped_split_part": True,
+            "job_id": job_id,
+            "message": "Part auto-split không upload — chờ merge Full.",
+        }
 
     # Đảm bảo thông tin mới nhất của job đã có trong films.db trước khi kiểm tra
     try:
@@ -818,6 +890,7 @@ def publish_job(
     except Exception:
         pass
 
+    # Soft-refuse oversized trước khi chiếm lock (manual UI set allow_oversized sau confirm).
     if not allow_oversized:
         row0 = film_db.get(job_id) or {}
         out0 = row0.get("output_path")
@@ -838,7 +911,11 @@ def publish_job(
 
     # Ghi nhận vào hàng chờ liên tiến trình để UI hiển thị số lượng phim đang chờ
     _enqueue_job_record(
-        job_id, privacy=privacy, schedule_hours=schedule_hours, force=force, allow_oversized=allow_oversized
+        job_id,
+        privacy=privacy,
+        schedule_hours=schedule_hours,
+        force=force,
+        allow_oversized=allow_oversized,
     )
     _sync_queue_state_badge()
 
@@ -955,7 +1032,7 @@ def _publish_job_internal(
 
     # Đánh dấu upload_status = 'uploading' vào manifest và films.db ngay từ đầu để scanner không quét trúng
     try:
-        from core.manifest import Manifest
+        from manifest import Manifest
         m = Manifest(ROOT / "work" / job_id)
         m.data["upload_status"] = "uploading"
         m.data["upload_started_at"] = now_utc
@@ -990,10 +1067,15 @@ def _publish_job_internal(
 
         season_no = row.get("season")
         if season_no is None:
-            from core.job_queue import get_job_info
-            season_no = get_job_info(job_id).get("season") or 1
+            from job_queue import get_job_info
+            season_no = get_job_info(job_id).get("season")
+            if season_no is None:
+                season_no = 1
 
-        if shared_meta and shared_thumb and shared_thumb.is_file():
+        # Phần Cuối: giữ title_vi, không gọi generate_part_metadata(season=1) → tránh «Phần 1 | Xuyên Không…»
+        is_final = (season_no == -1) or bool(re.search(r"phần\s*cuối|mùa\s*cuối", str(title_vi or ""), re.I))
+
+        if shared_meta and shared_thumb and shared_thumb.is_file() and not is_final:
             # === CÙNG SERIES ĐÃ CÓ MẪU: DÙNG CHUNG 1 THUMBNAIL 16:9 & TAGS SEO, SINH METADATA RIÊNG CHO PHẦN {X} ===
             print(f"[auto-publish] {job_id}: 🎯 Phát hiện cùng Series «{series_name}» (Group: {series_key}) -> DÙNG CHUNG 1 Master Thumbnail 16:9 & Bộ Tags SEO của Series!", flush=True)
             import shutil
@@ -1014,6 +1096,14 @@ def _publish_job_internal(
             final_desc = str(part_meta.get("description") or "").replace("\\n", "\n").strip()
             final_tags = part_meta.get("tags") or shared_meta.get("tags") or [series_name, "Phim Thuyết Minh", "Manhua Tiếng Việt"]
 
+            update_auto_state(current_stage="uploading", progress_percent=60)
+        elif shared_meta and shared_thumb and shared_thumb.is_file() and is_final:
+            print(f"[auto-publish] {job_id}: Phần Cuối — giữ title_vi, dùng master thumb/tags series «{series_name}»", flush=True)
+            import shutil
+            shutil.copyfile(str(shared_thumb), str(thumb_path))
+            final_title = format_youtube_title(title_vi or series_name, clean_name=series_name, season=-1)
+            final_desc = str(shared_meta.get("description") or f"{title_vi} - Phần cuối thuyết minh.").replace("\\n", "\n").strip()
+            final_tags = shared_meta.get("tags") or [series_name, "Phim Thuyết Minh", "Manhua Tiếng Việt"]
             update_auto_state(current_stage="uploading", progress_percent=60)
         else:
             # === TẬP ĐẦU TIÊN CỦA SERIES: SINH MỚI BẰNG AURORA VÀ LƯU LẠI LÀM MẪU DÙNG CHUNG ===
@@ -1061,7 +1151,7 @@ def _publish_job_internal(
 
             # AI vẽ luôn chữ 3D (NEW/HOT + hook neo tên) — không dùng Pillow overlay
             print(f"[auto-publish] {job_id}: Đang tạo Thumbnail 16:9 (AI typography)...", flush=True)
-            from agents.agent_tele_cmd import _fetch_poster_bytes
+            from agent_tele_cmd import _fetch_poster_bytes
             poster_bytes = _fetch_poster_bytes(poster_name)
 
             ai_img_bytes = None
@@ -1208,7 +1298,7 @@ def _publish_job_internal(
 
     # 7. Cập nhật manifest.json của job
     try:
-        from core.manifest import Manifest
+        from manifest import Manifest
         m = Manifest(ROOT / "work" / job_id)
         m.data["yt_url"] = yt_url
         m.data["uploaded_at"] = now_utc
@@ -1286,11 +1376,17 @@ def _collect_and_enqueue_done_jobs() -> list[dict[str, Any]]:
         jid = f.get("job_id")
         if not jid:
             continue
+        if is_auto_split_part(jid):
+            continue
         if f.get("yt_url"):
             continue
         if not f.get("work_exists"):
             continue
         if is_job_uploading(jid):
+            continue
+        # Title kiểu «… - Phần 2/2» (kể cả khi id chưa có _pNN)
+        title = str(f.get("title_vi") or f.get("title") or f.get("title_zh") or "")
+        if _SPLIT_PART_TITLE_RE.search(title):
             continue
         mf = ROOT / "work" / jid / "manifest.json"
         if mf.is_file():
@@ -1306,7 +1402,7 @@ def _collect_and_enqueue_done_jobs() -> list[dict[str, Any]]:
 
     # Sắp xếp tuần tự theo Tên Bộ & Phần (P1 -> P2 -> P3 -> P4)
     try:
-        from core.job_queue import job_sort_key
+        from job_queue import job_sort_key
         pending_upload.sort(key=lambda f: job_sort_key(f.get("job_id") or ""))
     except Exception:
         pass
@@ -1315,6 +1411,16 @@ def _collect_and_enqueue_done_jobs() -> list[dict[str, Any]]:
         jid = f.get("job_id")
         if jid:
             _enqueue_job_record(jid)
+
+    # Gỡ part auto-split đã lọt queue cũ (…_pNN / «Phần N/N»)
+    try:
+        for it in list(_read_publish_queue()):
+            jid = str(it.get("job_id") or "")
+            if jid and is_auto_split_part(jid):
+                print(f"[auto-publish] Gỡ part khỏi queue upload: {jid}", flush=True)
+                _dequeue_job_record(jid)
+    except Exception:
+        pass
 
     _sync_queue_state_badge()
     return pending_upload
@@ -1358,8 +1464,9 @@ def scan_and_publish_completed_jobs() -> dict[str, Any]:
         }
 
     try:
-        from core.fileio import file_lock
-        with file_lock(SCAN_LOCK_FILE, timeout=0.1, stale_sec=14400.0):
+        from fileio import file_lock
+        # Scan chỉ giữ lock ngắn — stale 3 phút (trước 4h khiến worker kẹt sau restart sidecar)
+        with file_lock(SCAN_LOCK_FILE, timeout=0.5, stale_sec=180.0):
             count = _scan_and_publish_impl()
             return {"ok": True, "busy": False, "scanned": count}
     except TimeoutError:

@@ -729,8 +729,9 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
       rồi concat TS -> MP4 (-c copy -bsf:a aac_adtstoasc -movflags +faststart).
       Cách này giữ nguyên 100% chất lượng hình ảnh (tốc độ ổ cứng, vài giây/phần)
       và triệt tiêu hoàn toàn lỗi lệch time_base (stts压缩) giữa các file MP4.
-    - Nếu các phần lệch độ phân giải (vd 720p lẫn 1080p):
-      Tự động chuẩn hoá scale+pad bằng h264_nvenc (fallback libx264) về cùng khung hình rồi nối.
+    - Nếu các phần lệch độ phân giải (vd 720p lẫn 1080p, hoặc 1882x1080 lẫn 1920x1080):
+      Chỉ encode lại phần lệch khung; phần đã đúng W×H + h264 giữ -c:v copy (chỉ chỉnh audio),
+      rồi concat -c copy. Tránh encode lại cả loạt khi chỉ 1 file lệch vài pixel.
     """
     import shutil
     import subprocess
@@ -805,25 +806,59 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
                         "part_durations": [m["duration"] for m in metas],
                     }
 
-        # Fallback: Chuẩn hoá về cùng khung hình (scale+pad) bằng NVENC hoặc libx264 rồi nối
+        # Fallback: chỉ encode phần lệch W×H; phần đã khớp giữ -c:v copy (audio AAC chuẩn hoá).
         hg = _hg()
         vargs = hg._pick_h264_encoder()
         vf = hg._scale_vf(tw, th)
         norm_parts: list[Path] = []
+        reencoded = 0
+        copied = 0
         for idx, src in enumerate(valid):
             part_p = tmp_root / f"norm_{idx:04d}.mp4"
-            cmd = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", str(src),
-                "-vf", vf, *vargs, "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-                "-movflags", "+faststart",
-                str(part_p),
-            ]
+            m = metas[idx] if idx < len(metas) else {}
+            same_wh = int(m.get("width") or 0) == tw and int(m.get("height") or 0) == th
+            can_copy = same_wh and (m.get("vcodec") == "h264")
+            if can_copy:
+                cmd = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", str(src),
+                    "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+                    "-movflags", "+faststart",
+                    str(part_p),
+                ]
+                mode_i = "copy"
+            else:
+                cmd = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", str(src),
+                    "-vf", vf, *vargs, "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+                    "-movflags", "+faststart",
+                    str(part_p),
+                ]
+                mode_i = "reencode"
             r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=flags)
+            if r.returncode != 0 or not part_p.is_file() or part_p.stat().st_size < 1024:
+                # Copy fail (timebase/bitstream) → encode phần đó
+                if mode_i == "copy":
+                    cmd = [
+                        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                        "-i", str(src),
+                        "-vf", vf, *vargs, "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+                        "-movflags", "+faststart",
+                        str(part_p),
+                    ]
+                    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=flags)
+                    mode_i = "reencode_fallback"
             if r.returncode != 0 or not part_p.is_file() or part_p.stat().st_size < 1024:
                 err = (r.stderr or r.stdout or "")[-300:]
                 return {"ok": False, "error": f"Lỗi chuẩn hoá {src.name}: {err or r.returncode}"}
+            if mode_i.startswith("reencode"):
+                reencoded += 1
+            else:
+                copied += 1
             norm_parts.append(part_p)
 
         list_txt = tmp_root / "list_mp4.txt"
@@ -849,7 +884,9 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
         return {
             "ok": True,
             "path": str(out_mp4),
-            "mode": "normalized_canvas",
+            "mode": "normalized_canvas_partial" if reencoded and copied else ("normalized_canvas" if reencoded else "copy_remux"),
+            "parts_reencoded": reencoded,
+            "parts_copied": copied,
             "width": out_meta["width"] or tw,
             "height": out_meta["height"] or th,
             "duration_sec": round(out_meta["duration"] or sum(m["duration"] for m in metas), 2),

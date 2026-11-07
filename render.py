@@ -28,20 +28,20 @@ import time
 from collections import deque
 from pathlib import Path
 
-from config import get as cfg
-from manifest import Manifest
+from core.config import get as cfg
+from core.manifest import Manifest
 import importlib as _importlib
-import assemble as _assemble
-import media_ts as _media_ts
-import sfx_lib as _sfx_lib
-import render_fx as _render_fx
+import engines.assemble as _assemble
+import engines.media_ts as _media_ts
+import engines.sfx_lib as _sfx_lib
+import engines.render_fx as _render_fx
 # Server chỉ reload render mỗi lần mux; reload kèm để server (import assemble trong hàm) dùng code mới.
 _importlib.reload(_assemble)
 _importlib.reload(_media_ts)
 _importlib.reload(_sfx_lib)
 _importlib.reload(_render_fx)
-from media_ts import AUDIO_TS_FIX, ensure_job_audio_ts  # noqa: E402
-from render_fx import (
+from engines.media_ts import AUDIO_TS_FIX, ensure_job_audio_ts  # noqa: E402
+from engines.render_fx import (
     append_inline_noise_grain,
     append_lut_filters,
     apply_brand_overlay,
@@ -58,7 +58,7 @@ from render_fx import (
     pick_frame,
     prepare_frame_file,
 )
-from vram import free_gpu_vram
+from engines.vram import free_gpu_vram
 
 
 def _ass_colour(val: str, default: str = "&H00FFFFFF") -> str:
@@ -680,13 +680,13 @@ def _run_chunked(video: Path, work_dir: Path, graph: str, venc: list[str], pre_i
 
 # Encoder: env/config RENDER_ENCODER = auto | nvenc | x264
 # auto: thử GPU; fail 2 lần liên tiếp -> lần sau bỏ nvenc (file .nvenc_state.json).
-_NVENC_STATE = Path(__file__).resolve().parent / ".nvenc_state.json"
+_NVENC_STATE = Path(__file__).resolve().parents[1] / ".nvenc_state.json"
 _NVENC_FAIL_SKIP = 2
 
 
 def _encoder_pref() -> str:
     try:
-        import config as _cfg   # RENDER_ENCODER file-first: sửa pineline.config.json ăn ngay
+        import core.config as _cfg   # RENDER_ENCODER file-first: sửa pineline.config.json ăn ngay
         v = (_cfg.get("RENDER_ENCODER", "auto") or "auto").strip().lower()
     except Exception:  # noqa: BLE001
         v = (os.getenv("RENDER_ENCODER") or "auto").strip().lower()
@@ -1179,7 +1179,7 @@ def detect_overlays(work_dir, n_frames: int = 40, force: bool = False):
         import re
         import shutil
         import statistics
-        from ocr import extract_keyframes
+        from engines.ocr import extract_keyframes
         from rapidocr_onnxruntime import RapidOCR
     except Exception:  # noqa: BLE001
         return None, []
@@ -2578,8 +2578,8 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
         # SRT BURN: khớp giọng trên dub_fit (tts_fit.json). Không dùng mốc script gốc
         # vì assemble_fit đàn hồi có thể trễ hàng chục giây.
         try:
-            from assemble import write_fit_timings
-            from subs import to_srt_placed, to_srt_fit
+            from engines.assemble import write_fit_timings
+            from engines.subs import to_srt_placed, to_srt_fit
             fit_path = work_dir / "tts_fit.json"
             dub_fit = work_dir / "dub_fit.wav"
             # Có dub_fit mà chưa/cũ timing map -> tính lại (không cần ghép audio)
@@ -2592,7 +2592,7 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
                 # CUT display: luôn tạo lại nếu thiếu / script mới hơn / đổi max_vi
                 disp_p = work_dir / "script.display.json"
                 stamp_p = work_dir / ".display_split_vi"
-                from subs import split_bilingual_rows, sub_split_cfg
+                from engines.subs import split_bilingual_rows, sub_split_cfg
                 mz, mv, md = sub_split_cfg()
                 script_p = work_dir / "script.json"
                 need_disp = not disp_p.exists()
@@ -2626,7 +2626,7 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
                         print(f"[render] tạo display lỗi ({e})", flush=True)
                 if disp_p.exists():
                     try:
-                        from subs import expand_placed_with_display
+                        from engines.subs import expand_placed_with_display
                         disp = json.loads(disp_p.read_text(encoding="utf-8"))
                         n0 = len(placed)
                         placed = expand_placed_with_display(placed, disp, key="vi")
@@ -2638,7 +2638,7 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
                         print(f"[render] expand display lỗi ({e}) — burn script 1:1", flush=True)
                 # An toàn: mọi cue VI còn dài hơn max_vi → cắt cứng trước khi ghi SRT
                 try:
-                    from subs import _split_hard, sub_split_cfg, glue_vi_names
+                    from engines.subs import _split_hard, sub_split_cfg, glue_vi_names
                     _, max_vi, _ = sub_split_cfg()
                     safe: list[dict] = []
                     n_over = 0
@@ -2698,7 +2698,7 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
             else:
                 sp, tp = work_dir / "script.json", work_dir / "tts.json"
                 if sp.exists() and tp.exists():
-                    from subs import _split_hard, sub_split_cfg, glue_vi_names
+                    from engines.subs import _split_hard, sub_split_cfg, glue_vi_names
                     script = json.loads(sp.read_text(encoding="utf-8"))
                     durs = {c["i"]: c.get("dur", 0) for c in json.loads(tp.read_text(encoding="utf-8"))}
                     _, max_vi, _ = sub_split_cfg()
@@ -2746,7 +2746,7 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
     # Có tts.json mà chưa ghép dub -> tự ghép (tránh output chỉ tiếng gốc im lặng).
     if dub is None and (work_dir / "tts.json").exists():
         print("[render] thiếu dub_*.wav nhưng có tts.json -> tự ghép khớp time", flush=True)
-        from assemble import assemble_fit
+        from engines.assemble import assemble_fit
         assemble_fit(work_dir)
         dub = _pick_dub(work_dir)
     if dub is None and (work_dir / "tts.json").exists():
@@ -2771,15 +2771,33 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
 
     band = None
     wm_fracs: list = []
+
+    def _mux_phase(phase: str, text: str, progress: float | None = None) -> None:
+        """Giữ mux=running + cur_text trong lúc dò hardsub (tránh heal/UI tưởng idle)."""
+        try:
+            st = m.data.setdefault("stages", {}).setdefault(STAGE, {})
+            st["status"] = "running"
+            st["phase"] = phase
+            st["cur_text"] = text
+            st["updated_at"] = time.time()
+            st.pop("healed", None)
+            if progress is not None:
+                st["progress"] = float(progress)
+            m.save()
+        except Exception:  # noqa: BLE001
+            pass
+
     if hardsub_blur:
         try:
             redetect = os.getenv("HARDSUB_REDETECT", "").strip() in ("1", "true", "yes")
+            _mux_phase("hardsub_band", "đang dò hardsub/watermark…", 2)
             band, wm_fracs = detect_overlays(work_dir, force=redetect)
         except Exception as e:  # noqa: BLE001
             print(f"[hardsub] dò lỗi ({e}) -> đáy mặc định, không ép 4 góc watermark")
     hs_track = None
     if hardsub_blur and (cfg("HARDSUB_MODE", "track") or "track").strip().lower() != "bar":
         try:
+            _mux_phase("hardsub_track", "đang dò hardsub track (OCR ~300 khung)…", 4)
             hs_track = detect_hardsub_track(work_dir, force=redetect)
         except Exception as e:  # noqa: BLE001
             print(f"[hardsub] dò toạ độ lỗi ({e}) -> blur dải cố định", flush=True)

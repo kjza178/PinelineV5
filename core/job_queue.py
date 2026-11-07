@@ -2,27 +2,72 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 
-from .job_meta import (
-    info_from_film_row,
-    info_from_manifest_dict,
-    norm_series_key as _norm_series_key,
-    parse_season_from_text as _parse_season_from_text,
-)
-
-WORK_ROOT = Path(__file__).resolve().parents[1] / "work"
+WORK_ROOT = Path("work")
 WIRED = ("download", "asr", "translate", "tts", "mux")
 _PERSIST_NAME = "_job_queue.json"
 
+_CN_NUMS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 
-def get_job_info(job_id: str, *, prefer_db: bool = True) -> dict:
-    """Metadata hàng chờ: ưu tiên films.db (series_ui/season_ui), fallback manifest."""
+
+def _parse_season_from_text(*texts: str) -> int | None:
+    """Bóc số phần/mùa từ title (Phần N / P N / 第N季). Không dùng group_index."""
+    blob = " ".join(t for t in texts if t)
+    if not blob:
+        return None
+    m_head = re.match(
+        r"^(?:phần|mùa|season|tập|p)\s*(\d+)\s*[|:\-–—]",
+        blob.strip(),
+        re.I,
+    )
+    if m_head:
+        return int(m_head.group(1))
+    m_vi = re.search(
+        r"(?:^|[\s_\-\.\(:|])(?:p|phần|mùa|season|s|tập|t)\s*(\d+)(?:[\s_\-\.\):|]|$)",
+        blob,
+        re.I,
+    )
+    if m_vi:
+        return int(m_vi.group(1))
+    m_cn = re.search(r"第([一二三四五六七八九十\d]+)季", blob)
+    if m_cn:
+        val = m_cn.group(1)
+        if val.isdigit():
+            return int(val)
+        if val in _CN_NUMS:
+            return _CN_NUMS[val]
+    # «Phần Cuối» / «mùa cuối» — không phải Phần 1 (tránh auto-pub gắn title premise S1).
+    if re.search(r"(?:phần|mùa|tập|season)\s*cuối|\bfinal\b", blob, re.I):
+        return -1
+    return None
+
+
+def _norm_series_key(name: str) -> str:
+    """Chuẩn hoá tên bộ để sort: gom biến thể ngàn/nghìn, bỏ dấu câu thừa."""
+    import unicodedata
+    s = (name or "").strip().lower()
+    if not s:
+        return ""
+    s = s.replace("nghìn", "ngan").replace("ngàn", "ngan")
+    s = s.replace("đế vương", "de").replace("đế giả", "de").replace("đế", "de")
+    nfkd = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in nfkd if not unicodedata.combining(c))
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def get_job_info(job_id: str) -> dict:
+    """Lấy thông tin tiêu đề, bộ phim (series), mùa/phần (season) từ manifest để sort và hiển thị."""
     jid = str(job_id or "").strip()
+    wd = WORK_ROOT / jid
+    mf = wd / "manifest.json"
     fallback = {
         "job_id": jid,
         "title": jid,
@@ -32,77 +77,60 @@ def get_job_info(job_id: str, *, prefer_db: bool = True) -> dict:
         "group_index": None,
         "group_title": None,
     }
-    if not jid:
-        return fallback
-
-    if prefer_db:
-        try:
-            import core.film_db as film_db  # noqa: PLC0415
-            row = film_db.get_lite(jid)
-            if row and (row.get("series_ui") or row.get("season_ui") is not None):
-                mapped = info_from_film_row(row)
-                if mapped:
-                    return mapped
-        except Exception:
-            pass
-
-    wd = WORK_ROOT / jid
-    mf = wd / "manifest.json"
     if not mf.is_file():
-        # DB row thiếu UI cols nhưng có title
-        try:
-            import core.film_db as film_db  # noqa: PLC0415
-            mapped = info_from_film_row(film_db.get_lite(jid))
-            if mapped:
-                return mapped
-        except Exception:
-            pass
         return fallback
     try:
         data = json.loads(mf.read_text(encoding="utf-8"))
     except Exception:
         return fallback
-    info = info_from_manifest_dict(jid, data)
-    # Lazy sync để lần sau đọc DB
-    try:
-        import core.film_db as film_db  # noqa: PLC0415
-        film_db.sync_one(jid)
-    except Exception:
-        pass
+
+    req = data.get("request") or {}
+    title_vi = (data.get("title_vi") or "").strip()
+    req_title = (req.get("title") or "").strip()
+    title_zh = (data.get("title_zh") or "").strip()
+    group_id = (req.get("group_id") or "").strip() or None
+    group_title = (req.get("group_title") or "").strip() or None
+    group_index = req.get("group_index")
+
+    title = title_vi or req_title or title_zh or jid
+
+    # Season: ƯU TIÊN title (Phần N / 第N季). group_index chỉ fallback — hay lệch badge UI.
+    season_no = _parse_season_from_text(title_vi, title, req_title, title_zh)
+    if season_no is None and group_index is not None and str(group_index).strip().isdigit():
+        season_no = int(group_index)
+
+    # Series name từ title_vi
+    target_text = title_vi or title
+    extracted_series = ""
+
+    m_head = re.match(r"^(?:phần|mùa|season|tập|p)\s*(\d+)\s*[|:\-–—]\s*(.*)$", target_text, re.I)
+    if m_head:
+        rest = m_head.group(2)
+        parts = re.split(r"[:|–—]", rest)
+        extracted_series = parts[0].strip(" -_()[]")
+    else:
+        cleaned = target_text
+        cleaned = re.sub(r"(?:^|[\s_\-\.\(:])(?:p|phần|mùa|season|s|tập|t)\s*\d+.*$", "", cleaned, flags=re.I)
+        parts = re.split(r"[:|–—]", cleaned)
+        extracted_series = parts[0].strip(" -_()[]") if parts else cleaned.strip(" -_()[]")
+
+    if season_no is None:
+        season_no = 1
+
+    if extracted_series and not re.search(r"[\u4e00-\u9fff]", extracted_series):
+        series_name = extracted_series
+    else:
+        series_name = extracted_series or group_title or (group_id if group_id else "") or title_vi or title
+
     return {
-        "job_id": info["job_id"],
-        "title": info["title"],
-        "series": info["series"],
-        "season": info["season"],
-        "group_id": info.get("group_id"),
-        "group_index": info.get("group_index"),
-        "group_title": info.get("group_title"),
+        "job_id": jid,
+        "title": title,
+        "series": series_name.strip(),
+        "season": season_no,
+        "group_id": group_id,
+        "group_index": group_index,
+        "group_title": group_title,
     }
-
-
-def get_jobs_info(job_ids: list[str]) -> dict[str, dict]:
-    """Batch metadata cho nhiều job — 1 query DB + fallback file từng id thiếu."""
-    ids = [str(x).strip() for x in (job_ids or []) if str(x).strip()]
-    out: dict[str, dict] = {}
-    if not ids:
-        return out
-    rows: dict[str, dict] = {}
-    try:
-        import core.film_db as film_db  # noqa: PLC0415
-        rows = film_db.get_many(ids)
-    except Exception:
-        rows = {}
-    missing: list[str] = []
-    for jid in ids:
-        row = rows.get(jid)
-        mapped = info_from_film_row(row) if row else None
-        if mapped and row and (row.get("series_ui") or row.get("season_ui") is not None):
-            out[jid] = mapped
-        else:
-            missing.append(jid)
-    for jid in missing:
-        out[jid] = get_job_info(jid, prefer_db=False)
-    return out
 
 
 def job_sort_key(job_id: str) -> tuple:
@@ -226,125 +254,19 @@ def queue_busy() -> bool:
         return bool(_current) or bool(_q) or bool(_thread and _thread.is_alive())
 
 
-def current_detail(job_id: str | None, *, work_root: Path | None = None) -> dict | None:
-    """Stage/progress/ETA thô — đọc manifest của đúng 1 job (live)."""
-    if not job_id:
-        return None
-    root = work_root if work_root is not None else WORK_ROOT
-    wd = root / job_id
-    mf = wd / "manifest.json"
-    if not mf.is_file():
-        return {"job_id": job_id, "error": "no manifest"}
-    try:
-        data = json.loads(mf.read_text(encoding="utf-8"))
-    except Exception as e:  # noqa: BLE001
-        return {"job_id": job_id, "error": str(e)}
-    stages = data.get("stages") or {}
-    running = None
-    for name in ("mux", "tts", "translate", "asr", "download", "ocr", "separate"):
-        st = stages.get(name) or {}
-        if st.get("status") == "running":
-            running = name
-            break
-    if running is None:
-        for name, st in stages.items():
-            if isinstance(st, dict) and st.get("status") == "running":
-                running = name
-                break
-    st = (stages.get(running) or {}) if running else {}
-    prog = st.get("progress")
-    try:
-        prog_f = float(prog) if prog is not None else None
-    except (TypeError, ValueError):
-        prog_f = None
-    updated = st.get("started_at") or st.get("updated_at")
-    eta_sec = None
-    if prog_f is not None and updated and prog_f > 5:
-        try:
-            elapsed = time.time() - float(updated)
-            if elapsed > 30 and prog_f < 99:
-                eta_sec = int(elapsed * (100.0 - prog_f) / max(prog_f, 1.0))
-                eta_sec = max(0, min(eta_sec, 48 * 3600))
-        except (TypeError, ValueError, ZeroDivisionError):
-            eta_sec = None
-    req = data.get("request") or {}
-    return {
-        "job_id": job_id,
-        "title": data.get("title_vi") or req.get("title") or job_id,
-        "group_id": req.get("group_id"),
-        "group_index": req.get("group_index"),
-        "group_title": req.get("group_title"),
-        "stage": running,
-        "progress": prog_f,
-        "cur_text": st.get("cur_text") or st.get("phase"),
-        "eta_sec": eta_sec,
-        "audio_mode": st.get("audio_mode") if running == "mux" else None,
-    }
-
-
-def build_queue_items(job_ids: list[str]) -> list[dict]:
-    """Metadata pending — 1 batch films.db (+ fallback), không N lần parse manifest."""
-    pending = [str(x).strip() for x in (job_ids or []) if str(x).strip()]
-    infos = get_jobs_info(pending)
-    items: list[dict] = []
-    for jid in pending:
-        info = infos.get(jid) or get_job_info(jid)
-        gi = info.get("group_index")
-        if gi in (None, ""):
-            gi = info.get("season")
-        items.append({
-            "job_id": jid,
-            "title": info.get("title") or jid,
-            "series": info.get("series") or info.get("group_title") or "",
-            "season": info.get("season") or gi or 1,
-            "group_id": info.get("group_id"),
-            "group_index": info.get("group_index"),
-            "group_title": info.get("group_title"),
-        })
-    return items
-
-
-def queue_state(*, enrich: bool = True) -> dict:
-    """Trạng thái hàng chờ. enrich=True → queue_items/current_info qua batch DB."""
+def queue_state() -> dict:
     with _lock:
-        pending = list(_q)
-        cur = _current
-        st = {
-            "queue": pending,
-            "queue_items": [],
-            "current": cur,
-            "current_info": None,
+        return {
+            "queue": list(_q),
+            "queue_items": [get_job_info(x) for x in _q],
+            "current": _current,
+            "current_info": get_job_info(_current) if _current else None,
             "history": list(_hist[-20:]),
             "worker": bool(_thread and _thread.is_alive()),
             "opts": dict(_opts),
             "opts_by_job": {k: dict(v) for k, v in _opts_by_job.items()},
-            "busy": bool(cur) or bool(pending) or bool(_thread and _thread.is_alive()),
+            "busy": bool(_current) or bool(_q) or bool(_thread and _thread.is_alive()),
         }
-    if enrich:
-        st["queue_items"] = build_queue_items(pending)
-        if cur:
-            infos = get_jobs_info([cur])
-            st["current_info"] = infos.get(cur) or get_job_info(cur)
-    return st
-
-
-def http_queue_state(*, work_root: Path | None = None) -> dict:
-    """Payload GET /api/queue/jobs: state + live current_detail + labels ngắn."""
-    st = queue_state(enrich=True)
-    cur = st.get("current")
-    st["current_detail"] = current_detail(cur, work_root=work_root)
-    items = st.get("queue_items") or []
-    labels = []
-    for it in items[:12]:
-        jid = it.get("job_id") or ""
-        gi = it.get("group_index")
-        if gi in (None, ""):
-            gi = it.get("season")
-        prefix = f"P{gi} " if gi not in (None, "") else ""
-        title = it.get("title") or jid
-        labels.append({"job_id": jid, "label": f"{prefix}{str(title)[:40]}"})
-    st["queue_labels"] = labels
-    return st
 
 
 def queue_add(
