@@ -1510,8 +1510,11 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             name = str(body.get("name") or "").strip()
             title_vi = str(body.get("title_vi") or "").strip()
             auto_delete = bool(body.get("auto_delete", False))
+            project_id = str(body.get("project_id") or "").strip() or None
             try:
-                res = test_channel.run_full_test_for_season(name, auto_delete=auto_delete, title_vi=title_vi)
+                res = test_channel.run_full_test_for_season(
+                    name, auto_delete=auto_delete, title_vi=title_vi, project_id=project_id
+                )
                 self._json(200 if res.get("ok") else 400, res)
             except Exception as e:  # noqa: BLE001
                 self._json(500, {"ok": False, "error": str(e)})

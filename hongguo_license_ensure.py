@@ -263,8 +263,23 @@ def ensure_licensed(*, force: bool = False) -> dict[str, Any]:
 def ensure_or_raise() -> None:
     r = ensure_licensed()
     if not r.get("ok"):
+        # Không dump activate_log / dict đầy đủ vào message (UI alert nổ dài)
+        err = str(r.get("error") or "")
+        if not err:
+            st = (r.get("status") or {}) if isinstance(r.get("status"), dict) else {}
+            err = str(st.get("state") or "prove_failed")
+            log = str(r.get("activate_log_tail") or "")
+            if "too_many_activations" in log:
+                err = "too_many_activations"
         raise rpc.HgRpcError(
-            f"Hongguo license prove failed: {r.get('error') or r}",
+            f"Hongguo license prove failed: {err}",
             code=-32010,
-            data={"reason": "need_license", **{k: v for k, v in r.items() if k != "activate_log_tail"}},
+            data={
+                "reason": "need_license",
+                **{
+                    k: v
+                    for k, v in r.items()
+                    if k not in ("activate_log_tail", "status")
+                },
+            },
         )

@@ -4,6 +4,34 @@ Mới nhất trên cùng. Mỗi mục: quyết định — bối cảnh/lý do. 
 
 ## 2026-11
 
+- **11-09 (NMT primary + văn phong linh hoạt)** User: không khóa văn phong (phim đô thị→tu tiên); NMT dịch chính là tốt nhất. → giữ `MT_ZH_VI_ROLE=primary`; bỏ ép register modern↔cổ; mixed/unknown → MT base; detox chỉ modern thuần.
+
+- **11-09 (A/B NMT vs old)** Bench: old 14 / NMT 3 / tie 22. Tham khảo gates; user vẫn chọn NMT primary + GPT rà (không quay LLM-main).
+
+- **11-09 (Plan file + review style + A/B)** User chọn cả: glossary upload full SRT (OCR soft); siết review style_lock+mẫu thoại; bench A/B. → `PLAN_MODE=file`.
+
+- **11-09 (NMT chính / LLM rà)** User: NMT = dịch chính, LLM = rà soát (không LLM dịch chính + NMT hint). → `MT_ZH_VI_ROLE=primary` + `AUTO_REVIEW` GPT mini.
+
+- **11-09 (MT auto genre)** User chọn option 3: modern→base `HachimiMT-60-zh-vi`, xianxia→QT; config `MT_ZH_VI_MODEL=auto`.
+
+- **11-09 (NMT draft + REVIEW GPT mini — GO)** User: triển khai các phiên bản; soát/thiếu dùng model nhanh nhất → **chatgpt/gpt-5-6-mini**. Sau sandbox: `MT_ZH_VI=1` nháp + slim glossary (chỉ lock/characters) + `REVIEW_MODEL=chatgpt/gpt-5-6-mini`. Sync V2/V4/V5. Fix `docs/fixes/2026-11-09-mt-draft-slim-gloss.md`.
+
+- **11-09 (NMT — NO-GO gắn thẳng)** *(superseded GO draft cùng ngày)* User bắt test sandbox trước. Bench `0a5f60aead18` → CONDITIONAL draft QT only. Verdict `docs/reviews/2026-11-09-mt-bench-verdict.md`.
+
+- **11-09 (NMT 60-zh-vi draft sớm)** *(superseded)* Gắn trước khi test → revert.
+
+- **11-09 (HV Auditor A = 1+2+3)** User chọn đủ: Unihan auditor + consistency nội bộ + series hygiene — không chỉ whitelist seed. → `hv_auditor.py`; autofix **chỉ confusion trap** (逆 nghị→nghịch); Unihan lệch tên riêng = `hv_warn` không đè; series drop `hv_suspect`. Fix `docs/fixes/2026-11-09-hv-auditor.md`.
+
+- **11-08 (Hongguo classic full split)** User: restore đúng trước WinUI; tách biệt hoàn toàn hongguo2. → `hongguo.html` bản 11-06 drop; `/api/hg`=HTTP only (không license); `/api/hg2`=RPC WinUI; hongguo2 chỉ gọi `/api/hg2/*`. Fix `docs/fixes/2026-11-08-hongguo1-full-split.md`.
+
+- **11-08 (Hongguo1 restore + tách Hongguo2)** *(superseded full split)* User: restore nguyên bản `/hongguo`; hg2 làm riêng. → header/`http_first` — vẫn đụng RPC khi :8000 chết. Fix `docs/fixes/2026-11-08-hongguo1-restore-isolate.md`.
+
+- **11-08 (Settings WinUI + License Pineline)** User gửi ảnh Settings WinUI (Downloads/Output, không ô license) + toast «Cần license». → Settings UI/API giống WinUI; License vẫn block riêng dưới Settings (Pineline DPAPI/prove — WinUI giữ license trong app). Auto-prove khi mở Settings / trước download nếu đã có key.
+
+- **11-08 (Giữ spawn riêng — parity WinUI)** User: giữ hiện tại (không attach) nhưng spawn helper + hongguo2 **hành vi giống WinUI**. → Singleton 1 MainKt Pineline (cùng engine cwd/`settings`/`D:\Lib`/1080p/RPC API); không chia sẻ live queue với WinUI.exe. Fix `docs/fixes/2026-11-08-helper-singleton-winui-parity.md`.
+
+- **11-08 (Helper chung WinUI — attach FAIL)** User chọn thử «một helper duy nhất / attach WinUI». Probe: RPC chỉ **stdin/stdout** (`Server.readLine`); WinUI giữ pipe; **không** named pipe/TCP; `-XX:+DisableAttachMechanism`. Không attach được. Persist chung `Roaming\HongguoDownloader\helper-queue.json` (jobs=[] lúc test) ≠ live sync. Phát hiện ~104 `MainKt` leak parent `agent_tele_cmd.py` + 1 helper WinUI. Hướng còn: sync file / enqueue-only / deep-link / Pineline-only khi WinUI tắt. **Superseded hành động:** quyết định «giữ spawn + parity» cùng ngày.
+
 - **11-07 (Revive Hongguo2 UI = option B)** User: làm lại UI giống app Hongguo Downloader 2.x (Browse / Ranking / New / Library…) cho `/hongguo2`. Supersede drop 11-06: route phục vụ `hongguo2.html` (WinUI skin); classic `/hongguo` giữ nguyên. License Settings + `/api/hg/license/*`; hot-path magic `@@license@@*` qua search/resolve tới khi :8801 reload. Backup `Z:\PinelineV2_codebak\2026-11-07_hongguo2-ui-2x\`.
 
 - **11-07 (Hongguo 2.x license prove)** User paste Hongguo key → activate+prove hợp lệ vào helper Pineline; key DPAPI local (không docs); hook download RPC. Không crack / không cướp stdin WinUI.
@@ -106,3 +134,8 @@ Mới nhất trên cùng. Mỗi mục: quyết định — bối cảnh/lý do. 
 - **09-26** Auto-pilot: nút + lệnh, điều khiển qua Telegram; không restart server khi đang chạy.
 - **09-26** Chỉ làm trên V2 (`Z:\PinelineV2`), không đụng V1 (`Z:\Pineline`, :8800).
 - **09-26** UI4 Ops: layout danh sách dự án trên-trái, preview trên-phải, pipeline dưới-trái, kịch bản dưới-phải; form + Job trên UI4; chọn nhiều folder bằng hộp thoại Windows.
+
+## 2026-11-08 — Python default sau update 3.15
+
+- **Quyết định:** A+B — bỏ Python315 khỏi Machine PATH; C:\Python312 đầu PATH; PY_PYTHON=3.12. Giữ 3.15 cài tại C:\Python315\ (gọi full path nếu cần). Launcher Pineline pin 312 thêm lớp dự phòng.
+- **Không chọn:** Cài deps lên 3.15; chỉ pin từng project.

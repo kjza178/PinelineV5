@@ -276,6 +276,7 @@
     <span class="pill" id="conn">…</span>
     <span class="pill" id="outdir">output: —</span>
     <div class="spacer"></div>
+    <a class="btn" href="/hongguo2" style="border-color:var(--accent);color:var(--accent)">Thử Hongguo2</a>
     <a class="btn" href="http://127.0.0.1:8802/films/ui?tab=seasons" style="border-color:var(--accent);color:var(--accent)" title="Films UI · Mùa mới">🎬 Phim / Mùa mới</a>
     <a class="btn" href="http://127.0.0.1:8802/films/ui" title="Films UI">Films UI</a>
     <a class="btn" href="/">Studio</a>
@@ -2344,36 +2345,22 @@ async function refreshMerge(){
 
 async function refreshAll(){
   await ping();
-  await Promise.all([refreshStatus(), refreshLibrary(), refreshMerge()]);
-  if(leftTab==='rank'){
-    if(rankBoard==='catalog') await loadCatalog(exPage||1);
-    else await loadRank();
-  }
-}
-/** Deep-link từ Films UI: ?sid=… và/hoặc ?q=… */
-async function bootFromQuery(){
-  try{
-    const p=new URLSearchParams(location.search||'');
-    const sid=(p.get('sid')||'').trim();
-    const q=(p.get('q')||'').trim();
-    if(!sid && !q) return;
-    switchLeftTab('search');
-    if(sid){
-      const paste=document.getElementById('paste-id');
-      if(paste) paste.value=sid;
-      await addByPaste();
-      try{ openBaikeDetail(sid, q); }catch(e){}
-    } else if(q){
-      const qel=document.getElementById('q');
-      if(qel) qel.value=q;
-      await doSearch();
-    }
-  }catch(e){ console.warn('bootFromQuery', e); }
+  // RPC helper 1 process + lock: library/status hay 5–15s.
+  // Không chờ chúng mới load bảng hot — nếu không UI kẹt "Đang tải bảng hot…".
+  const board = (leftTab==='rank')
+    ? (rankBoard==='catalog' ? loadCatalog(exPage||1) : loadRank())
+    : Promise.resolve();
+  await Promise.all([
+    board.catch(e=>console.warn('hongguo board', e)),
+    refreshStatus().catch(()=>{}),
+    refreshLibrary().catch(()=>{}),
+    refreshMerge().catch(()=>{}),
+  ]);
 }
 loadDlQueueFromStorage();
 const _libSeasonsEl=document.getElementById('libSeasons');
 if(_libSeasonsEl) _libSeasonsEl.addEventListener('click', lsnClick);
-refreshAll().then(()=>bootFromQuery());
+refreshAll();
 setInterval(()=>{ ping(); refreshStatus(); refreshMerge(); }, 4000);
 setInterval(refreshLibrary, 15000);
 </script>

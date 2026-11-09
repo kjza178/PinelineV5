@@ -330,8 +330,11 @@ def tc_test_one(payload: Dict[str, Any] = Body(...)):
     name = str(payload.get("name") or "").strip()
     title_vi = str(payload.get("title_vi") or "").strip()
     auto_delete = bool(payload.get("auto_delete", False))
+    project_id = str(payload.get("project_id") or "").strip() or None
     try:
-        res = test_channel.run_full_test_for_season(name, auto_delete=auto_delete, title_vi=title_vi)
+        res = test_channel.run_full_test_for_season(
+            name, auto_delete=auto_delete, title_vi=title_vi, project_id=project_id
+        )
         return JSONResponse(res, status_code=200 if res.get("ok") else 400)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)

@@ -23,15 +23,25 @@ def _fold(s: str) -> str:
 
 
 def _names(plan: dict) -> list[dict]:
+    """Chỉ characters (+ terms type=lock). Terms thường = mềm, không ép name-pass."""
     out = []
     for c in plan.get("characters") or []:
         zh, vi = (c.get("zh") or "").strip(), (c.get("vi") or "").strip()
-        if len(zh) >= 2 and vi:
-            out.append({"zh": zh, "vi": vi, "ok": [_fold(vi)] + [_fold(a) for a in c.get("aliases") or [] if a]})
+        # bỏ chú thích ngoặc khi khớp ZH trong câu
+        zh_main = zh.split("（")[0].split("(")[0].strip()
+        if len(zh_main) >= 2 and vi:
+            out.append({
+                "zh": zh_main,
+                "vi": vi.split("/")[0].strip(),
+                "ok": [_fold(vi)] + [_fold(a) for a in c.get("aliases") or [] if a],
+            })
     for t in plan.get("terms") or []:
+        if str((t or {}).get("type") or "").lower() != "lock":
+            continue
         zh, vi = (t.get("zh") or "").strip(), (t.get("vi") or "").strip()
-        if len(zh) >= 2 and vi:
-            out.append({"zh": zh, "vi": vi, "ok": [_fold(vi)] + [_fold(a) for a in t.get("aliases") or [] if a]})
+        zh_main = zh.split("（")[0].split("(")[0].strip()
+        if len(zh_main) >= 2 and vi:
+            out.append({"zh": zh_main, "vi": vi, "ok": [_fold(vi)]})
     return out
 
 

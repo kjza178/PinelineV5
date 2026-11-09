@@ -6,6 +6,7 @@ Các ngày từ 2026-09-25 đến 2026-10-06 được dựng lại ngày 6/10 t�
 
 | Ngày | Chủ đề |
 |---|---|
+| [2026-11-09](./2026-11-09.md) | MT draft QT + slim gloss + REVIEW GPT mini |
 | [2026-11-08](./2026-11-08.md) | Hongguo2 design + skip split-part upload |
 | [2026-11-07](./2026-11-07.md) | Films UI jq onclick leftovers (sync từ V2) |
 | [2026-11-06](./2026-11-06.md) | Merge hardlink; hongguo2; pronoun-qa; eng-swarm; part-atoms expanded |

@@ -22,6 +22,10 @@ import os
 # tránh 'OSError WinError 1' khi tải model. Đặt cho CẢ tiến trình con (asr/tts/vieneu... kế thừa env).
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+# Hongguo 2.x: 1 helper Pineline (stdio) — giống WinUI giữ 1 engine; không đụng WinUI.exe.
+os.environ.setdefault("HG_HELPER_SINGLETON", "1")
+# Mặc định auto: Hongguo2 ép RPC qua header X-HG-UI:2; Hongguo1 dùng http_first (:8000 → RPC).
+os.environ.setdefault("HG_BACKEND", "auto")
 
 # Nạp config -> env TRƯỚC khi import llm/translate (chúng đọc env lúc import; tiến trình con kế thừa).
 import config as _config_boot  # noqa: E402
@@ -49,7 +53,13 @@ from manifest import Manifest
 from download import download_video, job_id_from_url
 from asr import run_asr
 from vram import free_gpu_vram
-from translate import run_translate, run_review, count_script_missing
+from translate import (
+    run_translate,
+    run_review,
+    count_script_missing,
+    translate_coverage_gap,
+    translate_ready_for_tts,
+)
 from ocr import run_ocr
 from separate import run_separate
 from render import run_render
@@ -76,6 +86,8 @@ _STAGE_BUSY_LOCK = threading.Lock()
 # Chặn auto-split pass chồng trong cùng process (parent đã merged / đang chạy).
 _AUTO_SPLIT_ACTIVE: set[str] = set()
 _AUTO_SPLIT_LOCK = threading.Lock()
+_SPLIT_MERGE_QUEUED: set[str] = set()
+_SPLIT_MERGE_LOCK = threading.Lock()
 
 
 def _mux_output_ok(work_dir: Path, min_bytes: int = 1_000_000) -> bool:
@@ -132,6 +144,135 @@ def _ensure_parent_mux_merged_done(work_dir: Path, n_parts: int | None = None) -
         m.data["split_info"] = si
     m.save()
     _job_cache.pop(str(work_dir), None)
+
+
+def _parent_full_output_ok(work_dir: Path, sub_ids: list | None = None) -> bool:
+    work_dir = Path(work_dir)
+    out_full = work_dir / "output_full.mp4"
+    out_mp4 = work_dir / "output.mp4"
+    if out_full.is_file() and out_full.stat().st_size > 1_000_000:
+        return True
+    if sub_ids and out_mp4.is_file() and out_mp4.stat().st_size > 1_000_000:
+        return True
+    return False
+
+
+def _all_split_parts_complete(parent_id: str) -> tuple[bool, list[str]]:
+    """True nếu parent có sub_job_ids và mọi part đã mux/output xong."""
+    wd = WORK_ROOT / parent_id
+    try:
+        m = Manifest(wd)
+    except Exception:  # noqa: BLE001
+        return False, []
+    sub_ids = list((m.data.get("split_info") or {}).get("sub_job_ids") or [])
+    if len(sub_ids) < 2:
+        return False, sub_ids
+    for sid in sub_ids:
+        if not _part_pipeline_complete(WORK_ROOT / sid):
+            return False, sub_ids
+    return True, sub_ids
+
+
+def _queue_split_parent_merge_if_ready(parent_id: str, *, reason: str = "") -> dict | None:
+    """Parts đã xong mà parent chưa Full (worker auto-split chết/restart) → xếp ghép nền.
+
+    Không block HTTP. Idempotent qua `_SPLIT_MERGE_QUEUED` + `_AUTO_SPLIT_ACTIVE`.
+    """
+    parent_id = str(parent_id or "").strip()
+    if not parent_id or _split_parent_id(parent_id):
+        return None
+    wd = WORK_ROOT / parent_id
+    if not (wd / "manifest.json").exists():
+        return None
+    try:
+        m = Manifest(wd)
+    except Exception:  # noqa: BLE001
+        return None
+    si = dict(m.data.get("split_info") or {})
+    sub_ids = list(si.get("sub_job_ids") or [])
+    if len(sub_ids) < 2:
+        return None
+    if si.get("status") == "merged" and _parent_full_output_ok(wd, sub_ids):
+        _ensure_parent_mux_merged_done(wd, len(sub_ids))
+        return None
+    if _parent_full_output_ok(wd, sub_ids):
+        _ensure_parent_mux_merged_done(wd, len(sub_ids))
+        return {"healed": True, "already_full": True}
+    ready, _ = _all_split_parts_complete(parent_id)
+    if not ready:
+        return None
+    with _SPLIT_MERGE_LOCK:
+        if parent_id in _SPLIT_MERGE_QUEUED or parent_id in _AUTO_SPLIT_ACTIVE:
+            return {"queued": True, "already": True}
+        _SPLIT_MERGE_QUEUED.add(parent_id)
+
+    st_mux = m.data.setdefault("stages", {}).setdefault("mux", {})
+    st_mux["status"] = "running"
+    st_mux["cur_text"] = (
+        f"Parts xong — đang ghép {len(sub_ids)} part thành Full"
+        + (f" ({reason})" if reason else "")
+        + "…"
+    )
+    st_mux["progress"] = max(int(st_mux.get("progress") or 0), 90)
+    m.save()
+    _job_cache.pop(str(wd), None)
+
+    def _run_merge():
+        try:
+            from split_parts import merge_job_parts
+            print(
+                f"[auto-split-heal] {parent_id}: parts ready → merge Full"
+                + (f" [{reason}]" if reason else ""),
+                flush=True,
+            )
+            res = merge_job_parts(parent_id, work_root=WORK_ROOT)
+            if res.get("ok"):
+                _ensure_parent_mux_merged_done(wd, len(sub_ids))
+                print(
+                    f"[auto-split-heal] {parent_id}: Full OK "
+                    f"{res.get('output_path')} ({res.get('size_mb')}MB)",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[auto-split-heal] {parent_id}: merge fail {res.get('message')}",
+                    flush=True,
+                )
+                try:
+                    m2 = Manifest(wd)
+                    st = m2.data.setdefault("stages", {}).setdefault("mux", {})
+                    st["status"] = "failed"
+                    st["cur_text"] = f"Ghép Full lỗi: {res.get('message')}"
+                    m2.save()
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception as e:  # noqa: BLE001
+            print(f"[auto-split-heal] {parent_id}: {e}", flush=True)
+            try:
+                m2 = Manifest(wd)
+                st = m2.data.setdefault("stages", {}).setdefault("mux", {})
+                st["status"] = "failed"
+                st["cur_text"] = f"Ghép Full lỗi: {e}"
+                m2.save()
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            with _SPLIT_MERGE_LOCK:
+                _SPLIT_MERGE_QUEUED.discard(parent_id)
+
+    _misc.submit(_run_merge)
+    return {"queued": True, "n_parts": len(sub_ids)}
+
+
+def _notify_parent_after_part_done(part_job_id: str) -> None:
+    """Part mux xong → nếu mọi part xong thì xếp merge về job gốc."""
+    parent = _split_parent_id(part_job_id)
+    if not parent:
+        return
+    try:
+        _queue_split_parent_merge_if_ready(parent, reason=f"sau {part_job_id}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[auto-split-heal] notify {part_job_id}: {e}", flush=True)
 
 
 def _split_parent_id(job_id: str) -> str | None:
@@ -1273,6 +1414,17 @@ def _check_and_run_auto_split_parts(
         )
         return True
 
+    # Parts đã xong nhưng worker chết trước khi ghép → heal merge ngay (không chờ run-all lại)
+    if sub_ids and not full_ok and all(
+        _part_pipeline_complete(WORK_ROOT / sid) for sid in sub_ids
+    ):
+        print(
+            f"[auto-split] {job_id}: mọi part đã xong, Full thiếu — heal merge ngay.",
+            flush=True,
+        )
+        queued = _queue_split_parent_merge_if_ready(job_id, reason="auto-split entry")
+        return bool(queued) or True
+
     dur = probe_duration(video)
     if dur < MIN_SPLIT_HOURS * 3600.0:
         return False
@@ -1520,14 +1672,32 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
         if stopped():
             return
         run_translate(wd, target=target, mode=translate_mode)
-        # TỰ KIỂM TRA missing trên disk (không tin n_missing cũ trong manifest)
+        # TỰ KIỂM TRA missing + coverage ASR (không tin n_missing cũ / script salvage ngắn)
         n_miss = count_script_missing(wd)
-        if n_miss > 0:
-            print(f"[auto] {job_id}: dịch còn {n_miss} câu trống -> vá lô nhỏ")
+        gap = translate_coverage_gap(wd)
+        if n_miss > 0 or gap > 0:
+            print(f"[auto] {job_id}: dịch còn miss={n_miss} gap={gap} -> vá lô nhỏ")
             run_translate(wd, batch=25, target=target, mode="batch")
             n_miss = count_script_missing(wd)
-            if n_miss > 0:
-                print(f"[auto] {job_id}: vẫn còn {n_miss} trống sau vá — TTS sẽ bỏ qua câu thiếu")
+            gap = translate_coverage_gap(wd)
+        ready, why = translate_ready_for_tts(wd)
+        if not ready:
+            # TRƯỚC: «TTS sẽ bỏ qua câu thiếu» → nhảy TTS với script dở (vd 398/2698)
+            print(f"[auto] {job_id}: dịch CHƯA XONG ({why}) — DỪNG, không TTS/mux")
+            try:
+                m_pend = Manifest(wd)
+                tr = m_pend.data.setdefault("stages", {}).setdefault("translate", {})
+                tr.update({
+                    "status": "pending",
+                    "n_missing": max(0, n_miss),
+                    "cur_text": f"chưa đủ để TTS — {why}",
+                    "updated_at": time.time(),
+                })
+                m_pend.data["stages"]["translate"] = tr
+                m_pend.save()
+            except Exception as e_pend:  # noqa: BLE001
+                print(f"[auto] {job_id}: stamp translate pending: {e_pend}", flush=True)
+            return
         if stopped():
             return
         # Pineline V2 Agent: HOLD sau translate — không TTS đến khi duyệt script
@@ -1570,6 +1740,11 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
                 return
         # yêu cầu rà gửi tới lúc QA gate đang chạy → vẫn rà trước khi lồng tiếng
         if _run_requested_review(wd, target) is not None and stopped():
+            return
+        # chặn lần cuối trước TTS (review có thể làm hỏng script)
+        ready, why = translate_ready_for_tts(wd)
+        if not ready:
+            print(f"[auto] {job_id}: sau review dịch không sẵn sàng TTS ({why}) — DỪNG")
             return
         _save_series_glossary(wd)
         v = _resolve_voice(wd, None)
@@ -1620,6 +1795,7 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
             hardsub_blur=batch_config.as_bool(rkw.get("hardsub_blur"), True),
         )
         print(f"[auto] {job_id}: HOÀN TẤT toàn bộ pipeline ✓")
+        _notify_parent_after_part_done(job_id)
     except _Stopped:
         print(f"[auto] {job_id}: đã DỪNG theo yêu cầu")
     except Exception as e:  # noqa: BLE001
@@ -3304,6 +3480,10 @@ def _do_tts(work_dir: Path, voice: str, speed: float, engine: str, force: bool):
     """Chạy TTS clone tiếng Việt (vieneu/omnivoice). Điều phối worker venv riêng
     (in-process) — orchestrator ghi tts.json + mark_done."""
     import time as _t
+    # Chặn TTS khi dịch dừng giữa chừng (script ngắn hơn ASR / còn VI trống)
+    ready, why = translate_ready_for_tts(work_dir)
+    if not ready:
+        raise RuntimeError(f"chưa TTS được — {why}. Xong bước Dịch rồi mới lồng tiếng.")
     # Thread GPU thật sự bắt đầu (không còn xếp hàng) — cập nhật UI khỏi "starting"
     try:
         _patch_tts_fields(work_dir, cur_text=f"{engine}: chuan bi (kiem tra python/voice)...",
@@ -4887,6 +5067,16 @@ def job_detail(job_id: str):
     work_dir = WORK_ROOT / job_id
     if not (work_dir / "manifest.json").exists():
         return JSONResponse({"error": "not found"}, status_code=404)
+    # Parent auto-split: parts xong mà Full chưa có (sau restart) → xếp ghép nền
+    try:
+        _queue_split_parent_merge_if_ready(job_id, reason="GET job")
+    except Exception:  # noqa: BLE001
+        pass
+    # Part mở riêng: cũng thử báo parent
+    try:
+        _notify_parent_after_part_done(job_id)
+    except Exception:  # noqa: BLE001
+        pass
     return read_job(work_dir)
 
 
@@ -6052,6 +6242,38 @@ from routes_agent import (  # noqa: E402,F401
 app.include_router(routes_ui.router)
 app.include_router(routes_hg.router)
 app.include_router(routes_agent.router)
+
+
+@app.middleware("http")
+async def _hg1_hg2_split(request, call_next):
+    """Tách hoàn toàn Hongguo1 / Hongguo2.
+
+    - `/api/hg2/*` → rewrite thành `/api/hg/*` (hoặc `/api/disk`) + ép RPC
+    - `/api/hg/*`  → ép HTTP Downloader :8000 (classic, không license)
+    """
+    import hg_ui_ctx as ctx
+    path = request.scope.get("path") or ""
+    if path == "/api/hg2/disk" or path.startswith("/api/hg2/disk/"):
+        request.state.hg_ui = "2"
+        ctx.force("rpc")
+        new_path = "/api/disk" + path[len("/api/hg2/disk"):]
+        request.scope["path"] = new_path
+        request.scope["raw_path"] = new_path.encode("utf-8")
+    elif path.startswith("/api/hg2/"):
+        request.state.hg_ui = "2"
+        ctx.force("rpc")
+        new_path = "/api/hg/" + path[len("/api/hg2/"):]
+        request.scope["path"] = new_path
+        request.scope["raw_path"] = new_path.encode("utf-8")
+    elif path == "/api/hg2":
+        request.state.hg_ui = "2"
+        ctx.force("rpc")
+        request.scope["path"] = "/api/hg"
+        request.scope["raw_path"] = b"/api/hg"
+    elif path.startswith("/api/hg/") or path == "/api/hg":
+        request.state.hg_ui = "1"
+        ctx.force("http")
+    return await call_next(request)
 
 
 @app.on_event("startup")

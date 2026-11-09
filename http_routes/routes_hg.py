@@ -11,11 +11,24 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 
 import server as S
 
-router = APIRouter()
+
+async def _bind_hg_ui_backend(request: Request) -> None:
+    """Tách Hongguo1 / Hongguo2 theo header hoặc Referer (hg_ui_ctx, không reload).
+
+    Phải async: Depends sync chạy threadpool → ContextVar không tới endpoint.
+    """
+    import hg_ui_ctx as ctx
+    ctx.apply(
+        request.headers.get("x-hg-ui") or request.query_params.get("hg_ui"),
+        request.headers.get("referer"),
+    )
+
+
+router = APIRouter(dependencies=[Depends(_bind_hg_ui_backend)])
 
 __all__ = [
     "HgRankEpsIn",
@@ -65,12 +78,80 @@ def _hg_err(e: Exception):
     return JSONResponse({"error": msg}, status_code=502)
 
 
+@router.get("/api/disk")
+def api_disk(base: str | None = None):
+    """Dung lượng ổ thư viện Hongguo (sidebar hongguo2)."""
+    import shutil
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    folder = ""
+    try:
+        if hg._use_rpc():
+            st = hg._rpc_mod().settings_get() or {}
+            folder = str(st.get("saveFolder") or "")
+    except Exception:  # noqa: BLE001
+        folder = ""
+    if not folder:
+        folder = r"D:\Lib"
+    root = Path(folder)
+    # lấy ổ chứa folder (D:\ …)
+    drive = root.anchor or str(root)[:3] or "D:\\"
+    try:
+        usage = shutil.disk_usage(drive)
+        free_gb = usage.free / (1024 ** 3)
+        used_gb = usage.used / (1024 ** 3)
+        total_gb = usage.total / (1024 ** 3)
+        used_pct = round(100.0 * usage.used / max(1, usage.total), 1)
+        return {
+            "ok": True,
+            "path": folder,
+            "drive": drive,
+            "free_gb": round(free_gb, 1),
+            "used_gb": round(used_gb, 1),
+            "total_gb": round(total_gb, 1),
+            "used_pct": used_pct,
+        }
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e), "path": folder}, status_code=500)
+
+
 @router.get("/api/hg/ping")
 def hg_ping(base: str | None = None):
     import importlib
     import hongguo_bridge as hg
     hg = importlib.reload(hg)
     return hg.ping(_hg_base(base))
+
+
+@router.get("/api/hg/settings")
+def hg_settings(base: str | None = None):
+    """Hongguo 2.x settings (saveFolder, quality…) — cùng helper WinUI."""
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    try:
+        return hg.settings(_hg_base(base))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.post("/api/hg/settings")
+def hg_settings_update(body: dict | None = None, base: str | None = None):
+    """Patch settings (quality, saveFolder, merge…) — RPC settings.update."""
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    body = body or {}
+    patch = body.get("patch") if isinstance(body.get("patch"), dict) else body
+    if not isinstance(patch, dict) or not patch:
+        return JSONResponse({"error": "thiếu patch"}, status_code=400)
+    # Không nhận secret qua settings
+    patch = {k: v for k, v in patch.items() if k not in ("key", "license", "token", "proof")}
+    try:
+        return hg.settings_update(patch, _hg_base(base))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
 
 
 @router.get("/api/hg/search")
@@ -245,6 +326,75 @@ def hg_cancel(body: S.HgBaseIn | None = None):
         return _hg_err(e)
 
 
+@router.post("/api/hg/downloads/clear-finished")
+def hg_dl_clear_finished(body: S.HgBaseIn | None = None):
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    try:
+        return hg.clear_finished(_hg_base((body.base if body else None)))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.post("/api/hg/downloads/cancel")
+def hg_dl_cancel_one(body: dict | None = None):
+    """Stop 1 download đang chạy/chờ."""
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    body = body or {}
+    sid = str(body.get("series_id") or body.get("seriesId") or "").strip()
+    if not sid:
+        return JSONResponse({"ok": False, "error": "thiếu series_id"}, status_code=400)
+    try:
+        return hg.cancel_download(sid, _hg_base(body.get("base")))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.post("/api/hg/downloads/remove")
+def hg_dl_remove(body: dict | None = None):
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    body = body or {}
+    sid = str(body.get("series_id") or body.get("seriesId") or "").strip()
+    if not sid:
+        return JSONResponse({"ok": False, "error": "thiếu series_id"}, status_code=400)
+    try:
+        return hg.remove_download(sid, _hg_base(body.get("base")))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.post("/api/hg/downloads/retry")
+def hg_dl_retry(body: dict | None = None):
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    body = body or {}
+    sid = str(body.get("series_id") or body.get("seriesId") or "").strip()
+    if not sid:
+        return JSONResponse({"ok": False, "error": "thiếu series_id"}, status_code=400)
+    try:
+        return hg.retry_download(sid, _hg_base(body.get("base")))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.post("/api/hg/downloads/open-folder")
+def hg_dl_open_folder(body: dict | None = None):
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    body = body or {}
+    try:
+        return hg.open_folder(path=body.get("folder") or body.get("path"), name=body.get("name"))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
 @router.post("/api/hg/submit")
 def hg_submit(body: S.HgSubmitIn):
     import importlib
@@ -262,20 +412,32 @@ def hg_submit(body: S.HgSubmitIn):
 
 
 @router.get("/api/hg/rank")
-def hg_rank(category: str = "all", board: str = "recommend",
-            offset: int = 0, size: int = 100, base: str | None = None):
+def hg_rank(
+    category: str = "all",
+    board: str = "recommend",
+    chart: str = "",
+    offset: int = 0,
+    size: int = 100,
+    base: str | None = None,
+):
     """Bảng hot / Browse feed / Catalog.
 
-    board=browse|feed → RPC feed.page
-    board=catalog|catalog_newest|catalog_popular|catalog_eps → Explorer catalog
-    category = rank cat (all/ai/human/comic) hoặc tên genre Explorer
+    chart=ranklist_* (WinUI Ranking tabs)
+    board=browse|feed → feed.page; catalog* → Explorer; hoặc board filter trong chart
+    category = board alias cũ (all/female/male/…) hoặc genre Explorer
     """
     import importlib
     import hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
-        return hg.rank(category=category, board=board, offset=offset,
-                       size=size, base=_hg_base(base))
+        return hg.rank(
+            category=category,
+            board=board,
+            chart=chart,
+            offset=offset,
+            size=size,
+            base=_hg_base(base),
+        )
     except Exception as e:  # noqa: BLE001
         return _hg_err(e)
 
@@ -395,8 +557,14 @@ def hg_library(base: str | None = None):
 
 
 @router.get("/api/hg/preview")
-def hg_preview(series_id: str, ep: int = 1, fresh: int = 0, base: str | None = None):
-    """URL MP4 tập miễn phí (hongguoduanju /dl/preview) — không cần tải về."""
+def hg_preview(
+    series_id: str,
+    ep: int = 1,
+    fresh: int = 0,
+    quality: str = "",
+    base: str | None = None,
+):
+    """Xem thử 1 tập — :8000 /dl/preview hoặc RPC playback.prepare → stream local."""
     import importlib
     import hongguo_bridge as hg
     hg = importlib.reload(hg)
@@ -404,9 +572,75 @@ def hg_preview(series_id: str, ep: int = 1, fresh: int = 0, base: str | None = N
     if not sid:
         return JSONResponse({"ok": False, "error": "thiếu series_id"}, status_code=400)
     try:
-        return hg.preview_series(sid, ep=ep, fresh=bool(fresh), base=_hg_base(base))
+        # Preview luôn ưu tiên 480p — 1080p quá chậm
+        q = (quality or "").strip() or "480p"
+        if q.lower() in ("1080p", "best", "source"):
+            q = "480p"
+        return hg.preview_series(
+            sid,
+            ep=ep,
+            fresh=bool(fresh),
+            base=_hg_base(base),
+            quality=q,
+        )
     except Exception as e:  # noqa: BLE001
         return _hg_err(e)
+
+
+class HgPreviewStartIn(BaseModel):
+    series_id: str = ""
+    ep: int = 1
+    quality: str = "480p"
+    fresh: bool = False
+
+
+@router.post("/api/hg/preview/start")
+def hg_preview_start(body: HgPreviewStartIn):
+    """Bắt đầu prepare nền (progress poll qua /api/hg/preview/job)."""
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    sid = (body.series_id or "").strip()
+    if not sid:
+        return JSONResponse({"ok": False, "error": "thiếu series_id"}, status_code=400)
+    q = (body.quality or "480p").strip()
+    if q.lower() in ("1080p", "best", "source"):
+        q = "480p"
+    try:
+        rpc = hg._rpc_mod()
+        return rpc.playback_prepare_start(
+            sid, episode=int(body.ep or 1), quality=q, force=bool(body.fresh),
+        )
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.get("/api/hg/preview/job")
+def hg_preview_job(ticket: str = ""):
+    """Trạng thái job preview async (progress 0..1)."""
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    try:
+        return hg._rpc_mod().playback_job(ticket)
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.api_route("/api/hg/playback/stream", methods=["GET", "HEAD"])
+def hg_playback_stream(session: int = 0):
+    """Stream MP4 đã prepare bởi helper (thư mục hongguo-player)."""
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    try:
+        rpc = hg._rpc_mod()
+        p = rpc.playback_session_path(int(session or 0))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+    if not p:
+        return JSONResponse({"error": "playback session not ready"}, status_code=404)
+    return FileResponse(str(p), media_type="video/mp4", filename=p.name)
 
 
 @router.api_route("/api/hg/library/preview", methods=["GET", "HEAD"])
@@ -515,6 +749,18 @@ def hg_library_delete(body: dict | None = None):
         return JSONResponse({"ok": False, "error": "Chưa chọn series để xoá"}, status_code=400)
     try:
         return hg.delete_library_series(names, _hg_base(body.get("base")))
+    except Exception as e:  # noqa: BLE001
+        return _hg_err(e)
+
+
+@router.post("/api/hg/library/update-info")
+def hg_library_update_info(base: str | None = None):
+    """WinUI «Update info» — library.updateInfo."""
+    import importlib
+    import hongguo_bridge as hg
+    hg = importlib.reload(hg)
+    try:
+        return hg.library_update_info(_hg_base(base))
     except Exception as e:  # noqa: BLE001
         return _hg_err(e)
 

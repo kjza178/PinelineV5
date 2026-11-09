@@ -1,14 +1,14 @@
 # Hiện trạng PinelineV4 (port từ V2)
 
-_Cập nhật: 2026-11-08 ~02:35 — Browse facets WinUI live (đã restart :8801); queue có job sau restart
+_Cập nhật: 2026-11-09 ~08:08 — restart :8801 nạp ChatGPT :3377_
 
 ## Dịch vụ
 
 | Dịch vụ | Cổng | PID | Khởi động bằng | Ghi chú |
 |---|---|---|---|---|
 | Pineline V4 `server.py` / desktop | **8804** | — (không listening 21:43 5/11) | `run_v4.bat` / `server.py` | TEMP `D:\PinelineV4_tmp`. `llm.py` pool-first file upload. |
-| Sidecar Auto-pilot + Telegram `agent_tele_cmd.py` | 8802 | **28936** (restart ~01:40 7/11) | `run_tele_cmd.bat` cwd V2 | Nạp preserve_order + oversized/skip refine; Settings/Uploader OK. |
-| Pineline V2 | **8801** | (restart ~21:17 6/11) | `restart_server.py --ignore-hg --clean-env` | Translate force `88d80ba0be0f` (~5%+); harden `_clear_stop` dual-path trên disk **chưa** nạp process. Llama :8083 không đụng. |
+| Sidecar Auto-pilot + Telegram `agent_tele_cmd.py` | 8802 | **29948** (restart ~05:47 9/11) | `run_tele_cmd.bat` cwd V2 | Nạp test-one `project_id` + keep-NMT unrelated. |
+| Pineline V2 | **8801** | **34240** (restart ~08:07 9/11) | `restart_server.py --clean-env` | ChatGPT `127.0.0.1:3377` + NMT keep-NMT. Job `9c3af49061a2_p01` mux đứt — cần Tiếp tục. |
 | Pineline V5 | **8805** | — (không listening 21:43 5/11) | `server.py --port 8805` | TEMP `D:\PinelineV5_tmp`. |
 | Hongguo Downloader | 8000 | **20160** | app riêng | Cần UI token; API `/dl/*`. **Không kill.** |
 | llama-server `qwen36-turbo` | 8083 | **22796** | `E:\models\presets\ui-server.ps1` | Type-C GPU; ~7 GB VRAM. **Không kill.** |
@@ -31,7 +31,7 @@ Thư mục job: `D:\PinelineV2_work\` (`Z:\PinelineV2\work` là junction trỏ s
 
 ## Cấu hình mặc định đang dùng
 
-- **LLM** (`pineline.config.json`): `TRANSLATE_MODEL=local` (:8083); `NAME`/`PRONOUN=chatgpt/gpt-5-6-mini` (Aurora); `REVIEW_MODEL=ollama/gemma4:31b-cloud` qua 9router (`CLOUD_LLM_*`). Agent: `LLM_MODEL` / `AGENT_*`.
+- **LLM** (`pineline.config.json`): `CHATGPT_BASE_URL=http://127.0.0.1:3377/v1` (`sk-local`); `PLAN_MODE=file` + `PLAN_MODEL=chatgpt/gpt-5-6-mini`; **NMT primary** `MT_ZH_VI=1` `ROLE=primary` `MODEL=auto`; gemma vá sót; `REVIEW`/`NAME`/`PRONOUN=chatgpt/gpt-5-6-mini`. Aurora `:5005` còn fallback.
 - **CONFIG BATCH** (`work/logs/batch_config.json`): voice v2, speed 1.1, TTS vieneu, ASR fun_asr_nano, audio **sfx_lib** (từ 07/10 02:52: giọng Việt + tiếng động gốc CDX23 + nhạc kho YouTube theo mức; trước đó duck voice 0.2 / gốc 0.28), dịch batch, OCR tắt, fit bật, resolution source, zoom 1.1, lật ngang, grain weak, LUT/motion tắt, 4M, brand corners "SageReview".
 - **Che hardsub**: `HARDSUB_MODE=track`, `HARDSUB_STYLE=stretch`, không làm mềm (0/0), phủ hết ngang, đệm 15/13 px.
 - **Render**: NVENC, chia khúc 300 s × 3 song song (chỉ khi render 2 bước).
@@ -48,7 +48,9 @@ Restart chỉ khi hàng đợi rảnh, hoặc user đồng ý (yes/no).
 
 ## Việc còn treo / cần user quyết
 
-- **Chờ restart :8801** — nạp `MuxReq`/`RunAllReq.hardsub_blur` + `as_bool` queue/render; thêm `TranslateReq.force` + dual-path `_clear_stop`. Live OpenAPI chưa có `hardsub_blur`. Fix `docs/fixes/2026-11-07-hardsub-blur-toggle.md`.
+- ~~**Chờ restart :8801**~~ — đã restart ~05:16 9/11 (`--clean-env`). Nạp keep-NMT + NMT primary + PLAN file + hv_auditor. Fix `docs/fixes/2026-11-09-review-keep-nmt.md`.
+- ~~Chờ restart :8801 (split parent merge heal)~~ — đã restart ~19:21. Fix `docs/fixes/2026-11-08-split-parent-merge-heal.md`.
+- ~~Chờ restart :8801 (hardsub_blur)~~ — xem CHANGELOG 07/11; OpenAPI/live tùy lần restart gần nhất.
 - ~~Chờ restart :8802~~ — đã restart ~01:40 (PID 28936). Fix skip-ux + combine preserve_order.
 - ~~Chờ restart :8801 (hongguo2)~~ — đã restart 15:13 6/11; `/hongguo2` 200 + body Hongguo2.
 - **Hard refresh `/hongguo` + `/hongguo2`** — seasons board + trang Hongguo2 (HTML static) nếu browser còn cache cũ.

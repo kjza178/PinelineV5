@@ -39,10 +39,10 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-from engines.llm import chat, parse_json, unload_local, is_local, LLMUnavailable
-from engines.vram import free_gpu_vram
-from core.fileio import atomic_write_json, read_json_checkpoint
-from core.manifest import Manifest
+from llm import chat, parse_json, unload_local, is_local, LLMUnavailable
+from vram import free_gpu_vram
+from fileio import atomic_write_json, read_json_checkpoint
+from manifest import Manifest
 
 STAGE = "translate"
 MODEL = os.getenv("TRANSLATE_MODEL") or None    # None -> chat() dùng LLM_MODEL
@@ -50,7 +50,7 @@ MODEL = os.getenv("TRANSLATE_MODEL") or None    # None -> chat() dùng LLM_MODEL
 # Tất cả đi qua 9router API (không dùng Ollama local).
 REVIEW_MODEL = os.getenv("REVIEW_MODEL") or MODEL or None
 try:
-    from core.config import get as _cfg_get
+    from config import get as _cfg_get
 except Exception:  # noqa: BLE001
     def _cfg_get(key: str, default: str | None = None) -> str | None:
         return os.getenv(key) or default
@@ -417,161 +417,107 @@ def _salvage_mixed_vi(vi: str, *, zh: str = "", plan: dict | None = None) -> str
     return ""
 
 
-def build_plan(segments: list[dict], target: str = "Tiếng Việt",
-               model: str | None = None,
-               name_hints: list[str] | None = None,
-               series_plan: dict | None = None) -> dict:
-    """LLM đọc toàn transcript -> phương án dịch: nhân vật, thuật ngữ, XƯNG HÔ, PHÂN CẢNH, tone.
-    Có cơ chế kế thừa Series Memory (Series-level consistency) và phân cảnh (Scene-based context)."""
-    # Lấy mẫu thông minh bao quát toàn bộ phim
-    valid_segs = [s for s in segments if (s.get("text") or "").strip()]
-    tot = len(valid_segs)
-    if tot <= 250:
-        sample_segs = valid_segs
-    else:
-        # 80 câu đầu + 80 câu giữa + 80 câu cuối + các câu chứa từ khóa nhân vật/chiêu
-        head = valid_segs[:80]
-        mid_idx = tot // 2
-        mid = valid_segs[mid_idx:mid_idx + 80]
-        tail = valid_segs[-80:]
-        kw = ("苏", "林", "战", "嫣", "烈", "影", "灵", "黎", "天宫", "神域", "级", "血", "哥", "姐", "弟", "妹")
-        extras = [s for s in valid_segs[80:mid_idx] + valid_segs[mid_idx + 80:-80] if any(k in (s.get("text") or "") for k in kw)][:120]
-        sample_segs = sorted(head + mid + tail + extras, key=lambda s: s.get("i", 0))
+def _plan_mode() -> str:
+    """file = upload full ZH SRT (Aurora); sample = mẫu cũ (head/mid/tail)."""
+    return (_cfg_get("PLAN_MODE", "file") or "file").strip().lower()
 
-    lines = [f"{s.get('i', idx)}|{(s.get('text') or '').strip()}" for idx, s in enumerate(sample_segs)]
-    full_text = "\n".join(lines)
 
-    hints_block = ""
-    if name_hints:
-        hints_block = (
-            "\nGỢI Ý TÊN (OCR/chữ trên hình — có thể là nhân vật/địa danh; "
-            "chỉ đưa vào characters nếu khớp thoại):\n"
-            + ", ".join(name_hints[:40])
-            + "\n"
-        )
-
-    series_block = ""
-    if series_plan and isinstance(series_plan, dict):
-        chars_list = [f"{c.get('zh')}={c.get('vi')} ({c.get('gender','?')})" for c in series_plan.get("characters", []) if isinstance(c, dict) and c.get("zh") and c.get("vi")]
-        terms_list = [f"{t.get('zh')}={t.get('vi')}" for t in series_plan.get("terms", []) if isinstance(t, dict) and t.get("zh") and t.get("vi")]
-        pr_list = [f"{p.get('who')}->{p.get('to')}: xưng '{p.get('self')}', gọi '{p.get('call')}'" for p in series_plan.get("pronouns", []) if isinstance(p, dict) and p.get("who")]
-        if chars_list or terms_list or pr_list:
-            series_block = (
-                "\n[BẢN ĐỒ THỰC THỂ ĐÃ KHÓA CỨNG TỪ SERIES (BẮT BUỘC KẾ THỪA - CẤM ĐỔI TÊN/XƯNG HÔ)]:\n"
-            )
-            if chars_list:
-                series_block += f"- Nhân vật đã chốt: {'; '.join(chars_list[:30])}\n"
-            if terms_list:
-                series_block += f"- Thuật ngữ đã chốt: {'; '.join(terms_list[:30])}\n"
-            if pr_list:
-                series_block += f"- Xưng hô đã chốt: {'; '.join(pr_list[:20])}\n"
-            series_block += "YÊU CẦU BẮT BUỘC: Giữ nguyên 100% các thực thể trên. CHỈ bổ sung nhân vật/thuật ngữ/xưng hô MỚI nếu xuất hiện thêm trong tập này.\n"
-
-    sys_prompt = (
-        "Bạn là Chuyên gia Cao Cấp phân tích kịch bản và ngôn ngữ phim Trung Quốc "
-        f"(Đô Thị Dị Năng, Tu Tiên, Huyền Ảo, Short Drama, Anime, Vlog) chuẩn bị phương án dịch sang {target}.\n"
-        "Nhiệm vụ: Phân tích toàn bộ lời thoại (chứa lỗi ASR nghe nhầm) để lập HỒ SƠ BẤT BIẾN (GLOBAL PLAN):\n"
-        "1. NHẬN DIỆN THỂ LOẠI & VĂN PHONG (Đô thị / Tu tiên / Cổ trang / Hiện đại).\n"
-        "2. NHÂN VẬT & ĐỒNG ÂM ASR: Gom tất cả các lỗi ASR nghe nhầm/đồng âm về đúng 1 tên Hán Việt chuẩn duy nhất (vd: 苏灵/苏黎/杜林 ➡️ Tô Lâm).\n"
-        "3. MA TRẬN XƯNG HÔ: Quy định rõ ai gọi ai là gì theo thứ bậc, giới tính và cảm xúc đối kháng.\n"
-        "4. THUẬT NGỮ & CHIÊU THỨC: Hán Việt chuẩn xác, oai phong.\n"
-        "5. PHÂN BỐ PHÂN CẢNH (SCENES): Chia kịch bản thành các phân cảnh lớn (start_i -> end_i, địa điểm, nhân vật có mặt, tình huống đối đầu/giao tiếp, xưng hô trong cảnh) để các câu thoại khi dịch theo lô luôn nắm chắc ngữ cảnh.\n"
-        "6. ASR PATCH RULES: Bắt các cụm từ ASR hay nghe nhầm (vd: 三溪 ➡️ ba nhịp thở, 送菜 ➡️ nạp mạng).\n"
-        "CHỈ trả JSON hợp lệ, không kèm lời giải thích thừa."
-    )
-
-    user_prompt = f"""Transcript trích đoạn kịch bản (tiếng Trung, dạng i|câu):
-\"\"\"{full_text}\"\"\"
-{hints_block}{series_block}
-Trả JSON đúng cấu trúc sau:
+def _plan_json_schema(target: str) -> str:
+    return f"""Trả JSON đúng cấu trúc:
 {{
   "content_type": "doi_thoai | dan_chuyen | tai_lieu | khac",
   "genre": "thể loại cụ thể",
   "tone": "văn phong + quy ước xưng hô khớp thể loại",
+  "style_lock": {{"mode": "mixed|modern|xianxia|ancient", "default_register": "mixed|toi-cau|anh-em|ancient-ta-nguoi", "note": "phim có thể đổi đô thị↔tu tiên — ưu tiên mixed"}},
   "characters": [
-    {{"zh": "tên gốc chuẩn", "vi": "tên {target} chuẩn", "gender": "nam|nữ|?", "role": "vai trò", "aliases": ["các biến thể ASR nghe nhầm"], "personality": "tính cách"}}
+    {{"zh": "tên gốc chuẩn", "vi": "tên {target} chuẩn", "gender": "nam|nữ|?", "role": "vai trò", "aliases": ["biến thể ASR"], "personality": "tính cách"}}
   ],
-  "relationship_matrix": {{
-    "Kẻ địch -> Nam chính": "Thằng ranh / Mày (Khinh thường)",
-    "Nam chính -> Kẻ địch": "Mày / Chúng mày (Áp đảo)"
-  }},
+  "relationship_matrix": {{}},
   "terms": [
-    {{"zh": "từ gốc", "vi": "dịch Hán Việt chuẩn", "type": "chiêu thức|cấp bậc|môn phái|địa danh|khác"}}
+    {{"zh": "từ gốc", "vi": "Hán Việt", "type": "lock|chiêu thức|cấp bậc|môn phái|địa danh|khác"}}
   ],
   "pronouns": [
     {{"who": "tên vi", "to": "tên vi hoặc chung", "self": "tôi/mày/tao/ta", "call": "anh/cậu/mày/ngươi"}}
   ],
   "scenes": [
-    {{
-      "scene_id": 1,
-      "range": [0, 50],
-      "location": "địa điểm",
-      "characters": ["tên nhân vật xuất hiện"],
-      "situation": "tóm tắt tình huống mâu thuẫn trong cảnh",
-      "tone": "cảm xúc/không khí cảnh",
-      "pronouns_in_scene": "quy ước xưng hô cụ thể giữa các nhân vật trong cảnh này"
-    }}
+    {{"scene_id": 1, "range": [0, 50], "location": "", "characters": [], "situation": "", "tone": "", "pronouns_in_scene": ""}}
   ],
   "asr_patch_rules": [
-    {{"pattern_zh": "từ nghe nhầm", "correct_meaning_vi": "nghĩa đúng", "note": "lý do"}}
+    {{"pattern_zh": "", "correct_meaning_vi": "", "note": ""}}
   ]
 }}"""
 
-    # TẦNG 1: Thử gọi Model chính (LLM_MODEL, vd DeepSeek Flash)
-    primary_model = model or _cfg_get("LLM_MODEL") or None
-    fallback_model = _tmodel() or primary_model or "local"
 
-    data = {}
-    print(f"[plan] Đang lập Global Plan với model chính: {primary_model or 'default'}...", flush=True)
-    try:
-        out = chat(
-            [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
-            model=primary_model, temperature=0.2, json_mode=True, max_tokens=6000, timeout=120,
-        )
-        if out and out.strip():
-            data = parse_json(out)
-    except Exception as e:
-        print(f"[plan] Model chính gặp lỗi: {e}", flush=True)
-
-    # TẦNG 2: Dự phòng (Fallback sang Gemma 4 31B nếu Tầng 1 trả về rỗng hoặc lỗi)
-    if not data or not data.get("characters"):
-        print(f"[plan] ⚠️ Model chính rỗng -> Kích hoạt DỰ PHÒNG TẦNG 2 với {fallback_model}...", flush=True)
-        try:
-            out_fb = chat(
-                [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
-                model=fallback_model, temperature=0.2, json_mode=False, max_tokens=4000, timeout=120,
+def _plan_seed_blocks(
+    name_hints: list[str] | None,
+    series_plan: dict | None,
+    *,
+    soft_ocr: bool = True,
+) -> str:
+    """OCR = seed mềm (có thể sai). Series characters = kế thừa mạnh."""
+    parts: list[str] = []
+    if name_hints:
+        if soft_ocr:
+            parts.append(
+                "GỢI Ý OCR (CHỮ TRÊN HÌNH — THƯỜNG SAI / DƯ THỪA):\n"
+                "- Chỉ nhận vào characters/terms KHI cụm ZH khớp ≥2 lần trong thoại SRT "
+                "hoặc rõ là tên riêng lặp.\n"
+                "- CẤM đưa OCR vào glossary nếu chỉ xuất hiện 1 lần hoặc giống watermark/UI.\n"
+                f"- Danh sách gợi ý: {', '.join(name_hints[:40])}\n"
             )
-            if out_fb and out_fb.strip():
-                data = parse_json(out_fb)
-        except Exception as e2:
-            print(f"[plan] Model dự phòng gặp lỗi: {e2}", flush=True)
+        else:
+            parts.append(
+                "GỢI Ý TÊN OCR (chỉ đưa vào characters nếu khớp thoại):\n"
+                + ", ".join(name_hints[:40]) + "\n"
+            )
+    if series_plan and isinstance(series_plan, dict):
+        chars_list = [
+            f"{c.get('zh')}={c.get('vi')} ({c.get('gender', '?')})"
+            for c in series_plan.get("characters", [])
+            if isinstance(c, dict) and c.get("zh") and c.get("vi")
+        ]
+        # terms series chỉ soft-list (kho đã gầy type=lock)
+        terms_list = [
+            f"{t.get('zh')}={t.get('vi')}"
+            for t in series_plan.get("terms", [])
+            if isinstance(t, dict)
+            and t.get("zh") and t.get("vi")
+            and str(t.get("type") or "").lower() == "lock"
+        ]
+        pr_list = [
+            f"{p.get('who')}->{p.get('to')}: xưng '{p.get('self')}', gọi '{p.get('call')}'"
+            for p in series_plan.get("pronouns", [])
+            if isinstance(p, dict) and p.get("who")
+        ]
+        if chars_list or terms_list or pr_list:
+            block = "\n[SERIES SEED — nhân vật/xưng hô đã chốt bộ trước]:\n"
+            if chars_list:
+                block += f"- Characters (GIỮ tên VI trừ khi ASR chứng minh sai rõ): {'; '.join(chars_list[:30])}\n"
+            if terms_list:
+                block += f"- Terms lock (chỉ type=lock): {'; '.join(terms_list[:20])}\n"
+            if pr_list:
+                block += f"- Pronouns: {'; '.join(pr_list[:20])}\n"
+            block += "Chỉ BỔ SUNG nhân vật/term mới có trong file thoại này.\n"
+            parts.append(block)
+    return "".join(parts)
 
-    # TẦNG 3: Heuristic Fallback an toàn (nếu cả 2 API đều rỗng)
-    if not data:
-        print("[plan] ⚠️ Cả 2 model đều rỗng -> Kích hoạt DỰ PHÒNG TẦNG 3 (Heuristic Base)...", flush=True)
-        data = {
-            "content_type": "doi_thoai",
-            "genre": "Đô thị dị năng / Chiến đấu",
-            "tone": "Hành động kịch tính, ngắn gọn, xưng hô mày/tao/tôi/anh",
-            "characters": [],
-            "terms": [],
-            "pronouns": [],
-            "relationship_matrix": {},
-            "asr_patch_rules": []
-        }
 
-    for k in ("characters", "terms", "pronouns", "asr_patch_rules"):
-        data.setdefault(k, [])
+def _normalize_plan_data(data: dict | None) -> dict:
+    if not isinstance(data, dict):
+        data = {}
+    for k in ("characters", "terms", "pronouns", "asr_patch_rules", "scenes"):
+        if not isinstance(data.get(k), list):
+            data[k] = []
     data.setdefault("content_type", "doi_thoai")
     data.setdefault("genre", "Đô thị dị năng / Huyền ảo")
     data.setdefault("tone", "")
-    data.setdefault("relationship_matrix", {})
-
-    # Chuẩn hoá gender & aliases
+    if not isinstance(data.get("relationship_matrix"), dict):
+        data["relationship_matrix"] = {}
+    chars_ok = []
     for c in data["characters"]:
         if not isinstance(c, dict):
             continue
-        g = (c.get("gender") or "?").strip().lower()
+        g = str(c.get("gender") or "?").strip().lower()
         if g in ("male", "m", "nam", "男"):
             c["gender"] = "nam"
         elif g in ("female", "f", "nữ", "nu", "女"):
@@ -580,8 +526,254 @@ Trả JSON đúng cấu trúc sau:
             c["gender"] = "?"
         if not isinstance(c.get("aliases"), list):
             c["aliases"] = []
+        chars_ok.append(c)
+    data["characters"] = chars_ok
+    return data
 
-    print(f"[plan] ✅ Đã lập xong Global Plan: {len(data['characters'])} nhân vật, {len(data['terms'])} thuật ngữ.", flush=True)
+
+def _remap_scenes_cue_to_i(plan: dict, cue_to_i: list[int]) -> dict:
+    """Nếu GPT trả range theo số thứ tự cue SRT (1..N) → map về segment i."""
+    if not cue_to_i or not isinstance(plan, dict):
+        return plan
+    scenes = plan.get("scenes")
+    if not isinstance(scenes, list):
+        return plan
+    n = len(cue_to_i)
+
+    def _map_one(v) -> int | None:
+        try:
+            x = int(v)
+        except (TypeError, ValueError):
+            return None
+        # cue 1-based
+        if 1 <= x <= n:
+            return cue_to_i[x - 1]
+        return x  # đã là i thật
+
+    for sc in scenes:
+        if not isinstance(sc, dict):
+            continue
+        rng = sc.get("range")
+        if isinstance(rng, list) and len(rng) >= 2:
+            a, b = _map_one(rng[0]), _map_one(rng[1])
+            if a is not None and b is not None:
+                sc["range"] = [min(a, b), max(a, b)]
+        for key in ("start_i", "end_i"):
+            if key in sc:
+                m = _map_one(sc.get(key))
+                if m is not None:
+                    sc[key] = m
+    return plan
+
+
+def _build_plan_from_file(
+    work_dir: Path,
+    segments: list[dict],
+    target: str,
+    model: str | None,
+    name_hints: list[str] | None,
+    series_plan: dict | None,
+) -> dict:
+    """Upload full ZH SRT → GPT đọc file (Aurora) → glossary. OCR chỉ seed mềm."""
+    from pronoun_consistency import write_zh_srt
+    from llm import aurora_upload_file, chatgpt_chat_with_file
+
+    lines = []
+    cue_to_i: list[int] = []
+    for s in segments:
+        zh = (s.get("text") or "").strip()
+        if not zh:
+            continue
+        try:
+            ii = int(s.get("i"))
+        except (TypeError, ValueError):
+            continue
+        lines.append({"i": ii, "zh": zh})
+        cue_to_i.append(ii)
+    if not lines:
+        return {}
+    srt_path = write_zh_srt(work_dir, lines, segments=segments, annotate_i=True)
+    print(f"[plan] upload full ZH SRT {srt_path.name} ({len(lines)} câu)…", flush=True)
+    up = aurora_upload_file(srt_path, purpose="assistants")
+    file_id = up["id"]
+    seed = _plan_seed_blocks(name_hints, series_plan, soft_ocr=True)
+    prompt = (
+        f"Bạn là chuyên gia lập glossary dịch phim Trung → {target}.\n"
+        "File đính kèm = TOÀN BỘ phụ đề ZH (SRT từ ASR, có thể nghe nhầm).\n"
+        "Mỗi cue có tag [i=N] — N là chỉ số segment thật.\n"
+        "ĐỌC HẾT file — không đoán từ mẫu ngắn.\n"
+        "1) Thể loại + văn phong; style_lock.mode ưu tiên mixed nếu phim có cả đô thị và tu tiên/cổ.\n"
+        "2) Nhân vật: gom đồng âm ASR về 1 tên VI; aliases = biến thể nghe nhầm.\n"
+        "3) Terms: chỉ type=lock cho danh hiệu/máu/số cứng; còn lại type thường.\n"
+        "4) Pronouns + scenes: range=[start_i,end_i] theo số trong tag [i=…] "
+        "(KHÔNG dùng số thứ tự block SRT 1..N).\n"
+        "5) asr_patch_rules cho cụm hay nhầm.\n"
+        f"{seed}\n"
+        f"{_plan_json_schema(target)}\n"
+        "CHỈ trả JSON."
+    )
+    # PLAN_MODEL thắng; model từ UI chỉ dùng nếu đã là chatgpt/aurora
+    plan_cfg = (_cfg_get("PLAN_MODEL") or "chatgpt/gpt-5-6-mini").strip()
+    m_in = (model or "").strip()
+    if m_in.lower().startswith(("chatgpt/", "aurora/")):
+        use_model = m_in
+    else:
+        use_model = plan_cfg
+    try:
+        timeout = int(_cfg_get("PLAN_FILE_TIMEOUT", "180") or 180)
+    except ValueError:
+        timeout = 180
+    timeout = max(60, min(timeout, 420))
+    out = chatgpt_chat_with_file(
+        file_id,
+        prompt,
+        model=use_model,
+        temperature=0.15,
+        max_tokens=8192,
+        json_mode=True,
+        timeout=timeout,
+        base=up.get("base"),
+        account_id=up.get("account_id") or None,
+    )
+    data = parse_json(out) if out else {}
+    if not isinstance(data, dict):
+        raise RuntimeError("plan-file: JSON không phải object")
+    if data.get("error") and not data.get("characters"):
+        raise RuntimeError(f"plan-file: GPT không đọc file — {data.get('error')}")
+    if not (data.get("characters") or data.get("terms")):
+        raise RuntimeError("plan-file: JSON rỗng / thiếu characters")
+    data = _remap_scenes_cue_to_i(data, cue_to_i)
+    data["_meta"] = {
+        **(data.get("_meta") if isinstance(data.get("_meta"), dict) else {}),
+        "plan_mode": "file",
+        "plan_model": use_model,
+        "n_asr_lines": len(lines),
+        "srt": str(srt_path.name),
+        "plan_file_timeout": timeout,
+    }
+    return data
+
+
+def _build_plan_sample(
+    segments: list[dict],
+    target: str,
+    model: str | None,
+    name_hints: list[str] | None,
+    series_plan: dict | None,
+) -> dict:
+    """Fallback: mẫu head/mid/tail (plan cũ)."""
+    valid_segs = [s for s in segments if (s.get("text") or "").strip()]
+    tot = len(valid_segs)
+    if tot <= 250:
+        sample_segs = valid_segs
+    else:
+        head = valid_segs[:80]
+        mid_idx = tot // 2
+        mid = valid_segs[mid_idx:mid_idx + 80]
+        tail = valid_segs[-80:]
+        kw = ("苏", "林", "战", "嫣", "烈", "影", "灵", "黎", "天宫", "神域", "级", "血", "哥", "姐", "弟", "妹")
+        extras = [
+            s for s in valid_segs[80:mid_idx] + valid_segs[mid_idx + 80:-80]
+            if any(k in (s.get("text") or "") for k in kw)
+        ][:120]
+        sample_segs = sorted(head + mid + tail + extras, key=lambda s: s.get("i", 0))
+
+    lines = [f"{s.get('i', idx)}|{(s.get('text') or '').strip()}" for idx, s in enumerate(sample_segs)]
+    full_text = "\n".join(lines)
+    seed = _plan_seed_blocks(name_hints, series_plan, soft_ocr=True)
+
+    sys_prompt = (
+        "Bạn là Chuyên gia Cao Cấp phân tích kịch bản và ngôn ngữ phim Trung Quốc "
+        f"chuẩn bị phương án dịch sang {target}.\n"
+        "Lập HỒ SƠ BẤT BIẾN: thể loại, nhân vật (gom ASR đồng âm), xưng hô, thuật ngữ, "
+        "phân cảnh, asr_patch_rules. OCR seed có thể SAI.\n"
+        "CHỈ trả JSON hợp lệ."
+    )
+    user_prompt = (
+        f"Transcript mẫu (i|câu):\n\"\"\"{full_text}\"\"\"\n{seed}\n"
+        + _plan_json_schema(target)
+    )
+
+    primary_model = model or _cfg_get("LLM_MODEL") or None
+    fallback_model = _tmodel() or primary_model or "local"
+    data: dict = {}
+    print(f"[plan] sample-mode model={primary_model or 'default'}…", flush=True)
+    try:
+        out = chat(
+            [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
+            model=primary_model, temperature=0.2, json_mode=True, max_tokens=6000, timeout=120,
+        )
+        if out and out.strip():
+            data = parse_json(out)
+    except Exception as e:
+        print(f"[plan] Model chính lỗi: {e}", flush=True)
+
+    if not data or not data.get("characters"):
+        print(f"[plan] fallback sample → {fallback_model}", flush=True)
+        try:
+            out_fb = chat(
+                [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
+                model=fallback_model, temperature=0.2, json_mode=False, max_tokens=4000, timeout=120,
+            )
+            if out_fb and out_fb.strip():
+                data = parse_json(out_fb)
+        except Exception as e2:
+            print(f"[plan] fallback lỗi: {e2}", flush=True)
+
+    if not data:
+        data = {
+            "content_type": "doi_thoai",
+            "genre": "Đô thị dị năng / Chiến đấu",
+            "tone": "Hành động kịch tính, ngắn gọn, xưng hô mày/tao/tôi/anh",
+            "characters": [], "terms": [], "pronouns": [],
+            "relationship_matrix": {}, "asr_patch_rules": [],
+        }
+    data["_meta"] = {
+        **(data.get("_meta") if isinstance(data.get("_meta"), dict) else {}),
+        "plan_mode": "sample",
+        "n_sample": len(sample_segs),
+    }
+    return data
+
+
+def build_plan(
+    segments: list[dict],
+    target: str = "Tiếng Việt",
+    model: str | None = None,
+    name_hints: list[str] | None = None,
+    series_plan: dict | None = None,
+    work_dir: str | Path | None = None,
+) -> dict:
+    """Lập glossary: mặc định upload full ZH SRT (PLAN_MODE=file); fallback sample."""
+    mode = _plan_mode()
+    data: dict = {}
+    if mode in ("file", "upload", "srt") and work_dir:
+        try:
+            data = _build_plan_from_file(
+                Path(work_dir), segments, target, model, name_hints, series_plan,
+            )
+            print(
+                f"[plan] file-mode OK · chars={len(data.get('characters') or [])} "
+                f"terms={len(data.get('terms') or [])}",
+                flush=True,
+            )
+        except Exception as e_file:  # noqa: BLE001
+            print(f"[plan] file-mode lỗi ({e_file}) → fallback sample", flush=True)
+            data = {}
+    if not data or not (data.get("characters") or data.get("terms")):
+        data = _build_plan_sample(segments, target, model, name_hints, series_plan)
+
+    data = _normalize_plan_data(data)
+    try:
+        from context_studio.schema import apply_style_lock_from_genre
+        data = apply_style_lock_from_genre(data)
+    except Exception:  # noqa: BLE001
+        pass
+    print(
+        f"[plan] ✅ Global Plan: {len(data['characters'])} NV, {len(data['terms'])} terms, "
+        f"mode={(data.get('_meta') or {}).get('plan_mode', '?')}",
+        flush=True,
+    )
     return data
 
 
@@ -674,7 +866,7 @@ def _plan_block(p: dict) -> str:
             elif isinstance(pr, str) and pr.strip():
                 lines.append(f"  - {pr.strip()}")
     try:
-        from engines.pronoun_consistency import lock_banner
+        from pronoun_consistency import lock_banner
         lb = lock_banner(p)
         if lb:
             lines.append(lb.rstrip())
@@ -762,7 +954,7 @@ def _plan_block_for_qa(p: dict) -> str:
     if p.get("pronoun_notes"):
         lines.append(f"Ghi chú xưng hô: {p['pronoun_notes']}")
     try:
-        from engines.pronoun_consistency import lock_banner
+        from pronoun_consistency import lock_banner
         lb = lock_banner(p)
         if lb:
             lines.append(lb.rstrip())
@@ -849,6 +1041,8 @@ _DEFAULT_HARD_TERMS: list[dict] = [
     {"zh": "不过我每秒回血三千一百亿", "vi": "Nhưng mỗi giây tôi hồi 310 tỷ máu.", "type": "lock"},
     # Tên riêng hay bị dịch đen
     {"zh": "过山", "vi": "Quá Sơn", "type": "lock"},
+    # 逆 = nghịch (KHÔNG nghị ← nhầm 议/議). Thành ngữ / danh hiệu nhân vật hay gặp.
+    {"zh": "逆天而行", "vi": "Nghịch Thiên Nhi Hành", "type": "lock"},
     # Cạnh đấm 亿: 两三万 ≈ 两三万亿
     {"zh": "我总是两三万", "vi": "Tôi luôn quanh mức hai–ba nghìn tỷ.", "type": "lock"},
 ]
@@ -897,7 +1091,7 @@ def ensure_hard_terms(plan: dict | None) -> dict:
             cur = by_zh[key]
             if not cur.get("type"):
                 cur["type"] = seed["type"]
-            # Lock HP: đè bản sai 31.001 / 3.100 tỷ máu / thiếu tỷ
+            # Lock: đè bản sai đã biết (HP 31.001 / 逆→Nghị…)
             if seed.get("type") == "lock":
                 cur_vi = str(cur.get("vi") or "")
                 seed_vi = str(seed.get("vi") or "")
@@ -907,6 +1101,11 @@ def ensure_hard_terms(plan: dict | None) -> dict:
                     or ("3.100 tỷ máu" in cur_vi and "31 000" in seed_vi)
                     or ("3 100 tỷ máu" in cur_vi and "31 000" in seed_vi)
                     or ("máu" in seed_vi and "tỷ" in seed_vi and "tỷ" not in cur_vi)
+                    or (
+                        seed["zh"] == "逆天而行"
+                        and "Nghị Thiên" in cur_vi
+                        and "Nghịch" not in cur_vi
+                    )
                 )
                 if bad and seed_vi:
                     cur["vi"] = seed_vi
@@ -917,47 +1116,68 @@ def ensure_hard_terms(plan: dict | None) -> dict:
         by_zh[key] = terms[-1]
         added += 1
     plan["terms"] = terms
+    # Nhân vật: cùng trap 逆天而行 hay bị PLAN ghi sai âm «Nghị»
+    chars = list(plan.get("characters") or []) if isinstance(plan.get("characters"), list) else []
+    char_fixed = 0
+    for c in chars:
+        if not isinstance(c, dict):
+            continue
+        zh = str(c.get("zh") or "")
+        vi = str(c.get("vi") or "")
+        if "逆天而行" not in zh and zh.strip() != "逆天而行":
+            continue
+        if "Nghị Thiên" in vi and "Nghịch" not in vi:
+            c["vi"] = vi.replace("Nghị Thiên", "Nghịch Thiên")
+            if c["vi"] == vi:
+                c["vi"] = "Nghịch Thiên Nhi Hành"
+            char_fixed += 1
+            fixed += 1
+    plan["characters"] = chars
     if added or fixed:
-        print(f"[plan] +{added} hard/style terms" + (f", fixed {fixed} lock" if fixed else ""), flush=True)
+        print(
+            f"[plan] +{added} hard/style terms"
+            + (f", fixed {fixed} lock" if fixed else "")
+            + (f" (chars {char_fixed})" if char_fixed else ""),
+            flush=True,
+        )
+    # Unihan HV auditor + consistency (1+2) — không phụ thuộc whitelist dài
+    try:
+        from hv_auditor import audit_and_fix_plan
+        audit_and_fix_plan(plan, fix=True)
+    except Exception as e_hv:  # noqa: BLE001
+        print(f"[hv-auditor] skip: {e_hv}", flush=True)
     return plan
 
 
 def hard_term_lock_map(plan: dict | None) -> dict[str, str]:
-    """zh_norm → vi bắt buộc (từ glossary type chengyu/idiom/combat_taunt/lock + seed)."""
+    """zh_norm → vi bắt buộc — CHỈ type=lock (+ seed lock). Chengyu/idiom = mềm trong prompt."""
     out: dict[str, str] = {}
-    seed_keys = {_norm_zh_cue(s["zh"]) for s in _DEFAULT_HARD_TERMS}
-    for seed in _DEFAULT_HARD_TERMS:
-        out[_norm_zh_cue(seed["zh"])] = seed["vi"]
     if not isinstance(plan, dict):
-        return out
-    # modern thuần: không ép HV seed — chỉ terms type=lock trong glossary
+        plan = {}
     mode = ""
     lock = plan.get("style_lock") if isinstance(plan.get("style_lock"), dict) else {}
     if isinstance(lock, dict):
         mode = str(lock.get("mode") or "").lower()
     soft_modern = mode == "modern" and not _is_mixed_genre(plan)
     if soft_modern:
-        out = {}
+        return out
     for t in plan.get("terms") or []:
         if not isinstance(t, dict):
             continue
         typ = str(t.get("type") or "").lower()
+        if typ != "lock":
+            continue
         zh, vi = (t.get("zh") or "").strip(), (t.get("vi") or "").strip()
         if not zh or not vi:
             continue
         key = _norm_zh_cue(zh)
-        if typ in ("chengyu", "idiom", "combat_taunt", "lock") or (
-            not soft_modern and key in seed_keys
-        ):
-            # Seed HP lock thắng glossary cũ sai («31.001»)
-            if key in seed_keys and ("31.001" in vi or "31,001" in vi):
-                continue
-            out[key] = vi if vi[-1:] in ".,!?;:…" or vi.endswith(".") else vi
-    # seed DEFAULT luôn thắng cho lock máu (tránh glossary cũ)
-    if not soft_modern:
-        for seed in _DEFAULT_HARD_TERMS:
-            if seed.get("type") == "lock":
-                out[_norm_zh_cue(seed["zh"])] = seed["vi"]
+        if "31.001" in vi or "31,001" in vi:
+            continue
+        out[key] = vi if vi[-1:] in ".,!?;:…" or vi.endswith(".") else vi
+    # seed DEFAULT type=lock luôn thắng (máu / 逆天而行 / 过山)
+    for seed in _DEFAULT_HARD_TERMS:
+        if seed.get("type") == "lock":
+            out[_norm_zh_cue(seed["zh"])] = seed["vi"]
     return out
 
 
@@ -1268,7 +1488,7 @@ def apply_style_polish(rows: list[dict], plan: dict | None = None) -> int:
     if n:
         print(f"[style] polish {n} câu (calque/văn mẫu)", flush=True)
     try:
-        from engines.script_lint import autofix_rows
+        from script_lint import autofix_rows
         n += autofix_rows(rows, plan)["n"]
     except Exception as e:  # noqa: BLE001
         print(f"[lint] bỏ qua ({e})", flush=True)
@@ -1276,24 +1496,30 @@ def apply_style_polish(rows: list[dict], plan: dict | None = None) -> int:
 
 
 def _is_modernish_genre(plan: dict | None) -> bool:
-    """Đô thị / mixed / hiện đại — cấm Ta–Ngươi cổ."""
-    if _is_mixed_genre(plan):
-        return True
+    """Chỉ đô thị THUẦN — không ép detox khi mixed (phim có thể sang tu tiên)."""
     if not isinstance(plan, dict):
         return False
     lock = plan.get("style_lock") if isinstance(plan.get("style_lock"), dict) else {}
     mode = str(lock.get("mode") or "").lower()
-    if mode in ("modern", "mixed"):
+    if mode in ("mixed", "xianxia", "ancient"):
+        return False
+    if mode == "modern":
         return True
-    if mode in ("xianxia", "ancient"):
+    if _is_mixed_genre(plan):
         return False
     blob = " ".join(
         str(plan.get(k) or "") for k in ("genre", "tone", "content_type", "pronoun_notes")
     ).lower()
+    ancient = any(
+        k in blob
+        for k in ("tu tiên", "tu tien", "cổ trang", "wuxia", "xianxia", "tiên hiệp")
+    )
+    if ancient:
+        return False
     return any(
         k in blob
         for k in (
-            "đô thị", "do thi", "hiện đại", "hien dai", "dị năng", "tinh cầu",
+            "đô thị", "do thi", "hiện đại", "hien dai",
             "học đường", "urban", "modern", "short drama", "short-drama",
         )
     )
@@ -1524,7 +1750,7 @@ def translate_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
     """LƯỢT 1 — DỊCH NGHĨA KỊCH BẢN CHUẨN XÁC (Semantic Accuracy) theo Phân Cảnh (Scene) + Series Glossary. Trả {i: vi}."""
     scene_ctx = _resolve_scene_context(plan, rows)
     try:
-        from engines.pronoun_consistency import lock_banner, ledger_from_prev
+        from pronoun_consistency import lock_banner, ledger_from_prev
         lock_ctx = lock_banner(plan)
         ledger_ctx = ledger_from_prev(prev_ctx)
     except Exception:
@@ -1534,9 +1760,7 @@ def translate_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
         "MỤC TIÊU DUY NHẤT: Dịch ĐÚNG NGHĨA kịch bản, ĐÚNG NHÂN VẬT ĐANG NÓI theo Phân cảnh, ĐÚNG VAI VẾ XƯNG HÔ.\n"
         "1. BÁM SÁT [NGỮ CẢNH PHÂN CẢNH HIỆN TẠI]: Nắm chắc bối cảnh, tình huống mâu thuẫn, ai đang nói với ai (kẻ thù đối đầu, sư đồ, đồng đội hay hệ thống).\n"
         "2. TUYỆT ĐỐI KHÔNG DỊCH ĐEN / TỪ ĐIỂN THÔ: Thoát ý các câu thành ngữ, tiếng lóng, hàm ý mỉa mai của tiếng Trung (vd: 吃醋 -> ghen; 打天下 -> dựng nghiệp; 脑子进水 -> não úng nước/có vấn đề).\n"
-        "3. ĐẠI TỪ XƯNG HÔ NHẤT QUÁN: Bám chắc ma trận xưng hô + khối [PHÂN CẢNH HIỆN TẠI]. "
-        "CẤM nhảy Ta/Ngươi nếu đô thị/mixed; CẤM đảo ngôi ('Đến lượt ngươi' ≠ 'Đến lượt ta'). "
-        "Cùng một cặp who→to phải giữ đúng self/call đã chốt trong plan.\n"
+        "3. ĐẠI TỪ XƯNG HÔ NHẤT QUÁN: Bám chắc ma trận who→to. Cùng một cặp phải giữ đúng self/call đã chốt. CẤM nhảy anh–em ↔ ông–tôi / cậu–tôi trong cùng đoạn. CẤM Ta/Ngươi nếu đô thị/mixed; CẤM đảo ('Đến lượt ngươi' ≠ 'Đến lượt ta').\n"
         "4. THUẬT NGỮ CỨNG & SỐ LƯỢNG: Giữ đúng tên nhân vật, chiêu thức Hán Việt oai phong, giữ đúng số 万/亿/兆 (vạn = 10 000, ức = 100 triệu).\n"
         "5. Giữ nguyên chỉ số i, ĐỦ SỐ CÂU, không bỏ dòng. Câu cực ngắn (ừ, được rồi) vẫn dịch ĐÚNG câu đó.\n"
         + _translate_rules(plan)
@@ -1551,15 +1775,29 @@ def translate_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
         ctx = ledger_ctx + ctx
     if lock_ctx:
         ctx = lock_ctx + "\n" + ctx
-    payload = [
-        {"i": r["i"], "sec": round((r.get("end", 0) - r.get("start", 0)), 1),
-         "zh": _compress_zh_for_llm(r["text"])}
-        for r in rows
-    ]
+    payload = []
+    for r in rows:
+        item = {
+            "i": r["i"],
+            "sec": round((r.get("end", 0) - r.get("start", 0)), 1),
+            "zh": _compress_zh_for_llm(r["text"]),
+        }
+        mt_hint = (r.get("mt_vi") or "").strip()
+        if mt_hint:
+            item["mt_vi"] = mt_hint[:240]
+        payload.append(item)
+    mt_note = ""
+    if any(p.get("mt_vi") for p in payload):
+        mt_note = (
+            "Một số câu có 'mt_vi' = bản NMT (HachimiMT). Ưu tiên giữ nhịp/ý NMT; "
+            "CHỈ sửa khi lệch tên characters, danh hiệu lock, hoặc sai nghĩa rõ. "
+            "CẤM dịch nghĩa danh hiệu (vd 逆天而行 = tên đã chốt).\n"
+        )
     user = (
         f"{plan_block}\n{scene_ctx}{ctx}"
         "Dịch các câu sau (khớp 'sec' giây/câu). "
         "Đây là đoạn thoại LIỀN — câu sau có thể đá/đáp câu trước; dịch đúng ý, không dịch đen. "
+        f"{mt_note}"
         "Trả JSON: {\"items\":[{\"i\":<int>,\"vi\":\"<bản dịch>\"}]}\n\n"
         f"{json.dumps(payload, ensure_ascii=False)}"
     )
@@ -1621,14 +1859,79 @@ def _translate_safe(rows: list[dict], plan_block: str, prev_ctx: list[dict],
         return {**a, **b}
 
 
+def _style_voice_banner(plan: dict | None) -> str:
+    """Gợi ý văn phong linh hoạt — KHÔNG khóa modern↔cổ (phim có thể đổi cảnh)."""
+    try:
+        if not isinstance(plan, dict):
+            return ""
+        lock = plan.get("style_lock") if isinstance(plan.get("style_lock"), dict) else {}
+        mode = str(lock.get("mode") or "").lower()
+        if mode == "unknown":
+            mode = ""
+        genre = str(plan.get("genre") or "")
+        tone = str(plan.get("tone") or "")
+        if not (mode or genre or tone):
+            return ""
+        lines = [
+            "=== RÀ NMT TỐI THIỂU ===",
+            "NMT là bản chính — GIỮ khi đã đúng nghĩa/tên; đừng polish đồng nghĩa.",
+            "Phim có thể đô thị ↔ tu tiên: không ép một thanh ngữ cả phim.",
+            "Chỉ vá: tên/lock sai, nghĩa ngược ZH, Hán thô, quá dài TTS.",
+        ]
+        if mode or genre or tone:
+            lines.append(f"gợi ý plan: mode={mode or '?'} | genre={genre} | tone={tone}")
+        return "\n".join(lines) + "\n"
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _style_exemplars(plan: dict | None, rows_pool: list[dict] | None, limit: int = 5) -> str:
+    """3–5 câu mẫu giữ giọng (ưu tiên có tên NV glossary)."""
+    try:
+        if not rows_pool:
+            return ""
+        names = []
+        if isinstance(plan, dict):
+            for c in plan.get("characters") or []:
+                if not isinstance(c, dict):
+                    continue
+                vi_n = str(c.get("vi") or "").strip()
+                if len(vi_n) >= 2:
+                    names.append(vi_n)
+        named: list[str] = []
+        head: list[str] = []
+        for idx, r in enumerate(rows_pool):
+            if not isinstance(r, dict):
+                continue
+            zh = str(r.get("zh") or "").strip()
+            vi = str(r.get("vi") or "").strip()
+            if not zh or not vi or len(vi) < 4:
+                continue
+            line = f"  ZH: {zh[:80]}\n  VI: {vi[:100]}"
+            if names and any(n and n in vi for n in names[:12]):
+                if line not in named:
+                    named.append(line)
+            elif idx < 12 and line not in head:
+                head.append(line)
+            if len(named) >= limit:
+                break
+        picked = (named + head)[:limit]
+        if not picked:
+            return ""
+        return "MẪU THOẠI GIỮ GIỌNG (bám cùng văn phong khi sửa):\n" + "\n".join(picked) + "\n\n"
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
                  target: str = "Tiếng Việt", model: str | None = None,
-                 plan: dict | None = None) -> dict:
+                 plan: dict | None = None,
+                 exemplars_pool: list[dict] | None = None) -> dict:
     """LƯỢT 2 — BẢN ĐỊA HÓA LỜI THOẠI LỒNG TIẾNG & KHỚP NHỊP PHỤ ĐỀ (Voice Dubbing Localization).
     Đối chiếu zh với vi_nhap và Phân cảnh, CHỈ trả câu cần sửa. Bắt lỗi ngược đại từ, từ Hán-Nôm thô, lệch nhịp."""
     scene_ctx = _resolve_scene_context(plan, rows)
     try:
-        from engines.pronoun_consistency import lock_banner, ledger_from_prev, review_lock_rules
+        from pronoun_consistency import lock_banner, ledger_from_prev, review_lock_rules
         lock_ctx = lock_banner(plan)
         ledger_ctx = ledger_from_prev(prev_ctx)
         rule3 = review_lock_rules(plan)
@@ -1636,27 +1939,35 @@ def review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
         lock_ctx, ledger_ctx, rule3 = "", "", (
             "3. SỬA LỖI NGƯỢC ĐẠI TỪ: bám phân cảnh; CẤM đảo ngôi.\n"
         )
+    try:
+        voice = _style_voice_banner(plan)
+        exemplars = _style_exemplars(plan, exemplars_pool or prev_ctx or rows, limit=5)
+    except Exception:  # noqa: BLE001
+        voice, exemplars = "", ""
     sys = (
-        f"Bạn là TỔNG BIÊN TẬP LỒNG TIẾNG {target} CHO PHIM (LƯỢT 2: BẢN ĐỊA HÓA LỜI THOẠI & KHỚP NHỊP PHỤ ĐỀ).\n"
-        "MỤC TIÊU: Soát lại bản dịch nháp (vi_nhap) đối chiếu với tiếng Trung (zh) và Phân cảnh để đưa về lời thoại phim tự nhiên, gãy gọn, có lực, loại bỏ sạch 100% từ Hán-Nôm thô cứng.\n"
-        "1. KHỚP THỜI LƯỢNG (sec): Mỗi câu chỉ có 'sec' giây (~5 âm tiết/giây). Nếu bản dịch nháp quá dài, BẮT BUỘC viết lại súc tích để giọng lồng tiếng TTS không bị dí hơi.\n"
-        "2. DỌN SẠCH TỪ HÁN-NÔM THÔ CỨNG: Bắt buộc đổi các từ máy dịch quen thuộc:\n"
-        "   - 'tiến vào' -> 'vào'\n"
-        "   - 'vật tư' -> 'lương thực / trang bị / đồ đạc'\n"
-        "   - 'uống giấm' -> 'ghen'\n"
-        "   - 'nghịch tập' -> 'lật kèo / đổi vận'\n"
-        "   - 'phế thể' -> 'kẻ vô dụng / phế nhân'\n"
-        "   - 'ba vạn' -> '30 000'; 'mười vạn' -> 'trăm nghìn'\n"
+        f"Bạn là biên tập viên TỐI THIỂU cho phụ đề {target} (LƯỢT 2: chỉ vá lỗi NMT).\n"
+        f"{voice}"
+        "vi_nhap = bản DỊCH CHÍNH từ NMT. MẶC ĐỊNH: GIỮ NGUYÊN — không viết lại.\n"
+        "CHỈ trả câu trong fixes KHI có ÍT NHẤT một lỗi cứng sau:\n"
+        "  (A) Sai/thiếu tên nhân vật so với bảng characters / type=lock.\n"
+        "  (B) Sai nghĩa RÕ so với ZH (đảo ngôi trong cùng câu, hiểu ngược idiom).\n"
+        "  (C) Còn chữ Hán / Hán-Nôm thô cứng (tiến vào→vào; uống giấm→ghen; ba vạn→30 000).\n"
+        "  (D) Quá dài so với 'sec' (~5 âm tiết/giây) khiến TTS dí hơi — chỉ RÚT, giữ ý NMT.\n"
+        "CẤM tuyệt đối:\n"
+        "  - Đổi từ đồng nghĩa / 'hay hơn' (vd Lão tử→Tôi, chúng ta→bọn tôi) khi NMT đã đúng.\n"
+        "  - Viết lại cả câu chỉ vì văn phong.\n"
+        "  - Ép modern↔cổ khi NMT đã khớp ngữ cảnh.\n"
         + rule3
-        + "4. THOẠI MỀM, GÃY GỌN, CÓ LỰC: Lời thoại như diễn viên lồng tiếng Việt Nam nói ngoài đời, không văn phong dịch máy — nhưng không được phá xưng hô đã khóa.\n"
-        "5. YẾU TỐ CỨNG: Giữ nguyên chiêu thức, môn phái, địa danh Hán Việt oai phong.\n"
-        "Câu đã tự nhiên, đúng ngữ cảnh và khớp độ dài thì BỎ QUA (không trả trong fixes).\n"
+        + "YẾU TỐ CỨNG giữ: tên NV, type=lock, chiêu thức.\n"
+        "Câu NMT đã ổn → KHÔNG đưa vào fixes (thiếu sót còn hơn sửa thừa).\n"
         + _translate_rules(plan)
         + "\nCHỈ trả JSON."
     )
     ctx = ""
+    if exemplars:
+        ctx = exemplars
     if prev_ctx:
-        ctx = "NGỮ CẢNH liền trước (bản đã chốt, giữ mạch):\n" + "\n".join(
+        ctx += "NGỮ CẢNH liền trước (bản đã chốt, giữ mạch):\n" + "\n".join(
             f"  {c.get('zh','')} -> {c.get('vi','')}" for c in prev_ctx
         ) + "\n\n"
     if ledger_ctx:
@@ -1670,13 +1981,14 @@ def review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
     ]
     user = (
         f"{plan_block}\n{scene_ctx}{ctx}"
-        "Soát các câu sau, CHỈ trả câu CẦN sửa (câu đúng thì bỏ qua). "
-        "Trả JSON: {\"fixes\":[{\"i\":<int>,\"vi\":\"<bản sửa>\"}]}\n\n"
+        "Dưới đây là NMT chính. CHỈ trả fixes cho câu LỖI CỨNG (A–D). "
+        "Nếu NMT đã ổn (vd thoại miệng tự nhiên như «Lão tử…») → BỎ QUA, đừng đổi sang tôi/bọn tôi. "
+        "Trả JSON: {\"fixes\":[{\"i\":<int>,\"vi\":\"<bản sửa>\"}]} — fixes=[] nếu không cần sửa.\n\n"
         f"{json.dumps(payload, ensure_ascii=False)}"
     )
     out = chat(
         [{"role": "system", "content": sys}, {"role": "user", "content": user}],
-        model=model or _tmodel(), temperature=0.25, json_mode=True,
+        model=model or _tmodel(), temperature=0.1, json_mode=True,
         # chỉ trả câu cần sửa → output ngắn; 4096 đủ cho ~30 câu sửa
         max_tokens=4096,
     )
@@ -1688,7 +2000,7 @@ def review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
     except Exception:  # noqa: BLE001
         raw = _salvage_items(out)     # JSON hỏng -> vớt; rỗng = không câu nào cần sửa
     try:
-        from engines.pronoun_consistency import filter_review_fixes_for_lock
+        from pronoun_consistency import filter_review_fixes_for_lock
         return filter_review_fixes_for_lock(raw, rows, plan)
     except Exception:
         return raw
@@ -1784,8 +2096,8 @@ def run_review(
     auto_switch = (_cfg_get("AUTO_SWITCH_PRESETS", "1") or "1").strip() in ("1", "true", "yes")
     if auto_switch and todo and _is_llama_local_model(rmodel):
         try:
-            import tools.preset_switcher as preset_switcher
-            target_preset = _cfg_get("REVIEW_PRESET", "gemma4-26b-qat-uncen-mtp")
+            import preset_switcher
+            target_preset = _cfg_get("REVIEW_PRESET", "qwen36-turbo")
             if target_preset:
                 preset_switcher.switch_preset(target_preset, max_wait_sec=180)
         except Exception as e_ps:
@@ -1801,7 +2113,10 @@ def run_review(
             prev_ctx = [rows[j] for j in range(max(0, pos - CTX_LINES), pos) if rows[j].get("vi")]
             fixes = {}
             try:
-                fixes = review_batch(chunk, plan_block, prev_ctx, target=target, model=rmodel, plan=plan)
+                fixes = review_batch(
+                    chunk, plan_block, prev_ctx, target=target, model=rmodel, plan=plan,
+                    exemplars_pool=rows,
+                )
             except Exception as e:
                 err_str = str(e).lower()
                 is_out_of_tokens_or_quota = (
@@ -1810,17 +2125,20 @@ def run_review(
                     or "requests" in type(e).__module__
                 )
                 if is_out_of_tokens_or_quota and not _is_llama_local_model(rmodel):
-                    local_26b = _cfg_get("REVIEW_PRESET", "gemma4-26b-qat-uncen-mtp")
+                    local_rev = _cfg_get("REVIEW_PRESET", "qwen36-turbo")
                     print(f"\n[review] ⚠️ Model 31B (9router) gặp sự cố / hết tokens / quota: {e}", flush=True)
-                    print(f"[review] 🚀 KÍCH HOẠT DỰ PHÒNG: Tự động nạp Local 26B ({local_26b}) trên llama-server :8083...", flush=True)
+                    print(f"[review] 🚀 KÍCH HOẠT DỰ PHÒNG: Tự động nạp Local REVIEW ({local_rev}) trên llama-server :8083...", flush=True)
                     try:
-                        import tools.preset_switcher as preset_switcher
-                        preset_switcher.switch_preset(local_26b, max_wait_sec=180)
-                        rmodel = f"llama/{local_26b}"
-                        print(f"[review] ✅ Đã mở xong {local_26b}. Tiếp tục soát bằng Local 26B!", flush=True)
-                        fixes = review_batch(chunk, plan_block, prev_ctx, target=target, model=rmodel, plan=plan)
+                        import preset_switcher
+                        preset_switcher.switch_preset(local_rev, max_wait_sec=180)
+                        rmodel = f"llama/{local_rev}"
+                        print(f"[review] ✅ Đã mở xong {local_rev}. Tiếp tục soát bằng Local!", flush=True)
+                        fixes = review_batch(
+                            chunk, plan_block, prev_ctx, target=target, model=rmodel, plan=plan,
+                            exemplars_pool=rows,
+                        )
                     except Exception as e_fallback:
-                        print(f"[review] ❌ Lỗi khi chuyển sang fallback 26B: {e_fallback}", flush=True)
+                        print(f"[review] ❌ Lỗi khi chuyển sang fallback local ({local_rev}): {e_fallback}", flush=True)
                         fixes = {}
                 elif isinstance(e, LLMUnavailable):
                     raise
@@ -1847,12 +2165,12 @@ def run_review(
         apply_hard_term_locks(rows, plan)
         apply_style_polish(rows, plan)
         try:
-            from engines.pronoun_consistency import run_post_translate_consistency
+            from pronoun_consistency import run_post_translate_consistency
             run_post_translate_consistency(work_dir, rows, plan, fix_with_gpt=True)
         except Exception as e_pc:  # noqa: BLE001
             print(f"[pronoun-qa] {e_pc}", flush=True)
             apply_pronoun_postpass(rows, plan)
-        from engines.subs import to_srt, split_bilingual_rows, sub_split_cfg
+        from subs import to_srt, split_bilingual_rows, sub_split_cfg
         max_zh, max_vi, max_dur = sub_split_cfg()
         n_before = len(rows)
         # Giữ script.json = bản 1–1 với ASR (không đánh lại i). Chỉ tách khi xuất SRT.
@@ -1871,7 +2189,7 @@ def run_review(
         else:
             print(f"[review] ✅ Đã soát đủ 100% ({len(rows)} câu, missing=0)", flush=True)
         try:
-            import engines.series_glossary as series_glossary
+            import series_glossary
             series_glossary.save_from(work_dir, reason="hoàn thành rà soát")
         except Exception:
             pass
@@ -1901,6 +2219,58 @@ def count_script_missing(work_dir: str | Path) -> int:
     except Exception:  # noqa: BLE001
         return -1
     return sum(1 for r in rows if isinstance(r, dict) and not (r.get("vi") or "").strip())
+
+
+def translate_coverage_gap(work_dir: str | Path) -> int:
+    """Số câu ASR chưa có trong script (salvage lúc Dừng hay ghi thiếu).
+
+    Trước đây salvage chỉ ghi các câu đã dịch → script 398 dòng đủ VI trong khi
+    ASR 2698 → count_script_missing=0 → auto nhảy TTS dở. Gap > 0 = chưa xong dịch.
+    Cho phép script ngắn hơn ASR một chút (heal số gãy ~vài %).
+    """
+    work_dir = Path(work_dir)
+    asr_p, sp = work_dir / "asr.json", work_dir / "script.json"
+    if not asr_p.exists():
+        return -1
+    if not sp.exists():
+        try:
+            return len(json.loads(asr_p.read_text(encoding="utf-8")))
+        except Exception:  # noqa: BLE001
+            return -1
+    try:
+        asr = json.loads(asr_p.read_text(encoding="utf-8"))
+        rows = json.loads(sp.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return -1
+    if not isinstance(asr, list) or not asr:
+        return 0
+    if not isinstance(rows, list):
+        return len(asr)
+    asr_n, script_n = len(asr), len(rows)
+    if script_n <= 0:
+        return asr_n
+    gap = asr_n - script_n
+    if gap <= 0:
+        return 0
+    # heal số/gộp: script có thể ngắn hơn ASR vài % — dưới 90% = salvage dừng giữa chừng
+    if script_n < asr_n * 0.90:
+        return gap
+    return 0
+
+
+def translate_ready_for_tts(work_dir: str | Path) -> tuple[bool, str]:
+    """True chỉ khi dịch đủ coverage ASR + không còn VI trống."""
+    miss = count_script_missing(work_dir)
+    if miss < 0:
+        return False, "chưa có script.json"
+    if miss > 0:
+        return False, f"còn {miss} câu VI trống"
+    gap = translate_coverage_gap(work_dir)
+    if gap < 0:
+        return False, "không đọc được asr/script"
+    if gap > 0:
+        return False, f"script thiếu ~{gap} câu so với ASR (dịch dừng giữa chừng)"
+    return True, "ok"
 
 
 def _trivial_vi(zh: str) -> str | None:
@@ -1993,6 +2363,7 @@ def run_translate(
     force: bool = False,
     model: str | None = None,
     mode: str | None = None,   # oneshot | batch | auto (None -> TRANSLATE_MODE / auto)
+    auto_review: bool | None = None,
 ) -> dict:
     work_dir = Path(work_dir)
     m = Manifest(work_dir)
@@ -2024,7 +2395,8 @@ def run_translate(
                 n_miss = sum(1 for r in rows0 if not (r.get("vi") or "").strip())
             except Exception:  # noqa: BLE001
                 n_miss = int(st.get("n_missing") or 0)
-            if n_miss <= 0:
+            gap = translate_coverage_gap(work_dir)
+            if n_miss <= 0 and gap <= 0:
                 if not m.is_done(STAGE):
                     m.mark_done(
                         STAGE,
@@ -2038,8 +2410,14 @@ def run_translate(
                     st = m.stage(STAGE) or {}
                 print(f"[skip] Đã dịch xong: {st.get('script_path') or sp}")
                 return st
-            # Còn câu trống → KHÔNG skip (translate-fill / resume vá)
-            print(f"[fill] còn {n_miss} câu trống → dịch vá (không skip)", flush=True)
+            # Còn câu trống HOẶC script ngắn hơn ASR (salvage lúc Dừng) → không skip
+            if gap > 0:
+                print(
+                    f"[fill] script thiếu ~{gap} câu so với ASR → dịch tiếp (không skip)",
+                    flush=True,
+                )
+            elif n_miss > 0:
+                print(f"[fill] còn {n_miss} câu trống → dịch vá (không skip)", flush=True)
 
     m.mark_running(STAGE)
 
@@ -2047,7 +2425,7 @@ def run_translate(
     auto_switch = (_cfg_get("AUTO_SWITCH_PRESETS", "1") or "1").strip() in ("1", "true", "yes")
     if auto_switch:
         try:
-            import tools.preset_switcher as preset_switcher
+            import preset_switcher
             target_preset = _cfg_get("TRANSLATE_PRESET", "gemma4-12b-qat-mtp-fast")
             if target_preset:
                 preset_switcher.switch_preset(target_preset, max_wait_sec=180)
@@ -2095,7 +2473,7 @@ def run_translate(
                       "(không gọi build_plan).")
                 # đảm bảo style_lock lexicon nếu pack cũ thiếu
                 try:
-                    from tools.context_studio.schema import apply_style_lock_from_genre
+                    from context_studio.schema import apply_style_lock_from_genre
                     plan = apply_style_lock_from_genre(plan)
                 except Exception:  # noqa: BLE001
                     pass
@@ -2109,7 +2487,7 @@ def run_translate(
                     print(f"[plan] {len(hints)} gợi ý tên từ OCR.")
                 series_plan = None
                 try:
-                    import engines.series_glossary as series_glossary
+                    import series_glossary
                     s_key = series_glossary.series_key(work_dir)
                     series_plan = series_glossary.load(s_key)
                     if series_plan:
@@ -2118,7 +2496,12 @@ def run_translate(
                     print(f"[series_memory] Chưa tải được bộ nhớ series: {e_sm}", flush=True)
 
                 plan = build_plan(
-                    segments, target=target, model=model, name_hints=hints or None, series_plan=series_plan,
+                    segments,
+                    target=target,
+                    model=model,
+                    name_hints=hints or None,
+                    series_plan=series_plan,
+                    work_dir=work_dir,
                 )
                 plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
                 print(f"[plan] {len(plan.get('characters', []))} nhân vật, {len(plan.get('terms', []))} thuật ngữ, "
@@ -2131,7 +2514,7 @@ def run_translate(
                 plan = {"content_type": "", "genre": "", "tone": "",
                         "characters": [], "terms": [], "pronouns": [], "scenes": [], "pronoun_notes": ""}
         try:
-            import engines.series_glossary as series_glossary
+            import series_glossary
             plan = series_glossary.apply(work_dir, plan)
             # Tự động gộp vào kho bộ nhớ Series chung
             series_glossary.save_from(work_dir, reason="cập nhật plan tập mới")
@@ -2140,7 +2523,7 @@ def run_translate(
         plan = ensure_hard_terms(plan)
         # A) Analyze full ZH → lock ma trận xưng hô (GPT/Aurora, quét theo lô + memory)
         try:
-            from engines.pronoun_consistency import ensure_analyze_before_translate
+            from pronoun_consistency import ensure_analyze_before_translate
             plan, _pa = ensure_analyze_before_translate(
                 work_dir, plan, segments=segments, force=False,
             )
@@ -2230,7 +2613,7 @@ def run_translate(
                     apply_hard_term_locks(rows, plan)
                     apply_style_polish(rows, plan)
                     apply_pronoun_postpass(rows, plan)
-                    from engines.subs import to_srt
+                    from subs import to_srt
                     atomic_write_json(script_path, rows)
                     (work_dir / "sub.vi.srt").write_text(to_srt(rows, key="vi"), encoding="utf-8")
                     n_missing = sum(1 for r in rows if not (r.get("vi") or "").strip())
@@ -2267,6 +2650,54 @@ def run_translate(
             print(f"[fill] prefill {n_triv} câu cười/thán từ", flush=True)
 
         todo = [s for s in segments if not done.get(s["i"], {}).get("vi")]
+        # NMT = DỊCH CHÍNH (mặc định). LLM chỉ vá sót + run_review rà soát.
+        # Auto model: modern/mixed → base 60-zh-vi; xianxia/cổ → QT
+        try:
+            import mt_zh_vi
+            if mt_zh_vi.enabled() and todo:
+                mid = mt_zh_vi.resolve_model_id(plan)
+                flavor = "QT" if "qt" in mid.lower() else "base"
+                primary = mt_zh_vi.primary_mode()
+                print(
+                    f"[mt-zh-vi] {'PRIMARY' if primary else 'hint'} "
+                    f"{len(todo)} câu · {flavor} · {mid}",
+                    flush=True,
+                )
+                drafts = mt_zh_vi.draft_rows(
+                    [{"i": s["i"], "text": s.get("text") or ""} for s in todo],
+                    plan=plan,
+                )
+                if primary:
+                    n_mt = 0
+                    for s in todo:
+                        vi = (drafts.get(s["i"]) or "").strip()
+                        if not vi or _has_cjk(vi):
+                            continue
+                        zh = clean_zh_spam(s.get("text") or "") or (s.get("text") or "")
+                        done[s["i"]] = {
+                            "i": s["i"], "start": s["start"], "end": s["end"],
+                            "zh": zh, "vi": normalize_vi_thousands(vi), "mt": 1,
+                        }
+                        n_mt += 1
+                    # khóa cứng ngay trên bản NMT (tên/danh hiệu type=lock)
+                    try:
+                        apply_hard_term_locks(list(done.values()), plan)
+                    except Exception as e_lock:  # noqa: BLE001
+                        print(f"[mt-zh-vi] hard-lock skip: {e_lock}", flush=True)
+                    todo = [s for s in segments if not done.get(s["i"], {}).get("vi")]
+                    print(
+                        f"[mt-zh-vi] NMT chính {n_mt} câu · còn {len(todo)} câu "
+                        f"LLM vá (CJK/trống) · review sau = {_rmodel()}",
+                        flush=True,
+                    )
+                else:
+                    for s in todo:
+                        if s["i"] in drafts:
+                            s["mt_vi"] = drafts[s["i"]]
+                    print(f"[mt-zh-vi] gắn hint {len(drafts)} câu → LLM dịch", flush=True)
+        except Exception as e_mt:  # noqa: BLE001
+            print(f"[mt-zh-vi] bỏ qua: {e_mt}", flush=True)
+
         # Vá câu trống: luôn batch (oneshot hay sót/CJK với gemma)
         if mode is None and todo and len(todo) <= 80:
             mode = "batch"
@@ -2419,17 +2850,17 @@ def run_translate(
                 print(f"  ...vá missing {min(k + len(chunk), len(miss))}/{len(miss)}", flush=True)
 
         n_missing = sum(1 for s in segments if not (done.get(s["i"], {}).get("vi") or "").strip())
-        from engines.subs import to_srt, split_bilingual_rows, sub_split_cfg
+        from subs import to_srt, split_bilingual_rows, sub_split_cfg
         ordered = [done[s["i"]] for s in segments]
         apply_hard_term_locks(ordered, plan)
         apply_style_polish(ordered, plan)
         try:
-            from engines.pronoun_consistency import run_post_translate_consistency
+            from pronoun_consistency import run_post_translate_consistency
             run_post_translate_consistency(work_dir, ordered, plan, fix_with_gpt=True)
         except Exception as e_pc:  # noqa: BLE001
             print(f"[pronoun-qa] {e_pc}", flush=True)
             apply_pronoun_postpass(ordered, plan)
-        from engines.subs import heal_script_broken_numbers
+        from subs import heal_script_broken_numbers
         ordered, n_num_heal = heal_script_broken_numbers(ordered)
         if n_num_heal:
             print(f"[trans] gộp {n_num_heal} cặp số gãy (vd 31, + 000亿)", flush=True)
@@ -2452,16 +2883,32 @@ def run_translate(
         if n_missing:
             print(f"[trans] WARN còn {n_missing} câu trống — vẫn đã CUT phần có vi", flush=True)
     except Exception as e:  # noqa: BLE001
-        # Giữ script.json đã dịch — pending để Tiếp tục (không mất lô trước)
+        # Giữ script.json — ghi ĐỦ khung ASR (câu chưa dịch vi="") để
+        # count_script_missing / coverage_gap không bị 0 giả → auto nhảy TTS.
         try:
             script_path = work_dir / "script.json"
-            if done:
-                ordered = [done[s["i"]] for s in segments if s["i"] in done]
+            if done or segments:
+                ordered = []
+                for s in segments:
+                    hit = done.get(s["i"]) if done else None
+                    if hit and (hit.get("vi") or "").strip():
+                        ordered.append(hit)
+                    else:
+                        zh = (s.get("text") or s.get("zh") or "").strip()
+                        ordered.append({
+                            "i": s.get("i"),
+                            "start": s.get("start", 0),
+                            "end": s.get("end", 0),
+                            "zh": zh,
+                            "text": zh,
+                            "vi": ((hit or {}).get("vi") or "").strip(),
+                            "rv": False,
+                        })
                 atomic_write_json(script_path, ordered)
             st = m.data.setdefault("stages", {}).setdefault(STAGE, {})
-            n = len(done)
+            n = sum(1 for s in segments if done and s["i"] in done and (done[s["i"]].get("vi") or "").strip())
             tot = len(segments)
-            n_miss = sum(1 for s in segments if not (done.get(s["i"], {}).get("vi") or "").strip())
+            n_miss = sum(1 for s in segments if not (done.get(s["i"], {}).get("vi") or "").strip()) if done else tot
             st.update({
                 "status": "pending",
                 "progress": round(n / tot * 100, 1) if tot else 0,
@@ -2483,6 +2930,28 @@ def run_translate(
     n_missing = count_script_missing(work_dir)
     if n_missing < 0:
         n_missing = sum(1 for r in ordered if not (r.get("vi") or "").strip())
+    if auto_review is None:
+        auto_review = (_cfg_get("AUTO_REVIEW", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
+
+    # TỰ ĐỘNG CHẠY LƯỢT 2 (Rà soát văn phong và chuẩn hóa xưng hô)
+    if auto_review:
+        print(
+            f"\n[pipeline] NMT/L1 xong → LƯỢT 2 RÀ SOÁT (LLM={_rmodel()}) "
+            f"— sửa tên/lock/sai nghĩa, không dịch lại toàn bộ...",
+            flush=True,
+        )
+        try:
+            rv_res = run_review(
+                work_dir=work_dir,
+                batch=min(40, max(batch or 25, 20)),
+                target=target,
+                force=force,
+            )
+            print(f"[pipeline] ✅ XONG: NMT dịch chính + LLM rà soát", flush=True)
+            return rv_res
+        except Exception as e_rv:
+            print(f"[pipeline] ⚠️ Lượt 2 rà soát lỗi ({e_rv}) → giữ bản NMT/L1.", flush=True)
+
     result = m.mark_done(
         STAGE, script_path=str(script_path), glossary_path=str(plan_path),
         n_segments=len(ordered),

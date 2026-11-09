@@ -8,9 +8,35 @@ Bug s?a sau 2026-09-26 (ch?a c? file ri?ng) ???c ghi trong `docs/CHANGELOG.md` +
 
 | Date | File | Tri?u ch?ng |
 |------|------|-------------|
+| 2026-11-09 | [bat-py-quote.md](./2026-11-09-bat-py-quote.md) | bat `python.exe" set "PY` not recognized |
+| 2026-11-09 | [tc-quota-false-positive.md](./2026-11-09-tc-quota-false-positive.md) | Test Block báo hết quota dù GCP còn |
+| 2026-11-09 | [review-keep-nmt.md](./2026-11-09-review-keep-nmt.md) | GPT polish thừa (Lão tử…) — giữ NMT |
+| 2026-11-09 | [mt-draft-slim-gloss.md](./2026-11-09-mt-draft-slim-gloss.md) | NMT draft + glossary gầy + REVIEW GPT mini |
+| 2026-11-09 | [hv-auditor.md](./2026-11-09-hv-auditor.md) | Gate/GPT khóa sai âm HV — auditor Unihan+trap |
+| 2026-11-08 | [nghich-thien-ni-hanh.md](./2026-11-08-nghich-thien-ni-hanh.md) | 逆天而行 → Nghị (sai); đúng Nghịch |
+| 2026-11-08 | [split-parent-merge-heal.md](./2026-11-08-split-parent-merge-heal.md) | Part 1/2+2/2 xong — job gốc vẫn pending |
+| 2026-11-08 | [hongguo1-full-split.md](./2026-11-08-hongguo1-full-split.md) | Restore classic + /api/hg vs /api/hg2 |
+| 2026-11-08 | [merge-frag-naming.md](./2026-11-08-merge-frag-naming.md) | Merge: need ≥2 eps + NVENC -22 第013集 |
+| 2026-11-08 | [hongguo1-restore-isolate.md](./2026-11-08-hongguo1-restore-isolate.md) | Restore /hongguo + tách backend hg2 |
+| 2026-11-08 | [hongguo1-boot-stuck.md](./2026-11-08-hongguo1-boot-stuck.md) | /hongguo kẹt Đang tải bảng hot |
+| 2026-11-08 | [hongguo2-dl-stop.md](./2026-11-08-hongguo2-dl-stop.md) | Downloads thiếu Stop — × 502 under way |
+| 2026-11-08 | [hongguo2-qualities-disk.md](./2026-11-08-hongguo2-qualities-disk.md) | qualities 502 + /api/disk 404 |
+| 2026-11-08 | [hongguo2-play-button.md](./2026-11-08-hongguo2-play-button.md) | Detail thiếu nút Play (WinUI) |
+| 2026-11-08 | [hongguo2-browse-scroll.md](./2026-11-08-hongguo2-browse-scroll.md) | Browse chỉ 1 trang — thiếu load-on-scroll |
+| 2026-11-08 | [hongguo2-dropdown-winui.md](./2026-11-08-hongguo2-dropdown-winui.md) | Dropdown Browse chữ mờ + filter không đổi grid |
+| 2026-11-08 | [python315-path-default.md](./2026-11-08-python315-path-default.md) | python → 3.15 thiếu fastapi/requests sau update |
+| 2026-11-08 | [hongguo2-intro-dropdown.md](./2026-11-08-hongguo2-intro-dropdown.md) | Detail intro chua VI + dropdown filter chu trang |
+| 2026-11-08 | [hongguo2-browse-pagesize.md](./2026-11-08-hongguo2-browse-pagesize.md) | Browse hongguo2 chi hien ~20 phim |
+| 2026-11-08 | [translate-partial-tts-jump.md](./2026-11-08-translate-partial-tts-jump.md) | Dich dung giua chung → nhay TTS voi so cau do |
+| 2026-11-08 | [hongguo2-title-vi.md](./2026-11-08-hongguo2-title-vi.md) | Hongguo2 thieu dong dich TV duoi tieu de |
+| 2026-11-08 | [hongguo2-library-winui.md](./2026-11-08-hongguo2-library-winui.md) | Library lech WinUI (thieu chip/Update info/hover) |
+| 2026-11-08 | [hongguo2-settings-winui.md](./2026-11-08-hongguo2-settings-winui.md) | Settings lech WinUI + toast Can license |
+| 2026-11-08 | [helper-singleton-winui-parity.md](./2026-11-08-helper-singleton-winui-parity.md) | Leak MainKt + spawn/hongguo2 lech WinUI (giu spawn rieng) |
+| 2026-11-08 | [hongguo2-downloads-winui.md](./2026-11-08-hongguo2-downloads-winui.md) | Downloads lech WinUI (thieu tab/Open folder/poster) |
+| 2026-11-08 | [hongguo2-rank-new.md](./2026-11-08-hongguo2-rank-new.md) | Ranking/New lech WinUI (tab gia, New bo qua days) |
 | 2026-11-08 | [hongguo2-browse-facets.md](./2026-11-08-hongguo2-browse-facets.md) | Browse filter lech WinUI (3 dropdown thay vi 7 facet) |
-| 2026-11-08 | [skip-split-part-upload.md](./2026-11-08-skip-split-part-upload.md) | Part auto-split �Ph?n N/N� b? ??a v�o upload YouTube |
-| 2026-11-07 | [mux-heal-hardsub-ocr.md](./2026-11-07-mux-heal-hardsub-ocr.md) | Part mux hi?n S?n s�ng khi ?ang OCR hardsub (~25 ph�t) |
+| 2026-11-08 | [skip-split-part-upload.md](./2026-11-08-skip-split-part-upload.md) | Part auto-split ?Ph?n N/N? b? ??a v?o upload YouTube |
+| 2026-11-07 | [mux-heal-hardsub-ocr.md](./2026-11-07-mux-heal-hardsub-ocr.md) | Part mux hi?n S?n s?ng khi ?ang OCR hardsub (~25 ph?t) |
 | 2026-11-07 | [concat-partial-norm.md](./2026-11-07-concat-partial-norm.md) | G?p encode c? lo?t d? ch? 1 ph?n l?ch resolution |
 | 2026-11-07 | [test-channel-exhausted-mask.md](./2026-11-07-test-channel-exhausted-mask.md) | Reset Quota v?n b?o token K?nh 3 ch?t (c? 1+2 che) |
 | 2026-11-07 | [test-channel-doi-kenh.md](./2026-11-07-test-channel-doi-kenh.md) | ??i k?nh Test b?o OK nhung project kh?ng d?i

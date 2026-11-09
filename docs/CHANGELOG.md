@@ -2,7 +2,99 @@
 
 Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần restart gì. Chi tiết bug: docs/fixes/. Nhật ký phiên: docs/worklog/.
 
+## 2026-11-09
+
+- **Restart :8801 nạp ChatGPT :3377** (~08:07). `restart_server.py --clean-env` · PID **34240**. Job `9c3af49061a2_p01` mux bị đứt giữa chừng (TTS đã đủ 2122). **Không cần restart lại.**
+
+- **ChatGPT → local :3377** (~07:40). Backup `…_chatgpt-local-3377\`. `CHATGPT_BASE_URL=http://127.0.0.1:3377/v1` + `CHATGPT_API_KEY=sk-local`; fallback Aurora 5005. Smoke `PONG-LOCAL` OK. Sync V2/V4/V5.
+
+- **Launcher bat pin Python quote** (~07:30). `if exist … ( set PY= )` + CRLF + fallback where; V2/V4/V5. Fix `docs/fixes/2026-11-09-bat-py-quote.md`. **Không restart.**
+
+- **Test Block chọn account** (~05:42). Backup `…_tc-pick-account\`. Modal dropdown Project; `test-one` + `upload_test_sample(project_id=)`; clear cờ local. Sync. **Hard refresh** Films UI (sidecar reload module).
+
+- **Test Block quota false-positive** (~05:25). Backup `…_0521.zip` + `…_tc-quota-stale\`. `test_channel`: ngày Pacific; classify lỗi chặt; purge cờ legacy; UI lý do hết hạn. Live `available 3/3`. Fix `docs/fixes/2026-11-09-tc-quota-false-positive.md`. Sync V2/V4/V5. **Không restart** (sidecar reload module). Hard refresh Films UI.
+
+- **Restart :8801** (~05:16). `restart_server.py --clean-env` · queue rỗng · nạp keep-NMT + NMT primary + PLAN file + hv_auditor. Sidecar :8802 giữ. **Không cần restart lại.**
+
+- **Filter bỏ polish GPT** (~04:52). Backup zip `…_0452.zip` + `…_review-keep-nmt2\`. `_filter_cosmetic_nmt_fixes`: mặc định DROP; chỉ giữ CJK/tên-lock/TTS rút thật (từ mới ≤15%); cấm đổi xưng hô miệng. Probe i=48 → giữ NMT. Fix `docs/fixes/2026-11-09-review-keep-nmt.md`. Sync V2/V4/V5. **Restart :8801** (chờ yes).
+
+- **GPT rà tối thiểu** (~04:46). Backup `…_review-keep-nmt\`. User: NMT đã tốt mà GPT đổi thừa (vd Lão tử→Tôi). `review_batch` mặc định giữ NMT; chỉ vá A–D; temp 0.1. Sync V2/V4/V5. **Restart :8801** (chờ yes).
+
+- **Văn phong linh hoạt + giữ NMT primary** (~04:15). Backup `…_flex-style-nmt-primary\`. Bỏ khóa register; mixed→MT base. Sync. **Restart :8801** (chờ yes).
+
+- **P1 harden plan-file + A/B** (~04:10). Vá null-list; scene `[i=N]`; timeout PLAN. A/B report. Sync. **Restart :8801** (chờ yes).
+
+- **Plan file + review style** (~04:05). Backup `…_plan-file-review-style\`. `PLAN_MODE=file`: upload full SRT → GPT glossary; review style_lock+mẫu. Follow-up fix `docs/fixes/2026-11-09-mt-draft-slim-gloss.md`. Sync V2/V4/V5. **Restart :8801** (chờ yes).
+
+- **NMT dịch chính / LLM rà** (~03:35). Backup `…_mt-primary-llm-review\`. User đảo: `MT_ZH_VI_ROLE=primary` — HachimiMT ghi VI; gemma chỉ vá sót; GPT mini `run_review`. Follow-up `docs/fixes/2026-11-09-mt-draft-slim-gloss.md`. Sync V2/V4/V5. **Restart :8801** (chờ yes).
+
+- **MT auto theo genre** (~02:45). Backup `…_mt-genre-auto\`. `MT_ZH_VI_MODEL=auto`: modern/mixed → base; xianxia → QT. Follow-up fix `docs/fixes/2026-11-09-mt-draft-slim-gloss.md`. Sync V2/V4/V5. **Restart :8801** (chờ yes).
+
+- **NMT draft + slim glossary + REVIEW GPT mini** (~02:40). Backup `…_mt-draft-slim-gloss\`. Sau sandbox VERDICT: gắn lại `mt_zh_vi.py` làm **nháp** `mt_vi` → LLM; lock/name-pass/series chỉ `type=lock`; `REVIEW_MODEL=chatgpt/gpt-5-6-mini`. Config `MT_ZH_VI=1`. Fix `docs/fixes/2026-11-09-mt-draft-slim-gloss.md`. Sync V2/V4/V5. **Restart :8801** (chờ yes).
+
+- **NMT bench sandbox** (~01:30). Revert hook tạm; bench `D:\PinelineV2_tmp\mt_bench\` job `0a5f60aead18` (base+QT). Verdict → merge draft (mục trên).
+
+- **HV Auditor (phương án A)** (~01:15). Backup `…_hv-auditor\`. Module `hv_auditor.py` + Unihan `data/unihan/kVietnamese.json`; trap-fix 逆; warn không đè tên riêng; series hygiene apply/save; gắn `ensure_hard_terms`. Fix `docs/fixes/2026-11-09-hv-auditor.md`. Sync V4/V5. **Restart :8801** (chờ yes).
+
 ## 2026-11-08
+
+- **逆天而行 → Nghịch (không Nghị)** (~22:30). Backup `…_nghich-thien-heal\`. Heal series + 3 job glossary/script; seed lock trong `ensure_hard_terms`. Fix `docs/fixes/2026-11-08-nghich-thien-ni-hanh.md`. Sync V4/V5. **Restart :8801** để nạp seed (glossary đã heal trên đĩa).
+
+- **Auto-split parent merge heal** (~19:18, restart ~19:21). Backup `…_split-parent-merge-heal\`. Parts xong mà parent treo (sau restart) → `_queue_split_parent_merge_if_ready` / notify sau part / GET job / entry auto-split. Job `2cd10c3fa86d` Full ~6925MB. Fix `docs/fixes/2026-11-08-split-parent-merge-heal.md`. Sync V4/V5. **Restart :8801** (đã).
+
+- **Hongguo classic full split** (~10:10). Backup `…_hg1-full-split\`. Restore `hongguo.html` pre-WinUI; `/api/hg`=HTTP only; `/api/hg2`=RPC; hongguo2 → `/api/hg2/*`. Fix `docs/fixes/2026-11-08-hongguo1-full-split.md`. **Restart :8801** (đã). Hard refresh `/hongguo` + `/hongguo2`.
+
+- **Merge frag naming + corrupt skip** (~09:20). Backup `…_merge-frag-re\`. `_FRAG_RE` nhận `S01E001`; `_MERGED_RE` nhận `merged.mp4`; dedupe/skip tập hỏng (NVENC -22). Fix `docs/fixes/2026-11-08-merge-frag-naming.md`. Sync. **Không bắt buộc restart** (bridge reload) — nên restart :8801 nếu worker merge đang chạy code cũ.
+
+- **Hongguo1 restore + isolate hg2** (~08:55). Backup `…_hg1-isolate\`. Restore `hongguo.html` gốc; `hg_ui_ctx` + `X-HG-UI:2` (RPC) / hg1 `http_first`; `HG_BACKEND=auto`. Fix `docs/fixes/2026-11-08-hongguo1-restore-isolate.md`. **Restart :8801** (đã). Hard refresh `/hongguo` + `/hongguo2`.
+
+- **Hongguo1 kẹt bảng hot** (~08:45). Backup `…_hongguo1-boot\`. *(superseded 08:55 — đã restore HTML gốc, không giữ patch parallel trong hongguo.html.)* Fix `docs/fixes/2026-11-08-hongguo1-boot-stuck.md`.
+
+- **Hongguo2 Retry 502 license** (~08:25). `downloads.retry` prove license (force nếu helper chờ licence); UI Retry trên Failed. Follow-up `docs/fixes/2026-11-08-hongguo2-dl-stop.md`. **Hard refresh** (bridge hot-reload).
+
+- **Hongguo2 Stop download** (~08:16). Backup `…_dl-stop\`. Helper chỉ có `cancelAll` → `cancel_download(sid)` = cancelAll + requeue others; UI **Stop** / **Stop all**; × trên active = stop. Fix `docs/fixes/2026-11-08-hongguo2-dl-stop.md`. Sync V4/V5. **Restart :8801** (đã). Hard refresh.
+
+- **Hongguo2 qualities 502 + /api/disk 404** (~08:10). Backup `…_qualities-disk\`. `series.qualities` không gọi RPC flaky (helper crash) → ladder mặc định; thêm `GET /api/disk` (free_gb). Fix `docs/fixes/2026-11-08-hongguo2-qualities-disk.md`. Sync V4/V5. **Restart :8801**. Hard refresh.
+
+- **Hongguo2 Play nhanh (480p + cache + %)** (~07:50). Backup `…_hongguo2-play-fast\`. Preview không dùng 1080p; async start/job hiện progress; cache hit tức thì. **Restart :8801** (đã). Hard refresh.
+
+- **Hongguo2 Play RPC playback** (~07:30). Backup `…_hongguo2-play-rpc\`. Preview không cần :8000: `playback.prepare` + `/api/hg/playback/stream`; license ensure; UI `<video>` local. **Restart :8801** (đã). Hard refresh.
+
+- **Hongguo2 Play + scroll fill** (~07:10). Backup `…_hongguo2-play-scroll\`. Nút Play cạnh Quality + preview modal (`/api/hg/preview`). Browse: scroll/IO/`maybeBrowseMore` fill viewport (hết kẹt 24). Fix `docs/fixes/2026-11-08-hongguo2-play-button.md`. Sync V4/V5. **Hard refresh**.
+
+- **Hongguo2 Browse load-on-scroll** (~07:05). Backup `…_hongguo2-browse-scroll\`. Infinite scroll qua `sessionId`+`nextOffset`+sentinel IO; page 24; dedupe `series_id`. Fix `docs/fixes/2026-11-08-hongguo2-browse-scroll.md`. Sync V4/V5. **Hard refresh** (không restart).
+
+- **Hongguo2 dropdown WinUI + filter RPC** (~06:22). Backup `…_hongguo2-dropdown-winui\` + zip `…_0622.zip`. Custom dd menu (pill/accent/menu tối); `feed.select` wrap `List[str]` (helper bỏ string đơn). Hot-reload rpc qua marker `list[str]`. Fix `docs/fixes/2026-11-08-hongguo2-dropdown-winui.md`. Sync V4/V5. **Hard refresh** (bridge reload mỗi request — không bắt buộc restart :8801).
+
+- **Python default 3.12 (A+B)** (~06:12). Backup `…_run-v2-python312\` + zip `…_0610.zip`. Machine PATH bỏ `Python315`; đầu PATH = `C:\Python312`; `PY_PYTHON=3.12`. Launcher pin 312: `run_v2.bat`/`run_2.bat`/`run_tele_cmd.bat`/`run.bat` + V4/V5. Fix `docs/fixes/2026-11-08-python315-path-default.md`. **Mở terminal mới** (không bắt buộc restart :8801 — TTS đang chạy).
+
+- **Hongguo2 intro VI + dropdown đọc được** (~06:05). Backup `…_hongguo2-intro-dropdown\`. Detail dịch intro qua translate-titles; CSS select option dark (hết chữ trắng trên trắng). Fix `docs/fixes/2026-11-08-hongguo2-intro-dropdown.md`. Sync V4/V5. **Hard refresh** (không restart).
+
+- **Hongguo2 Browse chỉ 20 / No results · feed** (~06:00–06:10). Backup `…_hongguo2-browse-pagesize\`. `feed(limit)` gom trang; follow-up `_rpc_mod` hot-reload giữ `_proc` (hết TypeError limit → empty). Fix `docs/fixes/2026-11-08-hongguo2-browse-pagesize.md`. Sync V4/V5. **Hard refresh** (không bắt buộc restart).
+
+- **Dịch dừng → nhảy TTS dở** (~05:40). Backup `…_translate-partial-tts-jump\`. Salvage dịch ghi đủ khung ASR; `translate_ready_for_tts` / coverage ≥90%; `_auto_gpu`+`_do_tts` không TTS khi script ngắn hơn ASR. Heal job `2cd10c3fa86d_p01` `n_total` 398→2616. Fix `docs/fixes/2026-11-08-translate-partial-tts-jump.md`. Sync V4/V5. **Restart :8801**.
+
+- **Hongguo2 title VI** (~05:30). Backup `…_hongguo2-title-vi\` + zip `…_0528.zip`. `applyTitleVi` / `.tvi` + detail `#dTitleVi` gọi `POST /api/hg/translate-titles` sau Browse/Search/Rank/New/Library. Fix `docs/fixes/2026-11-08-hongguo2-title-vi.md`. Sync V2/V4/V5 + `static/ui`. **Hard refresh** (không restart — HTML static).
+
+- **REVIEW local → qwen36-turbo** (~05:30). `REVIEW_PRESET=qwen36-turbo` (Huihui Qwen3.6 35B TurboQuant v0.4); dịch vẫn `gemma4-12b-qat-mtp-fast`. Job `2cd10c3fa86d_p01` (4–Phần 1/2) dừng vì **vieneu exit 15** @64/398 + claim `__all__` stale — resume TTS. **Không restart** (config/translate hot).
+
+- **Ranking max 100 + route Film/Studio** (~05:15). Backup `…_rank-max100-routes\`. `rank.page`+`rank.more` gom ≤100; UI size=100; `/films|/film|/films/ui` → films_ui; `/studio` → index3; sidebar link. Follow-up `docs/fixes/2026-11-08-hongguo2-rank-new.md`. **Restart :8801** (đã). Hard refresh.
+
+- **Hongguo2 Library = WinUI** (~05:00). Backup `…_library-winui\`. Update info / Select / Open folder; chips All downloads / New seasons / Lib path; card badge+hover Folder/Play + `N eps · size`; `POST /api/hg/library/update-info`. Fix `docs/fixes/2026-11-08-hongguo2-library-winui.md`. Sync + **restart :8801**. Hard refresh.
+
+- **Hongguo settings merge+delete mảnh** (~04:55). `settings.update` `merge=true`, `deleteAfterMerge=true` (giống cũ: merge xong xóa episode lẻ). UI default Delete-after-merge = on. **Không restart.** Hard refresh Settings thấy toggle ON.
+
+- **Hongguo2 Downloads sai tên** (~04:50). Backup `…_dl-title-folder\`. Snapshot `title=""` → hiện seriesId. Normalize lấy tên folder (+ series.detail); UI ưu tiên folder. Follow-up `docs/fixes/2026-11-08-hongguo2-downloads-winui.md`. **Restart :8801** (đã) + hard refresh.
+
+- **Hongguo2 Settings Change folder** (~04:45). Backup `…_settings-pick-folder\`. Nút Change dùng `POST /api/fs/pick-dir` (dialog Windows) thay `prompt`. Follow-up trong `docs/fixes/2026-11-08-hongguo2-settings-winui.md`. **Hard refresh** (không cần restart).
+
+- **Hongguo2 Settings = WinUI + license prove** (~04:40). Backup zip `…_0435.zip` + `…_settings-winui\`. UI Downloads/Output (save/quality/at-once/connections/file names/merge toggles); `POST /api/hg/settings` → `settings.update`; License block + auto-prove khi mở Settings / trước download. Fix `docs/fixes/2026-11-08-hongguo2-settings-winui.md`. Sync + **restart :8801**. Hard refresh `/hongguo2`.
+
+- **Helper singleton + WinUI parity (giữ spawn riêng)** (~04:30). Backup zip `…_0428.zip` + `…_helper-singleton\`. Sau attach FAIL: không chung pipe WinUI. Siết 1 MainKt Pineline (`HG_HELPER_SINGLETON`, reap orphan mỗi ensure, không reload RPC, tele bỏ reload bridge). `/api/hg/settings` + hongguo2 boot quality/`D:\Lib`. Fix `docs/fixes/2026-11-08-helper-singleton-winui-parity.md`. Sync V2/V4/V5 + `static/ui`. **Restart :8801** (đã). Hard refresh `/hongguo2`.
+
+- **Hongguo2 Downloads = WinUI** (~03:00). Backup `…_downloads-winui\`. List thumb/quality/Done line/Open folder/×; tabs All/Active/Done/Failed; Clear finished + speed. RPC clear/remove + open_folder. Fix `docs/fixes/2026-11-08-hongguo2-downloads-winui.md`. Sync + restart :8801. **Hard refresh** (cả `/static/ui/`).
+
+- **Hongguo2 Ranking/New = WinUI** (~02:45). Backup `…_rank-new-winui\`. Ranking: `rank.page` charts/boards (8 tab EN + chip động). New: `feed` `online_time=days_N` + sort. Fix `docs/fixes/2026-11-08-hongguo2-rank-new.md`. Sync V2/V4/V5 + `static/ui`. **Restart :8801** + hard refresh.
 
 - **Hongguo2 static/ui stale** (~02:35). User còn mở `/static/ui/hongguo2.html` (3 dropdown cũ). Chép đè root `hongguo2.html` → `static/ui/`. **Hard refresh** URL static hoặc dùng `/hongguo2`.
 

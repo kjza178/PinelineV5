@@ -732,6 +732,17 @@ small{color:#888}
       </div>
     </div>
 
+    <!-- Chọn account dùng khi Test phim -->
+    <div style="margin-bottom:12px;background:#052e16;border:1px solid #166534;border-radius:6px;padding:10px">
+      <div style="font-weight:600;font-size:12.5px;color:#4ade80;margin-bottom:6px">🎯 Account dùng khi bấm Test trên phim</div>
+      <select id="tc-default-project" onchange="setPreferredTestProject(this.value)" style="width:100%;padding:8px 10px;border-radius:4px;background:#0f172a;border:1px solid #22c55e;color:#e2e8f0;font-size:13px;font-weight:600">
+        <option value="">⏳ Đang tải…</option>
+      </select>
+      <div style="font-size:11px;color:#86efac;margin-top:6px;line-height:1.45">
+        Chọn acc còn hạn trên Cloud (vd 12/100). Modal Test từng phim cũng hiện dropdown này.
+      </div>
+    </div>
+
     <!-- Kho Quota Multi-Project Pool -->
     <div style="margin-bottom:12px;background:#151821;border:1px solid #283044;border-radius:6px;padding:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -788,6 +799,13 @@ small{color:#888}
       <div style="font-weight:600;font-size:13.5px;color:#38bdf8;margin-bottom:6px">⚡ Tự Động Kiểm Tra Qua Kênh Phụ</div>
       <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;line-height:1.5">
         Pineline sẽ tự cắt mẫu 90s, tự upload ngầm Unlisted lên Kênh Phụ và đợi YouTube quét Content ID.
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:#cbd5e1;display:block;margin-bottom:4px">Account / Project để test</label>
+        <select id="tbm-project" style="width:100%;padding:7px 8px;border-radius:4px;background:#0f172a;border:1px solid #334155;color:#e2e8f0;font-size:12.5px">
+          <option value="">⏳ Đang tải danh sách account…</option>
+        </select>
+        <div id="tbm-project-hint" style="font-size:11px;color:#64748b;margin-top:4px"></div>
       </div>
       <div style="margin-bottom:10px">
         <label style="font-size:12px;color:#cbd5e1;cursor:pointer;display:inline-flex;align-items:center;gap:6px">
@@ -1501,6 +1519,64 @@ function openTestBlockModal(name, title, status, reason, ytUrl, core){
   
   updateTestModalBadge(status, reason);
   $('test-block-modal').classList.remove('hide');
+  fillTestProjectSelect();
+  checkTestChannelStatus().then(() => fillTestProjectSelect());
+}
+
+function getPreferredTestProjectId(projs){
+  let pref = '';
+  try { pref = localStorage.getItem('tc_preferred_project') || ''; } catch(e){}
+  if(pref && projs.some(p => p.id === pref)) return pref;
+  if(TEST_CHANNEL && TEST_CHANNEL.last_connected_project && projs.some(p => p.id === TEST_CHANNEL.last_connected_project)){
+    return TEST_CHANNEL.last_connected_project;
+  }
+  return projs[0] ? projs[0].id : '';
+}
+
+function setPreferredTestProject(pid){
+  try { localStorage.setItem('tc_preferred_project', pid || ''); } catch(e){}
+  const tbm = $('tbm-project');
+  if(tbm && pid) tbm.value = pid;
+  const tc = $('tc-default-project');
+  if(tc && pid) tc.value = pid;
+  toast(pid ? `✓ Test sẽ dùng: ${pid}` : 'Đã bỏ chọn account mặc định');
+}
+
+function _projectOptionHtml(projs){
+  return projs.map(p => {
+    const ch = p.channel_title || p.email || p.id;
+    const tag = p.exhausted_today
+      ? (p.exhausted_reason === 'upload_limit' ? ' · cờ upload-limit local' : ' · cờ quota local')
+      : ' · sẵn sàng';
+    const label = `${p.name || p.id} — ${ch}${tag}`;
+    return `<option value="${esc(p.id)}">${esc(label)}</option>`;
+  }).join('');
+}
+
+function fillTestProjectSelect(){
+  const projs = (TEST_CHANNEL && Array.isArray(TEST_CHANNEL.projects)) ? TEST_CHANNEL.projects.filter(p => p.connected) : [];
+  const prefer = getPreferredTestProjectId(projs);
+  const opts = projs.length
+    ? _projectOptionHtml(projs)
+    : '<option value="">⚠️ Chưa có account — cấp quyền bên dưới</option>';
+
+  const sel = $('tbm-project');
+  const hint = $('tbm-project-hint');
+  if(sel){
+    const prev = sel.value;
+    sel.innerHTML = opts;
+    sel.value = (prev && projs.some(p => p.id === prev)) ? prev : prefer;
+    if(hint){
+      hint.textContent = projs.length
+        ? 'Chọn acc còn hạn Cloud. Chỉ upload acc này — không xoay vòng đốt cờ.'
+        : '';
+    }
+  }
+  const tcSel = $('tc-default-project');
+  if(tcSel){
+    tcSel.innerHTML = opts;
+    if(projs.length) tcSel.value = prefer;
+  }
 }
 
 function updateTestModalBadge(st, reason){
@@ -1753,6 +1829,9 @@ async function checkTestChannelStatus(){
     if(res.projects){
       renderProjectsList(res.projects, res.available_projects, res.total_projects);
     }
+    if($('test-block-modal') && !$('test-block-modal').classList.contains('hide')){
+      fillTestProjectSelect();
+    }
   } catch(e){}
 }
 
@@ -1773,22 +1852,33 @@ function renderProjectsList(projects, avail, total){
       st = `<span style="color:#fbbf24;font-size:11px" title="Chưa bật YouTube Data API v3 trên Google Console">⚠️ Chưa bật API</span>`;
       btn = `<a href="${p.enable_url}" target="_blank" class="b sm" style="padding:2px 8px;font-size:11px;background:#b45309;color:#fff;text-decoration:none;display:inline-block" title="Bật YouTube Data API v3 trên Google Cloud Console">⚡ Bật API trên Console</a>`;
     } else if(p.exhausted_today){
-      st = `<span style="color:#f87171;font-size:11px">⚠️ Hết quota hôm nay (429)</span>`;
-      btn = `<button class="b sm" style="padding:2px 8px;font-size:11px;background:#2563eb;color:#fff" onclick="resetProjectQuota(${jq(p.id)})" title="Reset cờ 429 nếu quota đã reset">⚡ Thử lại Quota</button>`;
+      const er = p.exhausted_reason || 'api_quota';
+      const erLabel = er === 'upload_limit' ? 'Giới hạn upload kênh'
+        : er === 'rate_limit' ? 'Rate limit tạm (30p)'
+        : 'Hết quota API (GCP)';
+      st = `<span style="color:#f87171;font-size:11px">⚠️ ${erLabel}</span>`;
+      btn = `<button class="b sm" style="padding:2px 8px;font-size:11px;background:#2563eb;color:#fff" onclick="resetProjectQuota(${jq(p.id)})" title="Xoá cờ local nếu GCP/Console còn hạn mức">⚡ Thử lại Quota</button>`;
     } else {
       st = `<span style="color:#4ade80;font-size:11px">🟢 Sẵn sàng (${esc(p.channel_title || 'Sai Kira')})</span>`;
       btn = `<button class="b sm" style="padding:2px 8px;font-size:11px;background:#262626" onclick="startTestChannelOAuth(${jq(p.id)})" title="Đổi sang kênh YouTube khác cho project này">🔄 Đổi kênh</button>`;
     }
+    let prefer = '';
+    try { prefer = localStorage.getItem('tc_preferred_project') || ''; } catch(e){}
+    const isPick = prefer === p.id;
+    const pickBtn = p.connected
+      ? `<button class="b sm" style="padding:2px 8px;font-size:11px;${isPick ? 'background:#166534;border-color:#22c55e;color:#bbf7d0' : 'background:#14532d;border-color:#166534;color:#86efac'}" onclick="setPreferredTestProject(${jq(p.id)})" title="Dùng account này khi Test phim">${isPick ? '✓ Đang chọn test' : '🎯 Chọn test'}</button>`
+      : '';
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;background:#181818;padding:6px 10px;border-radius:4px;border:1px solid #333;margin-bottom:4px">
+      <div style="display:flex;align-items:center;justify-content:space-between;background:#181818;padding:6px 10px;border-radius:4px;border:1px solid ${isPick ? '#22c55e' : '#333'};margin-bottom:4px">
         <div>
           <span style="font-weight:600;font-size:12px;color:#eee">${esc(p.name)}</span>
           <span style="margin-left:6px">${st}</span>
         </div>
-        <div>${btn}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${pickBtn}${btn}</div>
       </div>
     `;
   }).join('');
+  fillTestProjectSelect();
 }
 
 function openTestChannelModal(){
@@ -2155,18 +2245,31 @@ async function doPinelineDirectTestOne(){
     toast('⚠️ Vui lòng kết nối Kênh Phụ Test trước.');
     return;
   }
+  await checkTestChannelStatus();
+  fillTestProjectSelect();
+  const projectId = ($('tbm-project') && $('tbm-project').value) || '';
+  if(!projectId){
+    toast('⚠️ Chọn Account / Project để test trước.');
+    return;
+  }
   const btn = $('btn-pineline-test-one');
   if(btn){
     btn.disabled = true;
     btn.textContent = '⏳ Đang test qua Kênh Phụ…';
   }
   const autoDel = $('tbm-auto-delete') ? $('tbm-auto-delete').checked : false;
-  toast('Đang cắt mẫu 90s và upload ngầm lên Kênh Phụ Test (mất ~45-75s)…');
+  const projLabel = ($('tbm-project').selectedOptions[0] || {}).text || projectId;
+  toast(`Đang cắt mẫu 90s và upload bằng «${projLabel}» (mất ~45-75s)…`);
   try {
     const res = await (await fetch('/test-channel/test-one', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({name: CURRENT_TEST_LIB.name, title_vi: CURRENT_TEST_LIB.title, auto_delete: autoDel})
+      body: JSON.stringify({
+        name: CURRENT_TEST_LIB.name,
+        title_vi: CURRENT_TEST_LIB.title,
+        auto_delete: autoDel,
+        project_id: projectId
+      })
     })).json();
     if(res.ok){
       updateTestModalBadge(res.status, res.reason);
@@ -2178,14 +2281,21 @@ async function doPinelineDirectTestOne(){
       toast(`[Kết quả Test Kênh Phụ]\nTrạng thái: ${res.status.toUpperCase()}\n${res.reason || ''}\n${res.deleted_after_test ? '(Đã tự xoá clip trên YouTube)' : '(Đã giữ lại clip trên Kênh Phụ)'}`);
       loadLib();
     } else {
-      if(res.channel_limit_reached || (res.error && res.error.includes('uploadLimitExceeded'))){
-        alert("⚠️ KÊNH YOUTUBE ĐÃ HẾT LƯỢT UPLOAD HÔM NAY!\n\n" +
-              "• Kênh '" + (TEST_CHANNEL ? TEST_CHANNEL.channel_title : "Sai Kira") + "' đã chạm giới hạn số lượng video upload tối đa trong ngày của YouTube.\n" +
-              "• YouTube áp đặt giới hạn này trong 24 giờ.\n\n" +
-              "👉 CÁCH KHẮC PHỤC NGAY:\n" +
-              "1. Mở studio.youtube.com -> Cài đặt -> Kênh -> Điều kiện sử dụng tính năng -> Xác minh Số điện thoại để nâng giới hạn upload.\n" +
-              "2. Hoặc tạo thêm Kênh Phụ (Brand Channel) mới trong cùng Gmail rồi cấp quyền lại cho Project khác.\n" +
-              "3. Hoặc chờ 24h để YouTube tự động mở lại.");
+      if(res.channel_limit_reached || (res.error && (res.error.includes('uploadLimitExceeded') || res.limit_kind === 'upload_limit'))){
+        const tried = Array.isArray(res.tried) ? res.tried : [];
+        const chans = [...new Set(tried.filter(t => t.reason === 'upload_limit').map(t => t.channel || t.project_id))].filter(Boolean);
+        const chList = chans.length ? chans.join(', ') : (TEST_CHANNEL ? TEST_CHANNEL.channel_title : 'Kênh Test');
+        const upUtc = (TEST_CHANNEL && TEST_CHANNEL.today_uploads_utc != null) ? TEST_CHANNEL.today_uploads_utc : '?';
+        alert("⚠️ GIỚI HẠN UPLOAD/NGÀY CỦA KÊNH (uploadLimitExceeded)\n\n" +
+              "Đây KHÔNG phải hết quota API GCP.\n" +
+              "• YouTube chặn số video upload/ngày trên kênh: " + chList + "\n" +
+              "• Đếm gần đúng trên kênh đang xem: ~" + upUtc + " video (UTC hôm nay).\n" +
+              "• Kênh chưa xác minh SĐT thường chỉ được rất ít video/ngày.\n\n" +
+              "👉 CÁCH KHẮC PHỤC:\n" +
+              "1. studio.youtube.com → Cài đặt → Kênh → Điều kiện tính năng → Xác minh SĐT.\n" +
+              "2. Tạo Brand Channel mới / dùng Gmail khác → Cấp quyền Project còn trống.\n" +
+              "3. Chờ YouTube reset (thường theo ngày, ~24h).\n" +
+              "4. Nút ⚡ Reset Quota chỉ xoá cờ local — YouTube vẫn từ chối nếu kênh còn bị limit.");
       } else {
         toast('Lỗi: ' + (res.error || 'Thất bại'));
       }

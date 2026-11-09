@@ -132,10 +132,19 @@ def save_from(work_dir: Path | str, reason: str = "duyệt trước TTS") -> dic
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"glossary.json lỗi: {e}"}
     sg = load(core) or {"core": core, "characters": [], "terms": [], "pronouns": [], "seasons": []}
-    # bản của mùa vừa duyệt thắng (đã được seed từ kho, nên chỉ khác khi có sửa thật)
-    sg["characters"] = _merge_list(sg.get("characters") or [],
-                                   [c for c in g.get("characters") or [] if _valid_char(c)], _zh)
-    sg["terms"] = _merge_list(sg.get("terms") or [], g.get("terms") or [], _zh)
+    # Characters + pronouns = cứng series; terms chỉ giữ type=lock (glossary gầy)
+    new_chars = [c for c in g.get("characters") or [] if _valid_char(c)]
+    new_terms = list(g.get("terms") or [])
+    sg["characters"] = _merge_list(sg.get("characters") or [], new_chars, _zh)
+    lock_terms = [
+        t for t in new_terms
+        if isinstance(t, dict) and str(t.get("type") or "").lower() == "lock"
+    ]
+    old_lock = [
+        t for t in (sg.get("terms") or [])
+        if isinstance(t, dict) and str(t.get("type") or "").lower() == "lock"
+    ]
+    sg["terms"] = _merge_list(old_lock, lock_terms, _zh)
     sg["pronouns"] = _merge_list(sg.get("pronouns") or [], g.get("pronouns") or [], _pron)
     for k in ("genre", "tone", "content_type", "pronoun_notes"):
         if g.get(k):
