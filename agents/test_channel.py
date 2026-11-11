@@ -24,9 +24,9 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-import check_block
-import film_db
-import lib_check
+import engines.check_block as check_block
+import core.film_db as film_db
+import tools.lib_check as lib_check
 import importlib
 try:
     lib_check = importlib.reload(lib_check)
@@ -51,7 +51,7 @@ def _safe_resolve_title_vi(name: str, title_vi: str = "") -> str:
     return t_vi or ""
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "test_channel"
 CLIENT_SECRET_FILE = DATA_DIR / "client_secret.json" if (DATA_DIR / "client_secret.json").is_file() else Path(os.getenv("TEST_YT_SECRET") or r"Z:\yt_uploader\client_secret.json")
 TOKEN_FILE = DATA_DIR / "token.json"
@@ -106,6 +106,31 @@ def _today_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+def _quota_day() -> str:
+    """Ngày reset hạn mức YouTube Data API (Pacific), không dùng UTC/VN."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
+    except Exception:
+        # Fallback PT ≈ UTC-8 (không DST chính xác 100% nhưng hơn UTC thuần)
+        return (datetime.now(timezone.utc) - timedelta(hours=8)).strftime("%Y-%m-%d")
+
+
+def _classify_yt_block_error(err_str: str) -> str | None:
+    """Chỉ nhận diện lỗi cứng. CẤM khớp chữ 'quota'/'429' mơ hồ (false positive)."""
+    low = (err_str or "").lower()
+    if "uploadlimitexceeded" in low or "exceeded the number of videos" in low:
+        return "upload_limit"
+    if "quotaexceeded" in low or "dailylimitexceeded" in low:
+        return "api_quota"
+    if "ratelimitexceeded" in low:
+        return "rate_limit"
+    return None
+
+
+RATE_LIMIT_TTL_SEC = 30 * 60  # rate limit tạm — hết sau 30 phút
+
+
 HEALTH_FILE = DATA_DIR / "projects_health.json"
 CHANNEL_LIMIT_FILE = DATA_DIR / "channel_limit.json"
 
@@ -116,7 +141,7 @@ def get_channel_limit_state() -> dict[str, Any]:
         return {"reached": False}
     try:
         data = json.loads(CHANNEL_LIMIT_FILE.read_text(encoding="utf-8"))
-        if data.get("exhausted_date") == _today_utc():
+        if data.get("exhausted_date") == _quota_day():
             return {"reached": True, **data}
     except Exception:
         pass
@@ -126,7 +151,7 @@ def get_channel_limit_state() -> dict[str, Any]:
 def mark_channel_limit_reached(channel_title: str = "Sai Kira"):
     """Đánh dấu Kênh YouTube chạm giới hạn upload hôm nay."""
     CHANNEL_LIMIT_FILE.write_text(json.dumps({
-        "exhausted_date": _today_utc(),
+        "exhausted_date": _quota_day(),
         "channel_title": channel_title,
         "reached_at": _utc_now(),
         "reason": "uploadLimitExceeded",
@@ -236,11 +261,11 @@ def verify_all_projects_health(force: bool = False) -> dict[str, dict[str, Any]]
                 "enable_url": default_enable_url,
                 "checked_at": _today_utc(),
             }
-            # Nếu gọi API thành công -> Xóa đánh dấu 429 quota cho project này
-            ex_now = get_exhausted_projects()
-            if pid in ex_now:
-                ex_now.pop(pid, None)
-                EXHAUSTED_FILE.write_text(json.dumps(ex_now, ensure_ascii=False, indent=2), encoding="utf-8")
+            # API đọc OK → cờ local có thể stale (GCP còn quota). Xoá cờ project này.
+            raw_ex = _load_exhausted_raw()
+            if pid in raw_ex:
+                raw_ex.pop(pid, None)
+                _save_exhausted_raw(raw_ex)
         except Exception as e:
             err_s = str(e).lower()
             is_disabled = "accessnotconfigured" in err_s or "has not been used in project" in err_s
@@ -258,34 +283,102 @@ def verify_all_projects_health(force: bool = False) -> dict[str, dict[str, Any]]
     return health
 
 
-def get_exhausted_projects() -> dict[str, str]:
+def _load_exhausted_raw() -> dict:
     if not EXHAUSTED_FILE.is_file():
         return {}
     try:
-        return json.loads(EXHAUSTED_FILE.read_text(encoding="utf-8"))
+        data = json.loads(EXHAUSTED_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
 
-def mark_project_exhausted(project_id: str):
-    ex = get_exhausted_projects()
-    ex[project_id] = _today_utc()
-    EXHAUSTED_FILE.write_text(json.dumps(ex, ensure_ascii=False, indent=2), encoding="utf-8")
+def _save_exhausted_raw(data: dict) -> None:
+    EXHAUSTED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    EXHAUSTED_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _normalize_exhausted_entry(val) -> dict | None:
+    """Chuẩn hoá entry → {day, reason, at} hoặc None nếu hết hạn / rác."""
+    day = _quota_day()
+    now = datetime.now(timezone.utc)
+    if isinstance(val, str):
+        # Legacy chỉ lưu ngày — hay là false-positive cũ; bỏ, để upload thật gắn lại có reason
+        return None
+    if not isinstance(val, dict):
+        return None
+    d = str(val.get("day") or val.get("date") or "").strip()
+    reason = str(val.get("reason") or "api_quota").strip() or "api_quota"
+    at = str(val.get("at") or "").strip()
+    if reason == "rate_limit":
+        try:
+            ts = datetime.fromisoformat(at.replace("Z", "+00:00")) if at else None
+        except Exception:
+            ts = None
+        if ts is None or (now - ts).total_seconds() > RATE_LIMIT_TTL_SEC:
+            return None
+        return {"day": d or day, "reason": reason, "at": at or _utc_now()}
+    # api_quota / upload_limit: theo ngày Pacific
+    if d != day:
+        return None
+    return {"day": d, "reason": reason, "at": at or _utc_now()}
+
+
+def get_exhausted_projects() -> dict[str, str]:
+    """Map project_id → day (string) cho tương thích chỗ cũ; đã purge stale."""
+    raw = _load_exhausted_raw()
+    cleaned: dict = {}
+    out_days: dict[str, str] = {}
+    changed = False
+    for pid, val in list(raw.items()):
+        norm = _normalize_exhausted_entry(val)
+        if norm is None:
+            changed = True
+            continue
+        # Giữ structured
+        prev = raw.get(pid)
+        if not isinstance(prev, dict) or prev.get("day") != norm["day"] or prev.get("reason") != norm["reason"]:
+            changed = True
+        cleaned[pid] = norm
+        out_days[pid] = norm["day"]
+    if changed or cleaned != raw:
+        _save_exhausted_raw(cleaned)
+    return out_days
+
+
+def get_exhausted_meta() -> dict[str, dict]:
+    """Map project_id → {day, reason, at} sau purge."""
+    get_exhausted_projects()  # purge + normalize ra đĩa
+    raw = _load_exhausted_raw()
+    out = {}
+    for pid, val in raw.items():
+        if isinstance(val, dict):
+            out[pid] = val
+    return out
+
+
+def mark_project_exhausted(project_id: str, reason: str = "api_quota"):
+    reason = (reason or "api_quota").strip() or "api_quota"
+    if reason not in ("api_quota", "upload_limit", "rate_limit"):
+        reason = "api_quota"
+    raw = _load_exhausted_raw()
+    raw[project_id] = {"day": _quota_day(), "reason": reason, "at": _utc_now()}
+    _save_exhausted_raw(raw)
 
 
 def reset_exhausted_projects(project_id: str | None = None) -> dict[str, Any]:
-    """Reset cờ hết quota 429 hoặc khóa upload cho project cụ thể hoặc toàn bộ."""
-    ex = get_exhausted_projects()
+    """Reset cờ hết quota / khóa upload cho project cụ thể hoặc toàn bộ."""
+    raw = _load_exhausted_raw()
     if project_id:
-        ex.pop(project_id, None)
+        raw.pop(project_id, None)
     else:
-        ex.clear()
+        raw.clear()
         if CHANNEL_LIMIT_FILE.is_file():
             try:
                 CHANNEL_LIMIT_FILE.unlink()
             except Exception:
                 pass
-    EXHAUSTED_FILE.write_text(json.dumps(ex, ensure_ascii=False, indent=2), encoding="utf-8")
+    _save_exhausted_raw(raw)
     return get_status()
 
 
@@ -299,14 +392,15 @@ def list_projects() -> list[dict[str, Any]]:
         return []
 
     ex = get_exhausted_projects()
+    ex_meta = get_exhausted_meta()
     health = get_projects_health()
-    today = _today_utc()
+    today = _quota_day()
     out = []
     for p in projs:
         pid = p["id"]
         tok_file = TOKENS_DIR / f"{pid}.json"
         is_conn = tok_file.is_file()
-        is_ex = (ex.get(pid) == today)
+        is_ex = pid in ex  # đã purge theo Pacific day / TTL
         cid = p.get("client_id") or ""
         pnum = cid.split("-")[0] if "-" in cid else ""
         default_enable_url = f"https://console.developers.google.com/apis/api/youtube.googleapis.com/overview?project={pnum}" if pnum else ""
@@ -323,6 +417,7 @@ def list_projects() -> list[dict[str, Any]]:
             "client_id": cid,
             "connected": is_conn,
             "exhausted_today": is_ex,
+            "exhausted_reason": (ex_meta.get(pid) or {}).get("reason") or ("" if not is_ex else "api_quota"),
             "api_enabled": api_enabled,
             "enable_url": enable_url,
             "channel_title": ch_title,
@@ -590,11 +685,10 @@ def finish_oauth(code: str, redirect_uri: str, project_id: str | None = None) ->
     return {"ok": True, "project_id": project_id, **info}
 
 
-def get_available_service():
-    """Lấy YouTube service từ project khả dụng đầu tiên trong pool (chưa hết quota hôm nay và đã bật API).
+def get_available_service(project_id: str | None = None, *, force: bool = False):
+    """Lấy YouTube service từ pool (hoặc đúng 1 project nếu truyền project_id).
 
-    Nếu mọi project còn quota đều fail auth (token chết), fallback sang project còn cờ
-    exhausted — tránh kẹt ở Acc token-revoked trong khi Kênh 1/2 chỉ bị cờ local.
+    force=True (user chọn account): bỏ qua cờ exhausted local — GCP/Console còn hạn thì vẫn thử.
     """
     projs = list_projects()
     from google.auth.transport.requests import Request
@@ -603,18 +697,33 @@ def get_available_service():
     if not connected:
         raise RuntimeError("Chưa có Project nào được đăng nhập. Vui lòng bấm '🔗 Đăng nhập Kênh Test'.")
 
-    preferred = [p for p in connected if not p["exhausted_today"] and p.get("api_enabled", True)]
-    exhausted_ok = [p for p in connected if p["exhausted_today"] and p.get("api_enabled", True)]
-    # Prefer quota-ok; nếu không còn / auth fail hết → thử exhausted (cờ có thể stale sau Reset Quota)
-    candidates = preferred + exhausted_ok
-    if not candidates:
-        disabled_projs = [p for p in connected if not p.get("api_enabled", True)]
-        if disabled_projs and len(disabled_projs) == len(connected):
+    if project_id:
+        chosen = next((p for p in connected if p["id"] == project_id), None)
+        if not chosen:
+            raise RuntimeError(f"Project «{project_id}» chưa kết nối hoặc không tồn tại.")
+        if not chosen.get("api_enabled", True):
             raise RuntimeError(
-                f"Các Project ({', '.join(p['name'] for p in disabled_projs)}) "
-                "chưa bật 'YouTube Data API v3' trong Google Cloud Console."
+                f"Project «{chosen.get('name') or project_id}» chưa bật YouTube Data API v3."
             )
-        raise RuntimeError("Toàn bộ các Google Cloud Project đều đã dùng hết quota upload hôm nay.")
+        # User chọn tay → bỏ cờ local (thường stale khi Console còn 12/100)
+        if chosen.get("exhausted_today"):
+            reset_exhausted_projects(project_id)
+            chosen = dict(chosen)
+            chosen["exhausted_today"] = False
+        candidates = [chosen]
+    else:
+        preferred = [p for p in connected if not p["exhausted_today"] and p.get("api_enabled", True)]
+        exhausted_ok = [p for p in connected if p["exhausted_today"] and p.get("api_enabled", True)]
+        # Prefer quota-ok; fallback exhausted nếu auth fail hết (cờ có thể stale)
+        candidates = preferred + (exhausted_ok if force else exhausted_ok)
+        if not candidates:
+            disabled_projs = [p for p in connected if not p.get("api_enabled", True)]
+            if disabled_projs and len(disabled_projs) == len(connected):
+                raise RuntimeError(
+                    f"Các Project ({', '.join(p['name'] for p in disabled_projs)}) "
+                    "chưa bật 'YouTube Data API v3' trong Google Cloud Console."
+                )
+            raise RuntimeError("Toàn bộ các Google Cloud Project đều đã dùng hết quota upload hôm nay.")
 
     errors: list[str] = []
 
@@ -699,13 +808,19 @@ def get_youtube_service():
 
 # ─── Upload, Check Content ID & Tự động xoá ──────────────────────────────
 
-def upload_test_sample(name: str, sample_path: str, title_vi: str = "") -> dict[str, Any]:
-    """Upload clip mẫu 90s lên Kênh Phụ Test ở chế độ Unlisted, tự động xoay vòng Project khi gặp Quota 429."""
+def upload_test_sample(
+    name: str,
+    sample_path: str,
+    title_vi: str = "",
+    project_id: str | None = None,
+) -> dict[str, Any]:
+    """Upload clip mẫu 90s Unlisted. Có project_id → chỉ dùng account đó (không xoay vòng đốt cờ các acc khác)."""
     p = Path(sample_path)
     if not p.is_file():
         return {"ok": False, "error": f"Không tìm thấy file mẫu: {sample_path}"}
 
-    max_attempts = 5
+    exclusive = bool(project_id)
+    max_attempts = 1 if exclusive else 5
     if not title_vi:
         title_vi = _safe_resolve_title_vi(name)
 
@@ -724,11 +839,12 @@ def upload_test_sample(name: str, sample_path: str, title_vi: str = "") -> dict[
         },
     }
 
+    tried: list[dict[str, str]] = []
     for _ in range(max_attempts):
         try:
-            yt, proj_id = get_available_service()
+            yt, proj_id = get_available_service(project_id=project_id, force=exclusive)
         except RuntimeError as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "tried": tried}
 
         try:
             media = MediaFileUpload(str(p), chunksize=256 * 1024 * 1024, resumable=True)
@@ -739,31 +855,59 @@ def upload_test_sample(name: str, sample_path: str, title_vi: str = "") -> dict[
 
             video_id = response.get("id")
             if not video_id:
-                return {"ok": False, "error": "Upload không trả về video_id"}
+                return {"ok": False, "error": "Upload không trả về video_id", "tried": tried}
 
             yt_url = f"https://youtu.be/{video_id}"
             return {"ok": True, "video_id": video_id, "yt_url": yt_url, "title": title, "project_id": proj_id}
 
         except Exception as e:
             err_str = str(e)
-            if "uploadlimitexceeded" in err_str.lower() or "exceeded the number of videos" in err_str.lower():
+            kind = _classify_yt_block_error(err_str)
+            ch_name = ""
+            try:
+                for pp in list_projects():
+                    if pp.get("id") == proj_id:
+                        ch_name = pp.get("channel_title") or pp.get("name") or proj_id
+                        break
+            except Exception:
+                ch_name = proj_id
+            if kind == "upload_limit":
                 print(f"[upload-limit] Kenh cua Project {proj_id} da cham gioi han upload trong ngay (uploadLimitExceeded)! Dang chuyen sang Project tiep theo...", flush=True)
-                mark_project_exhausted(proj_id)
+                mark_project_exhausted(proj_id, reason="upload_limit")
+                tried.append({"project_id": proj_id, "channel": ch_name, "reason": "upload_limit"})
                 continue
             if "accessnotconfigured" in err_str.lower() or "has not been used in project" in err_str.lower():
                 print(f"[api-disabled] Project {proj_id} chua bat YouTube Data API v3!", flush=True)
                 update_project_health(proj_id, api_enabled=False)
+                tried.append({"project_id": proj_id, "channel": ch_name, "reason": "api_disabled"})
                 continue
-            if "429" in err_str or "quota" in err_str.lower() or "ratelimit" in err_str.lower():
-                print(f"[quota-pool] Project {proj_id} da het quota hom nay (429)! Dang chuyen sang project tiep theo...", flush=True)
-                mark_project_exhausted(proj_id)
+            if kind in ("api_quota", "rate_limit"):
+                print(f"[quota-pool] Project {proj_id} block={kind}: {err_str[:160]}", flush=True)
+                mark_project_exhausted(proj_id, reason=kind)
+                tried.append({"project_id": proj_id, "channel": ch_name, "reason": kind})
                 continue
-            return {"ok": False, "error": f"Loi upload ({proj_id}): {e}"}
+            return {"ok": False, "error": f"Loi upload ({proj_id}): {e}", "tried": tried}
 
+    upload_hits = [t for t in tried if t.get("reason") == "upload_limit"]
+    api_hits = [t for t in tried if t.get("reason") == "api_quota"]
+    if upload_hits and not api_hits:
+        names = ", ".join(sorted({t.get("channel") or t.get("project_id") for t in upload_hits}))
+        return {
+            "ok": False,
+            "channel_limit_reached": True,
+            "limit_kind": "upload_limit",
+            "tried": tried,
+            "error": (
+                f"YouTube uploadLimitExceeded — giới hạn SỐ VIDEO/ngày của kênh "
+                f"(không phải hạn mức API GCP). Đã thử: {names}."
+            ),
+        }
     return {
         "ok": False,
-        "channel_limit_reached": True,
-        "error": "Tất cả các Kênh / Project đều đã hết quota hoặc chạm giới hạn upload hôm nay."
+        "channel_limit_reached": bool(upload_hits),
+        "limit_kind": "api_quota" if api_hits and not upload_hits else "mixed",
+        "tried": tried,
+        "error": "Tất cả Project khả dụng đều bị chặn upload hôm nay (upload limit kênh và/hoặc quota API).",
     }
 
 
@@ -1008,12 +1152,20 @@ def start_recheck_daemon():
 
 # ─── Quy trình Test 1 Phim & Test All ──────────────────────────────────────
 
-def run_full_test_for_season(name: str, auto_delete: bool = False, wait_for_result: bool = False, title_vi: str = "") -> dict[str, Any]:
+def run_full_test_for_season(
+    name: str,
+    auto_delete: bool = False,
+    wait_for_result: bool = False,
+    title_vi: str = "",
+    project_id: str | None = None,
+) -> dict[str, Any]:
     """Thực hiện quy trình test 1 bộ phim:
     1. Cắt mẫu 90s (mất ~1s) kèm tên tiếng Việt.
     2. Upload lên Kênh Phụ Test (Unlisted) kèm tên tiếng Việt.
     3. Hẹn giờ recheck Content ID sau 5 phút.
     4. Cập nhật kết quả vào database films.db.
+
+    project_id: chọn đúng account/project (bắt buộc khi user chọn trên UI).
     """
     if not title_vi:
         title_vi = _safe_resolve_title_vi(name)
@@ -1029,7 +1181,7 @@ def run_full_test_for_season(name: str, auto_delete: bool = False, wait_for_resu
 
     # Bước 2: Upload lên Kênh Phụ
     try:
-        up_res = upload_test_sample(name, sample_path, title_vi=title_vi)
+        up_res = upload_test_sample(name, sample_path, title_vi=title_vi, project_id=project_id)
     except Exception as e:
         film_db.upsert_library_block(name=name, title_vi=title_vi, status="failed", reason=f"Lỗi upload: {e}")
         try:

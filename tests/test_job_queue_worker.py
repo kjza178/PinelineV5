@@ -107,6 +107,40 @@ def test_worker_clears_stale_stop_before_runner(tmp_path, monkeypatch):
         jq.set_clear_stop_hook(None)
 
 
+def test_worker_parks_held_job_before_next(tmp_path, monkeypatch):
+    """Studio invariant: held → giữ ghế, không chạy job kế đến khi park_ready."""
+    monkeypatch.setattr(jq, "WORK_ROOT", tmp_path)
+    monkeypatch.setattr(jq, "_PARK_POLL_SEC", 0.05)
+    jq._reset_for_tests()
+    calls = []
+    release = threading.Event()
+
+    def fake(job_id, opts):
+        calls.append(job_id)
+        if job_id == "j1" and calls.count("j1") == 1:
+            return "held", "waiting review"
+        return "done", "ok"
+
+    def ready(job_id):
+        return release.is_set() and job_id == "j1"
+
+    jq.set_runner(fake)
+    jq.set_park_ready_hook(ready)
+    _mf(tmp_path / "j1")
+    _mf(tmp_path / "j2")
+    jq.queue_add(["j1", "j2"], opts={"voice": "v5"}, sort_first=False)
+    time.sleep(0.25)
+    assert calls == ["j1"]
+    assert jq.queue_state()["current"] == "j1"
+    assert "j2" in jq.queue_state()["queue"]
+    release.set()
+    for _ in range(200):
+        if not jq.queue_state()["worker"] and not jq.queue_state()["queue"]:
+            break
+        time.sleep(0.05)
+    assert calls == ["j1", "j1", "j2"]
+
+
 def test_stop_then_immediate_enqueue_runs_new_job(tmp_path, monkeypatch):
     monkeypatch.setattr(jq, "WORK_ROOT", tmp_path)
     jq._reset_for_tests()

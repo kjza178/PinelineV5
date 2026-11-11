@@ -7,7 +7,7 @@ from pathlib import Path
 
 from core.config import get as cfg
 
-ROOT = Path(__file__).resolve().parents[1]  # project root (engines/ → ..)
+ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
 LUT_DIR = ASSETS / "luts"
 OVERLAY_DIR = ASSETS / "overlays"

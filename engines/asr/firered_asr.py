@@ -12,14 +12,20 @@ Hoặc thủ công:
     ... (VAD, LID, Punc tương tự)
 
 Config (pineline.config.json / env):
-    FIRERED_ROOT   = Z:/Pineline/vendor/FireRedASR2S
-    FIRERED_MODELS = D:/AI_CACHE/firered   (chứa FireRedASR2-AED, FireRedVAD, ...)
+    FIRERED_ROOT     = Z:/PinelineV2/vendor/FireRedASR2S
+    FIRERED_MODELS   = D:/AI_CACHE/firered   (chứa FireRedASR2-AED, FireRedVAD, ...)
+    FIRERED_USE_HALF = 1  (mặc định: GPU → BF16/FP16; đặt 0 để FP32)
 
 Chạy tay:
     python firered_asr.py work/<job>
     python firered_asr.py work/<job> --force
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[2])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import argparse
 import json
@@ -31,7 +37,7 @@ from pathlib import Path
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
-from engines.asr.asr import ensure_audio_wav, _salvage_asr
+from engines.asr.asr import ensure_audio_wav, resolve_asr_source, _salvage_asr
 from core.config import get as cfg
 from engines.asr.fun_asr_nano import _wav_dur
 from core.manifest import Manifest
@@ -159,14 +165,7 @@ def run_asr_firered(
         print(f"[skip] ASR đã xong: {st.get('asr_path') or asr_file}")
         return st
 
-    dl = m.stage("download")
-    if not dl or not dl.get("video_path"):
-        cands = list(work_dir.glob("source.*"))
-        if not cands:
-            raise RuntimeError("Chưa có video (download).")
-        src = str(cands[0])
-    else:
-        src = dl["video_path"]
+    src = resolve_asr_source(work_dir, force_demucs=force, device=device if device != "auto" else "cuda")
 
     asr_path = work_dir / "asr.json"
     wav = work_dir / "audio.wav"
@@ -193,10 +192,15 @@ def run_asr_firered(
         m.save()
 
         if ensure_audio_wav(src, wav, force=force):
-            print(f"[{ENGINE}] Đã tách audio 16k mono")
+            print(f"[{ENGINE}] Đã tách audio 16k mono từ file tiếng ({Path(src).name})")
         total = _wav_dur(wav)
 
-        print(f"[{ENGINE}] Nạp system AED+VAD+LID+Punc · gpu={use_gpu}…")
+        # RTX 30xx+: use_half → BF16 (~1.4× nhanh, VRAM ~½ vs FP32; CER giữ — bench 2026-11-10)
+        use_half = bool(use_gpu) and (
+            str(os.getenv("FIRERED_USE_HALF", cfg("FIRERED_USE_HALF", "1") or "1")).strip().lower()
+            not in ("0", "false", "no", "off")
+        )
+        print(f"[{ENGINE}] Nạp system AED+VAD+LID+Punc · gpu={use_gpu} half={use_half}…")
         st.update({"cur_text": f"nạp {ENGINE}…", "progress": 10, "updated_at": time.time(),
                    "total_sec": total})
         m.save()
@@ -223,10 +227,10 @@ def run_asr_firered(
             extend_speech_frame=0,
             chunk_max_frame=30000,
         )
-        lid_config = FireRedLidConfig(use_gpu=use_gpu, use_half=False)
+        lid_config = FireRedLidConfig(use_gpu=use_gpu, use_half=use_half)
         asr_config = FireRedAsr2Config(
             use_gpu=use_gpu,
-            use_half=False,
+            use_half=use_half,
             beam_size=3,
             nbest=1,
             decode_max_len=0,

@@ -86,6 +86,21 @@ def review_diff(work_dir: Path | str, job_id: str | None = None) -> dict:
         # snapshot tồn tại nhưng không đổi — vẫn coi là đã chạy review (idempotent)
         review_ran = True
 
+    # Second Brain: high QA deterministic flags chặn TTS/mux
+    brain_high = 0
+    try:
+        from agents.agent_quality import load_qa_brain
+        brain = load_qa_brain(work_dir)
+        brain_high = int(brain.get("high_open") or brain.get("n_high") or 0)
+    except Exception:  # noqa: BLE001
+        brain = {}
+        brain_high = 0
+
+    fail_reasons = _fail_reasons(n, missing_ratio, review_ran, pack, brain_high=brain_high)
+    passed = bool(
+        pass_gate and review_ran and missing_ratio <= 0.02 and brain_high <= 0
+    )
+
     return {
         "ok": True,
         "job_id": job_id or work_dir.name,
@@ -97,13 +112,21 @@ def review_diff(work_dir: Path | str, job_id: str | None = None) -> dict:
         "changed_sample": changed[:25],
         "pack": pack,
         "qa_flags_n": qa_n,
+        "qa_brain_high": brain_high,
         "review_ran": review_ran,
-        "pass": bool(pass_gate and review_ran and missing_ratio <= 0.02),
-        "fail_reasons": _fail_reasons(n, missing_ratio, review_ran, pack),
+        "pass": passed,
+        "fail_reasons": fail_reasons,
     }
 
 
-def _fail_reasons(n: int, missing_ratio: float, review_ran: bool, pack: dict) -> list[str]:
+def _fail_reasons(
+    n: int,
+    missing_ratio: float,
+    review_ran: bool,
+    pack: dict,
+    *,
+    brain_high: int = 0,
+) -> list[str]:
     rs = []
     if n <= 0:
         rs.append("chưa có script")
@@ -113,6 +136,8 @@ def _fail_reasons(n: int, missing_ratio: float, review_ran: bool, pack: dict) ->
         rs.append("chưa chạy review")
     if not pack.get("glossary") and not pack.get("style_lock"):
         rs.append("chưa có glossary/style_lock — review yếu (nên Context Studio)")
+    if brain_high > 0:
+        rs.append(f"Second Brain: {brain_high} high QA flags")
     return rs
 
 

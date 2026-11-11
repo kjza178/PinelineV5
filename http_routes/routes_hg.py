@@ -17,11 +17,19 @@ import server as S
 
 
 async def _bind_hg_ui_backend(request: Request) -> None:
-    """Tách Hongguo1 / Hongguo2 theo header hoặc Referer (hg_ui_ctx, không reload).
+    """Backend theo namespace (middleware gắn request.state.hg_ui) — fallback header.
 
     Phải async: Depends sync chạy threadpool → ContextVar không tới endpoint.
+    /api/hg  = classic HTTP only · /api/hg2 = RPC (WinUI) — tách hoàn toàn.
     """
-    import hg_ui_ctx as ctx
+    import agents.hg_ui_ctx as ctx
+    forced = getattr(request.state, "hg_ui", None)
+    if forced in ("1", "classic", "http"):
+        ctx.force("http")
+        return
+    if forced in ("2", "hg2", "rpc"):
+        ctx.force("rpc")
+        return
     ctx.apply(
         request.headers.get("x-hg-ui") or request.query_params.get("hg_ui"),
         request.headers.get("referer"),
@@ -63,7 +71,7 @@ __all__ = [
 
 def _hg_base(override: str | None = None) -> str:
     """Luôn DEFAULT_BASE: `base` từ client từng cho server gửi token Hongguo tới URL bất kỳ."""
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     return hg.DEFAULT_BASE
 
 
@@ -83,7 +91,7 @@ def api_disk(base: str | None = None):
     """Dung lượng ổ thư viện Hongguo (sidebar hongguo2)."""
     import shutil
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     folder = ""
     try:
@@ -119,7 +127,7 @@ def api_disk(base: str | None = None):
 @router.get("/api/hg/ping")
 def hg_ping(base: str | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     return hg.ping(_hg_base(base))
 
@@ -128,7 +136,7 @@ def hg_ping(base: str | None = None):
 def hg_settings(base: str | None = None):
     """Hongguo 2.x settings (saveFolder, quality…) — cùng helper WinUI."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.settings(_hg_base(base))
@@ -140,7 +148,7 @@ def hg_settings(base: str | None = None):
 def hg_settings_update(body: dict | None = None, base: str | None = None):
     """Patch settings (quality, saveFolder, merge…) — RPC settings.update."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     patch = body.get("patch") if isinstance(body.get("patch"), dict) else body
@@ -157,7 +165,7 @@ def hg_settings_update(body: dict | None = None, base: str | None = None):
 @router.get("/api/hg/search")
 def hg_search(q: str, base: str | None = None, expand: bool = True):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     if not (q or "").strip():
         return JSONResponse({"error": "thiếu q"}, status_code=400)
@@ -171,7 +179,7 @@ def hg_search(q: str, base: str | None = None, expand: bool = True):
 def hg_resolve(body: dict | None = None, base: str | None = None):
     """Dán link Hongguo / series_id → meta (khi search không ra, vd. 第十一季)."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     text = (body.get("text") or body.get("url") or body.get("q") or "").strip()
@@ -189,7 +197,7 @@ def hg_baike_search(q: str, base: str | None = None):
     """Nhận diện trên duanjubaike → danh sách version → match Hongguo từng cái.
     Loại tên lạc họ / id lệch."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     if not (q or "").strip():
         return JSONResponse({"error": "thiếu q"}, status_code=400)
@@ -207,7 +215,7 @@ def hg_baike_info(series_id: str | None = None, title: str | None = None,
     Tra theo series_id Hongguo/baike; nếu thiếu hoặc miss thì search theo title.
     """
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     sid = (series_id or "").strip() or None
     tit = (title or "").strip() or None
@@ -219,7 +227,7 @@ def hg_baike_info(series_id: str | None = None, title: str | None = None,
         return _hg_err(e)
     if translate:
         try:
-            import title_mt as _tmt
+            import engines.title_mt as _tmt
             _tmt = importlib.reload(_tmt)
             pack = []
             if info.get("title"):
@@ -250,7 +258,7 @@ def hg_baike_info(series_id: str | None = None, title: str | None = None,
 def hg_web_search(q: str):
     """Scrape hongguoduanju.com/search — dùng khi API Downloader sót mùa."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     if not (q or "").strip():
         return JSONResponse({"error": "thiếu q"}, status_code=400)
@@ -272,7 +280,7 @@ def hg_web_search(q: str):
 @router.get("/api/hg/series/{series_id}")
 def hg_series(series_id: str, base: str | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.lookup_series(series_id, _hg_base(base))
@@ -284,7 +292,7 @@ def hg_series(series_id: str, base: str | None = None):
 def hg_series_seasons(series_id: str, base: str | None = None):
     """Franchise seasons (S1…Sn) — RPC series.seasons."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.series_seasons(series_id, _hg_base(base))
@@ -296,7 +304,7 @@ def hg_series_seasons(series_id: str, base: str | None = None):
 def hg_series_qualities(series_id: str, base: str | None = None):
     """Quality ladder + bitrate — RPC series.qualities."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.series_qualities(series_id, _hg_base(base))
@@ -307,7 +315,7 @@ def hg_series_qualities(series_id: str, base: str | None = None):
 @router.get("/api/hg/status")
 def hg_status(base: str | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.status(_hg_base(base))
@@ -318,7 +326,7 @@ def hg_status(base: str | None = None):
 @router.post("/api/hg/cancel")
 def hg_cancel(body: S.HgBaseIn | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.cancel(_hg_base((body.base if body else None)))
@@ -329,7 +337,7 @@ def hg_cancel(body: S.HgBaseIn | None = None):
 @router.post("/api/hg/downloads/clear-finished")
 def hg_dl_clear_finished(body: S.HgBaseIn | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.clear_finished(_hg_base((body.base if body else None)))
@@ -341,7 +349,7 @@ def hg_dl_clear_finished(body: S.HgBaseIn | None = None):
 def hg_dl_cancel_one(body: dict | None = None):
     """Stop 1 download đang chạy/chờ."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     sid = str(body.get("series_id") or body.get("seriesId") or "").strip()
@@ -356,7 +364,7 @@ def hg_dl_cancel_one(body: dict | None = None):
 @router.post("/api/hg/downloads/remove")
 def hg_dl_remove(body: dict | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     sid = str(body.get("series_id") or body.get("seriesId") or "").strip()
@@ -371,7 +379,7 @@ def hg_dl_remove(body: dict | None = None):
 @router.post("/api/hg/downloads/retry")
 def hg_dl_retry(body: dict | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     sid = str(body.get("series_id") or body.get("seriesId") or "").strip()
@@ -386,7 +394,7 @@ def hg_dl_retry(body: dict | None = None):
 @router.post("/api/hg/downloads/open-folder")
 def hg_dl_open_folder(body: dict | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     try:
@@ -398,7 +406,7 @@ def hg_dl_open_folder(body: dict | None = None):
 @router.post("/api/hg/submit")
 def hg_submit(body: S.HgSubmitIn):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.submit(
@@ -427,7 +435,7 @@ def hg_rank(
     category = board alias cũ (all/female/male/…) hoặc genre Explorer
     """
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.rank(
@@ -445,7 +453,7 @@ def hg_rank(
 @router.get("/api/hg/genres")
 def hg_genres(limit: int = 40):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return {"genres": hg.genres(limit)}
@@ -463,7 +471,7 @@ def hg_catalog(
     size: int = 48,
 ):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.catalog(genre=genre, sort=sort, status=status, q=q, page=page, size=size)
@@ -488,7 +496,7 @@ def hg_feed(
 ):
     """Hongguo 2.x Browse = feed.page + selector panel (WinUI facets)."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     select = {
         "genre": genre,
@@ -521,7 +529,7 @@ class HgRankEpsIn(BaseModel):
 def hg_rank_episodes(body: HgRankEpsIn):
     """Lazy fill episode_cnt cho series trên bảng hot."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.rank_episodes(body.series_ids, _hg_base(body.base))
@@ -537,7 +545,7 @@ class HgTranslateTitlesIn(BaseModel):
 def hg_translate_titles(body: HgTranslateTitlesIn):
     """Dịch thô title Trung→Việt (Google gtx + cache) — chỉ để duyệt Hongguo."""
     import importlib
-    import title_mt as _tmt
+    import engines.title_mt as _tmt
     _tmt = importlib.reload(_tmt)
     try:
         return _tmt.translate_titles(list(body.items or []))
@@ -548,7 +556,7 @@ def hg_translate_titles(body: HgTranslateTitlesIn):
 @router.get("/api/hg/library")
 def hg_library(base: str | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.library(_hg_base(base))
@@ -566,7 +574,7 @@ def hg_preview(
 ):
     """Xem thử 1 tập — :8000 /dl/preview hoặc RPC playback.prepare → stream local."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     sid = (series_id or "").strip()
     if not sid:
@@ -598,7 +606,7 @@ class HgPreviewStartIn(BaseModel):
 def hg_preview_start(body: HgPreviewStartIn):
     """Bắt đầu prepare nền (progress poll qua /api/hg/preview/job)."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     sid = (body.series_id or "").strip()
     if not sid:
@@ -619,7 +627,7 @@ def hg_preview_start(body: HgPreviewStartIn):
 def hg_preview_job(ticket: str = ""):
     """Trạng thái job preview async (progress 0..1)."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg._rpc_mod().playback_job(ticket)
@@ -631,7 +639,7 @@ def hg_preview_job(ticket: str = ""):
 def hg_playback_stream(session: int = 0):
     """Stream MP4 đã prepare bởi helper (thư mục hongguo-player)."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         rpc = hg._rpc_mod()
@@ -647,7 +655,7 @@ def hg_playback_stream(session: int = 0):
 def hg_library_preview(name: str, base: str | None = None):
     """Stream video thư viện Hongguo (merged hoặc tập đầu) — tua được (Range)."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     name = (name or "").strip()
     if not name:
@@ -675,7 +683,7 @@ def hg_img(url: str | None = None, u: str | None = None, base: str | None = None
     Chấp nhận cả ``?url=`` (hongguo.html) và ``?u=`` (hongguo2).
     """
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     target = (url or u or "").strip()
     if not target:
@@ -691,25 +699,42 @@ def hg_img(url: str | None = None, u: str | None = None, base: str | None = None
 
 @router.get("/api/hg/poster")
 def hg_poster(name: str, base: str | None = None):
-    """Poster thư viện: /dl/poster (auth) hoặc file local poster.jpg."""
+    """Poster thư viện: /dl/poster (auth) hoặc file local poster.jpg.
+
+    Thiếu poster → 404 (không 502). Tên junk (job_id / downloads) cũng 404,
+    tránh spam Bad Gateway khi Films UI dùng hg_name sai.
+    """
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
-    if not (name or "").strip():
+    name = (name or "").strip()
+    if not name:
         return JSONResponse({"error": "thiếu name"}, status_code=400)
     try:
-        data, ctype = hg.fetch_poster(name.strip(), _hg_base(base))
+        from core.film_db import is_junk_hg_name
+        if is_junk_hg_name(name):
+            return JSONResponse({"error": "không có poster", "name": name}, status_code=404)
+    except Exception:
+        pass
+    try:
+        data, ctype = hg.fetch_poster(name, _hg_base(base))
         return Response(content=data, media_type=ctype, headers={
             "Cache-Control": "public, max-age=3600",
         })
+    except FileNotFoundError as e:
+        return JSONResponse({"error": str(e) or "không có poster"}, status_code=404)
     except Exception as e:  # noqa: BLE001
-        return JSONResponse({"error": str(e)}, status_code=502)
+        msg = str(e) or "poster error"
+        # «không có poster» = thiếu file/API — 404; lỗi mạng/auth thật → 502
+        if "không có poster" in msg.lower() or "not found" in msg.lower():
+            return JSONResponse({"error": msg}, status_code=404)
+        return JSONResponse({"error": msg}, status_code=502)
 
 
 @router.post("/api/hg/merge")
 def hg_merge(body: S.HgMergeIn):
     """Enqueue merge tuần tự (Hongguo chỉ chạy 1 merge / lúc)."""
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     try:
         return hg.merge_queue_add(
             body.names, _hg_base(body.base), skip_done=not body.force,
@@ -720,19 +745,19 @@ def hg_merge(body: S.HgMergeIn):
 
 @router.get("/api/hg/merge-queue")
 def hg_merge_queue(base: str | None = None):
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     return hg.merge_queue_state(_hg_base(base))
 
 
 @router.post("/api/hg/merge-queue/clear")
 def hg_merge_queue_clear():
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     return hg.merge_queue_clear()
 
 
 @router.post("/api/hg/library/open")
 def hg_library_open(body: dict | None = None):
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     body = body or {}
     try:
         return hg.open_library(body.get("name"), _hg_base(body.get("base")))
@@ -742,7 +767,7 @@ def hg_library_open(body: dict | None = None):
 
 @router.post("/api/hg/library/delete")
 def hg_library_delete(body: dict | None = None):
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     body = body or {}
     names = list(body.get("names") or [])
     if not names:
@@ -757,7 +782,7 @@ def hg_library_delete(body: dict | None = None):
 def hg_library_update_info(base: str | None = None):
     """WinUI «Update info» — library.updateInfo."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     try:
         return hg.library_update_info(_hg_base(base))
@@ -768,7 +793,7 @@ def hg_library_update_info(base: str | None = None):
 @router.post("/api/hg/library/update")
 def hg_library_update(body: dict | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     names = body.get("names")
@@ -781,7 +806,7 @@ def hg_library_update(body: dict | None = None):
 @router.post("/api/hg/library/seasons/decline")
 def hg_seasons_decline(body: dict | None = None):
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     series_ids = list(body.get("series_ids") or [])
@@ -795,7 +820,7 @@ def hg_seasons_decline(body: dict | None = None):
 def hg_seasons_discover(body: dict | None = None):
     """Chỉ tìm mùa mới theo watchlist+films+lib — không tải / không gọi Update all."""
     import importlib
-    import hongguo_bridge as hg
+    import agents.hongguo_bridge as hg
     hg = importlib.reload(hg)
     body = body or {}
     try:
@@ -815,7 +840,7 @@ def hg_seasons_discover(body: dict | None = None):
 def hg_library_watchlist(include_deleted: bool = True):
     """Danh sách meta watchlist (sau xoá Lib vẫn còn) — không tải."""
     try:
-        import film_db as fdb
+        import core.film_db as fdb
         rows = fdb.list_hg_watchlist(include_deleted=bool(include_deleted))
         return {
             "ok": True,
@@ -831,7 +856,7 @@ def hg_library_watchlist(include_deleted: bool = True):
 @router.post("/api/meta/generate")
 @router.post("/meta/generate")
 def meta_generate(body: dict):
-    import meta_studio
+    import agents.meta_studio as meta_studio
     try:
         r = meta_studio.generate_metadata(
             title_vi=str(body.get("title_vi") or ""),
@@ -850,7 +875,7 @@ def meta_generate(body: dict):
 @router.post("/api/meta/generate-title")
 @router.post("/meta/generate-title")
 def meta_generate_title(body: dict):
-    import meta_studio
+    import agents.meta_studio as meta_studio
     try:
         job_id = str(body.get("job_id") or "").strip()
         series_name = str(body.get("series_name") or body.get("title_vi") or body.get("title") or "").strip()
@@ -880,12 +905,12 @@ def meta_generate_title(body: dict):
 @router.post("/api/meta/thumbnail")
 @router.post("/meta/thumbnail")
 def meta_thumbnail(body: dict):
-    import meta_studio
+    import agents.meta_studio as meta_studio
     try:
         poster_src = body.get("poster_url") or body.get("poster_path")
         if not poster_src and body.get("poster_name"):
             try:
-                import hongguo_bridge as hg
+                import agents.hongguo_bridge as hg
                 data, _ = hg.fetch_poster(str(body["poster_name"]).strip(), _hg_base(body.get("base")))
                 if data:
                     poster_src = data
@@ -910,8 +935,8 @@ def meta_thumbnail(body: dict):
 @router.get("/api/meta/thumbnail")
 @router.get("/meta/thumbnail")
 def meta_thumbnail_get(file: str):
-    p = (Path(__file__).resolve().parent / "data" / "thumbnails" / file).resolve()
-    if p.is_file() and p.parent == (Path(__file__).resolve().parent / "data" / "thumbnails").resolve():
+    p = (Path(__file__).resolve().parents[1] / "data" / "thumbnails" / file).resolve()
+    if p.is_file() and p.parent == (Path(__file__).resolve().parents[1] / "data" / "thumbnails").resolve():
         return Response(content=p.read_bytes(), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
     return JSONResponse({"error": "not found"}, status_code=404)
 
@@ -919,7 +944,7 @@ def meta_thumbnail_get(file: str):
 @router.get("/api/meta/series-info")
 @router.get("/meta/series-info")
 def meta_series_info(job_id: str = ""):
-    import meta_studio
+    import agents.meta_studio as meta_studio
     series_key, series_name = meta_studio.get_series_key(job_id)
     shared_meta = meta_studio.get_series_meta(series_key, series_name=series_name)
     shared_thumb = meta_studio.get_series_thumbnail(series_key, series_name=series_name)
@@ -937,7 +962,7 @@ def meta_series_info(job_id: str = ""):
 def hg_license_status():
     """Safe license status for Hongguo 2.x UI — never returns key/proof."""
     import importlib
-    import hongguo_license_ensure as lic
+    import agents.hongguo_license_ensure as lic
     lic = importlib.reload(lic)
     try:
         return lic.status_public()
@@ -948,7 +973,7 @@ def hg_license_status():
 @router.post("/api/hg/license/key")
 def hg_license_key(body: dict | None = None):
     import importlib
-    import hongguo_license_ensure as lic
+    import agents.hongguo_license_ensure as lic
     lic = importlib.reload(lic)
     body = body or {}
     key = (body.get("key") or "").strip()
@@ -964,7 +989,7 @@ def hg_license_key(body: dict | None = None):
 @router.delete("/api/hg/license/key")
 def hg_license_key_clear():
     import importlib
-    import hongguo_license_ensure as lic
+    import agents.hongguo_license_ensure as lic
     lic = importlib.reload(lic)
     try:
         return lic.clear_key()
@@ -975,7 +1000,7 @@ def hg_license_key_clear():
 @router.post("/api/hg/license/prove")
 def hg_license_prove(body: dict | None = None):
     import importlib
-    import hongguo_license_ensure as lic
+    import agents.hongguo_license_ensure as lic
     lic = importlib.reload(lic)
     body = body or {}
     force = bool(body.get("force") or False)

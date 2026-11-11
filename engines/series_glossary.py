@@ -15,7 +15,7 @@ import re
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]  # project root (engines/ → ..)
+ROOT = Path(__file__).resolve().parents[1]
 STORE = ROOT / "data" / "series_glossary"
 
 
@@ -98,26 +98,43 @@ def _pron(x) -> str:
     return f"{x.get('who')}→{x.get('to')}" if isinstance(x, dict) and x.get("who") else ""
 
 
+def _hygiene_chars_terms(chars: list, terms: list) -> tuple[list, list]:
+    """Series hygiene (3): audit + bỏ mục hv_suspect không sửa được."""
+    try:
+        from engines.hv_auditor import filter_series_entries, audit_and_fix_plan
+        # Fix in a temp plan then filter suspects
+        tmp = {"characters": [dict(c) for c in (chars or []) if isinstance(c, dict)],
+               "terms": [dict(t) for t in (terms or []) if isinstance(t, dict)]}
+        audit_and_fix_plan(tmp, fix=True)
+        chars = filter_series_entries(tmp.get("characters") or [], drop_suspect=True)
+        terms = filter_series_entries(tmp.get("terms") or [], drop_suspect=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[series_glossary] hv hygiene skip: {e}", flush=True)
+    return chars, terms
+
+
 def apply(work_dir: Path | str, plan: dict) -> dict:
     core = series_key(work_dir)
     sg = load(core)
     if not sg:
         return plan
     plan = dict(plan or {})
-    plan["characters"] = _merge_list(plan.get("characters") or [],
-                                     [c for c in sg.get("characters") or [] if _valid_char(c)], _zh)
-    plan["terms"] = _merge_list(plan.get("terms") or [], sg.get("terms") or [], _zh)
+    sg_chars = [c for c in sg.get("characters") or [] if _valid_char(c)]
+    sg_terms = list(sg.get("terms") or [])
+    sg_chars, sg_terms = _hygiene_chars_terms(sg_chars, sg_terms)
+    plan["characters"] = _merge_list(plan.get("characters") or [], sg_chars, _zh)
+    plan["terms"] = _merge_list(plan.get("terms") or [], sg_terms, _zh)
     plan["pronouns"] = _merge_list(plan.get("pronouns") or [], sg.get("pronouns") or [], _pron)
     for k in ("genre", "tone", "content_type", "pronoun_notes"):
         if sg.get(k) and not plan.get(k):
             plan[k] = sg[k]
     meta = dict(plan.get("_meta") or {})
     meta["series_glossary"] = {"core": core, "seasons": sg.get("seasons") or [],
-                               "n_characters": len(sg.get("characters") or []),
+                               "n_characters": len(sg_chars),
                                "applied_at": time.strftime("%Y-%m-%d %H:%M:%S")}
     plan["_meta"] = meta
-    print(f"[plan] kế thừa bảng bộ «{core}»: {len(sg.get('characters') or [])} nhân vật, "
-          f"{len(sg.get('terms') or [])} thuật ngữ (từ {', '.join(sg.get('seasons') or []) or '?'})", flush=True)
+    print(f"[plan] kế thừa bảng bộ «{core}»: {len(sg_chars)} nhân vật, "
+          f"{len(sg_terms)} thuật ngữ (từ {', '.join(sg.get('seasons') or []) or '?'})", flush=True)
     return plan
 
 
@@ -132,9 +149,11 @@ def save_from(work_dir: Path | str, reason: str = "duyệt trước TTS") -> dic
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"glossary.json lỗi: {e}"}
     sg = load(core) or {"core": core, "characters": [], "terms": [], "pronouns": [], "seasons": []}
-    # Characters + pronouns = cứng series; terms chỉ giữ type=lock (glossary gầy)
+    # hygiene trước khi ghi kho bộ (không lan âm HV sai)
     new_chars = [c for c in g.get("characters") or [] if _valid_char(c)]
     new_terms = list(g.get("terms") or [])
+    new_chars, new_terms = _hygiene_chars_terms(new_chars, new_terms)
+    # Characters + pronouns = cứng series; terms chỉ giữ type=lock (glossary gầy)
     sg["characters"] = _merge_list(sg.get("characters") or [], new_chars, _zh)
     lock_terms = [
         t for t in new_terms
@@ -145,6 +164,10 @@ def save_from(work_dir: Path | str, reason: str = "duyệt trước TTS") -> dic
         if isinstance(t, dict) and str(t.get("type") or "").lower() == "lock"
     ]
     sg["terms"] = _merge_list(old_lock, lock_terms, _zh)
+    # hygiene cả kho sau merge
+    sg["characters"], sg["terms"] = _hygiene_chars_terms(
+        list(sg.get("characters") or []), list(sg.get("terms") or [])
+    )
     sg["pronouns"] = _merge_list(sg.get("pronouns") or [], g.get("pronouns") or [], _pron)
     for k in ("genre", "tone", "content_type", "pronoun_notes"):
         if g.get(k):

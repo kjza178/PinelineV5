@@ -112,18 +112,11 @@ def telegram_config() -> tuple[str | None, list[str]]:
     token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     users = (os.getenv("TELEGRAM_ALLOWED_USERS") or "").strip()
     if not token:
-        try:
-            import core.config as config
-            token = (config.get("TELEGRAM_BOT_TOKEN") or "").strip()
-            users = users or (config.get("TELEGRAM_ALLOWED_USERS") or "").strip()
-        except Exception:
-            pass
-    if not token:
         env = _load_dotenv(Path.home() / ".hermes" / ".env")
         token = (env.get("TELEGRAM_BOT_TOKEN") or "").strip()
         users = users or (env.get("TELEGRAM_ALLOWED_USERS") or "").strip()
     if not token:
-        env = _load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+        env = _load_dotenv(Path(__file__).resolve().parents[1] / ".env")
         token = (env.get("TELEGRAM_BOT_TOKEN") or "").strip()
         users = users or (env.get("TELEGRAM_ALLOWED_USERS") or "").strip()
     uids = [x.strip() for x in users.split(",") if x.strip()]
@@ -297,6 +290,13 @@ def watch_once(
         acts = []
         for step in (r.get("results") or []):
             res = step.get("result") or {}
+            if hasattr(res, "body"):
+                try:
+                    res = json.loads(res.body.decode("utf-8"))
+                except Exception:
+                    res = {"error": str(res)}
+            if not isinstance(res, dict):
+                res = {"value": res}
             if res.get("error") or res.get("status_code") in (409, 400):
                 continue
             if res.get("skipped"):
@@ -306,7 +306,7 @@ def watch_once(
             meaningful.append(f"· {r.get('job_id')}: {', '.join(acts)}")
 
     if meaningful:
-        msg = f"Pineline V4 watch: healed {len(meaningful)} job(s)\n" + "\n".join(meaningful[:8])
+        msg = f"Pineline V2 watch: healed {len(meaningful)} job(s)\n" + "\n".join(meaningful[:8])
         log_line(work_root, msg.replace("\n", " | "))
         telegram_send(msg, dedupe_key="|".join(meaningful))
     else:
@@ -326,7 +326,7 @@ def _loop(work_root: Path, list_jobs, hooks, interval: int, max_jobs: int) -> No
     log_line(work_root, f"watcher start interval={interval}s max_jobs={max_jobs}")
     if (os.getenv("AGENT_TELEGRAM_STARTUP") or "").strip() in ("1", "true", "yes"):
         telegram_send(
-            f"Pineline V4 watcher ON (mỗi {interval}s, heal safe)",
+            f"Pineline V2 watcher ON (mỗi {interval}s, heal safe)",
             force=True,
             dedupe_key=f"startup:{interval}",
         )

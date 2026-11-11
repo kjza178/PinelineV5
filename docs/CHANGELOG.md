@@ -1,8 +1,73 @@
-# Changelog
+﻿# Changelog
 
 Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần restart gì. Chi tiết bug: docs/fixes/. Nhật ký phiên: docs/worklog/.
 
+## 2026-11-11
+
+- **[V5] Chạy lại được — bố cục package** (~03:00). `scripts/sync_from_v2.py --apply`: 77 file vào core/engines/agents/http_routes/tools, 531 import viết lại, 35 bản trùng root → `_to_delete\root_dupes_20261111_0252\`; kèm mọi fix B1–B10 của V2. `tree_audit` ERROR 51 → 0; smoke import 85/85; test 12/12 (VM). Fix `docs/fixes/2026-11-11-v5-package-sync.md`. Bak `.backup_sync_20261111_*\`. **Chạy pytest + start :8805 trên Windows để xác nhận.**
+
+- **[V5] Review port — V5 KHÔNG khởi động được** (~02:45). `server.py` V5 == V2 (import phẳng không có trong bố cục package) + 21 cặp module root/package lệch. **Chưa sửa code — chờ user chốt hướng A/B/C** (`docs/reviews/2026-11-11-v4-v5-port-review.md`). Tooling: `scripts/brain_build.py`, `scripts/tree_audit.py` (ERROR=51), `docs/brain/`, `claude_setup/`, `CLAUDE.md`. **Không restart.**
+
+- **Studio SOP 1 job/ghế + Aurora∥ REVIEW** (~00:10). User khóa: ASR→NMT→REVIEW (Aurora∥ / local fallback)→TTS→mux→Done→next. `_auto_gpu` chạy hết `run_review` trong ghế (không nhả sớm); `translate` fan-out `REVIEW_PARALLEL=6`; config keys. Bak `…_studio-1job-pipeline\`. Fix `docs/fixes/2026-11-11-studio-1job-pipeline.md`. Sync V2/V4/V5. **Restart :8801** để nạp (cắt `365baf` nếu đang dịch).
+
+## 2026-11-10
+
+- **Queue park HOLD/soát — không nhảy job** (~23:57). Studio invariant: 1 job→output. `_worker_loop` park khi `held`/`waiting_review`; `_auto_gpu` stamp `held_at=waiting_review`; QA gate stamp HOLD; `set_park_ready_hook`. Bak zip `…_2357.zip` + codebak `…_queue-park-held\`. Fix `docs/fixes/2026-11-10-queue-park-held.md`. Sync V2/V4/V5. **Restart :8801** (cắt current `365baf` nếu restart ngay — hỏi user).
+
+- **REVIEW voice loosen (Aurora)** (~19:28). User chọn nới REVIEW: văn phong tự nhiên khi vá lỗi, không full rewrite. `review_batch` + `_style_voice_banner`; restart CLI gpt-6 60892. Bak `…_review-voice-loosen`. Fix `docs/fixes/2026-11-10-review-voice-loosen.md`. **Không cần restart server** (CLI).
+
+- **REVIEW = chatgpt/gpt-6 (Aurora thật)** (~19:20). User chọn gpt-6; UI Aurora trước chỉ lưu queue_opts. Wire `_resolve_review_model`; config REVIEW_MODEL/AURORA_REVIEW_MODEL; stop Gemma; CLI force re-review 60892 p01+p02. Bak codebak `…_review-gpt6`. Fix `docs/fixes/2026-11-10-review-gpt6-aurora.md`. Sync V2/V4/V5. **Restart :8801** khi rảnh (CLI đang review).
+
+- **Brain hang LLM trace+fix** (~19:00). User B: không chỉ merge — LLM hiểu root/plan rồi mới mở HOLD. `agent_hang_fix.py` (+ wire `scan_and_heal_job`, cuối `run_review`); `hang_ack` cho dialogue_trail; skip khi review đang ghi. Config `BRAIN_HANG_FIX=1`. Job `60892` p01 clear HOLD + TTS; p02 chờ review. Bak zip `…_1857.zip` + codebak `…_hang-llm-fix`. Fix `docs/fixes/2026-11-10-brain-hang-llm-fix.md`. Sync V2/V4/V5. **Restart :8801** khi rảnh để nạp in-process (CLI/review subprocess đã thấy module mới).
+
+- **Brain TG report** (~13:27). AGENT_BRAIN_TELEGRAM=report + digest ~120s; standalone D:\\PinelineV2_tmp\\_run_brain_tg_report.py (không restart :8801 đang ASR). **Restart :8801** sau để nạp in-process.
+
+- **FireRed BF16 forced_align** (~13:20). Cast logits→float32 trước torchaudio align (BF16 decode giữ). Vendor fireredasr_aed.py V2/V4/V5. Fix docs/fixes/2026-11-10-firered-bf16-align.md. **Không cần restart server** nếu ASR là subprocess mới.
+
+- **FIRERED_ROOT + _check_stopped** (~13:13). Config FIRERED_ROOT sai path cũ Z:/Pineline/vendor/... → Z:/PinelineV2/vendor/FireRedASR2S. Thêm server._check_stopped (ASR split ≥3h NameError). Fix docs/fixes/2026-11-10-firered-root-path.md. **Restart :8801** nếu env còn FIRERED_ROOT cũ.
+
+
+
+- **Mix #1+#3 title→ngươi + UI REVIEW backup** (~08:50). Bak zip `…_0847.zip` + codebak `…_mix13-review-backup`. `pronoun_register_policy.py`; `agent_pronoun_pass` #3; `review_batch` mask #1; config `PRONOUN_TITLE_POLICY=1` `REVIEW_PRONOUN_MASK=1`; UI/batch `review_backup=off|aurora_parallel`. Sync V2/V4/V5. Fix `docs/fixes/2026-11-10-mix13-title-nguoi.md`. **Restart:** :8801 để nạp translate/pronoun/UI.
+- **NMT GPU** — MT_ZH_VI_DEVICE=cuda + MT_ZH_VI_BATCH=256 (bench 800 cue: CPU~200 → CUDA~1089 cue/s). Bak Z:\\PinelineV2_codebak\\2026-11-10_mt-cuda-batch\\ + zip Z:\\PinelineV2_backup_2026-11-10_0841.zip. Sync V2/V4/V5 config. **Restart:** :8801 nếu process đã load NMT trên CPU.\n- **firered_asr.py** — mặc định `use_half=True` (BF16 trên 3060) khi GPU; tắt bằng `FIRERED_USE_HALF=0`. Bak `Z:\PinelineV2_codebak\2026-11-10_firered-use-half\` + zip `Z:\PinelineV2_backup_2026-11-10_0827.zip`. **Restart:** server :8801.
+- **run_v2.bat / run.bat / run_tele_cmd.bat** — LF→CRLF fix (CMD `if not exist`); bak `Z:\PinelineV2_codebak\2026-11-10_run-v2-crlf\`. **Restart:** `run_v2.bat`.
+- **Restart :8801 nạp Brain C** (~00:36). `restart_server.py --clean-env` PID **4652**; tắt standalone. Sau restart TTS `05670` lọt ~104 câu (HOLD/override mất) → stop + HOLD lại + sửa cue i=34 trùng VI với i=35. Queue bị clear (requeued 0). **Không cần restart lại.**
+
 ## 2026-11-09
+
+- **Brain C = LLM tool-loop** (~00:15 10/11). Backup zip `…_0007.zip` + codebak `…_brain-force-tool\`. User chọn C: Brain điều phối `agent_core` 24/7. `agent_brain_context` snapshot; `llm_tick` bind FS/HTTP Runtime + `force_first_tool=pineline_status` + deep `pineline_job`; `agent_core.run_agent` nhận `force_first_tool`/`force_first_args`; chat API field tương ứng. Smoke: 7 tools (status→job→hold→running_check), HOLD `05670`. Fix `docs/fixes/2026-11-09-brain-llm-tool-loop.md`. Sync V2/V4/V5. Standalone loop nạp code mới. **Restart :8801** khi 05670 idle để nạp in-process brain + force_first_tool vào server.
+
+- **Second Brain Agent (full silent)** (~23:49). Backup `…_second-brain\`. Module `agent_quality.py` + `agent_brain.py`; QA gate xét `qa_brain.json` high; auto TTS HOLD trước khi lồng; startup `_start_agent_brain`; config `AGENT_BRAIN=1`. Design `docs/design/2026-11-09-second-brain-agent.md`. Tests `tests/test_agent_quality.py` 4 passed. Sync V2/V4/V5. Standalone loop tạm `D:\PinelineV2_tmp\_run_brain_standalone.py` (tránh restart giữa review 05670). **Restart :8801** khi queue/review rảnh để nạp thread trong server.
+
+- **REVIEW → Gemma4 26b** (~22:18). User yes đổi luôn. Config `REVIEW_MODEL`/`REVIEW_PRESET=gemma4-26b-qat-uncen-mtp` (V2/V4/V5). Stop 12B mid-job → restart :8801 → force `review_only` `05670cbf7c1c`. Runtime :8083 = `gemma4-26b-qat-uncen-mtp-131k`. Lúc chuyển: `script.json` mất (đã restore từ `script.before_rereview_20261109_215318.json` + heal 没大没小). **Restart :8801** (đã).
+
+- **QA watch 05670 + Gemma12 vs 26** (~22:12). Watcher deterministic `D:\PinelineV2_tmp\_qa_watch_05670.py` → `qa_watch_05670/REPORT.md`. Verdict review: 12B = cổng nhanh, không tin thành ngữ — `docs/reviews/2026-11-09-gemma12-vs-26-review.md`. **Không restart.**
+
+- **没大没小 calque** (~22:05). Backup `…_2205.zip` + `…_meidameixiao-calque\`. NMT+review để `Cậu còn chưa lớn không nhỏ.` (`05670` i=8, `rv=1`). Polish + style term + Pass1 heuristic + prompt; heal live + watcher. Sync V2/V4/V5. Fix `docs/fixes/2026-11-09-meidameixiao-calque.md`. **Restart :8801** khi queue rảnh (job hiện heal ngoài process).
+
+- **hg-rpc idle `_last_used`** (~21:53). `hongguo_rpc._idle_watch` thiếu `global _last_used` → crash thread idle. Sync V2/V4/V5. **Restart :8801** (đã).
+
+- **Stop lúc soát → nhảy TTS** (~21:50). Tôn trọng `.stop` trong `run_review`; không mark_done/TTS khi stop; chặn TTS nếu còn câu chưa `rv`. Job `05670cbf7c1c` clear rv + `review_only` force. Fix `docs/fixes/2026-11-09-stop-during-review-tts.md`. **Restart :8801** (đã).
+
+- **REVIEW Pass1 full VI + duty F** (~21:35). Backup `…_2130.zip` + `…_review-fullvi-pass`. Pass1 đọc pair SRT; duty F; heal đuôi «trước đó»; test 26 cue — i=0 sửa. Kết quả `docs/reviews/2026-11-09-review-pass1-halfcue/`. Sync V2/V4/V5. **Restart :8801** khi queue rảnh.
+
+- **Sandbox retranslate job 9c3af (6×90s)** (~21:20). SenseVoice→NMT+Gemma; COMPARE 149/194 improved, 0 worse. `docs/reviews/2026-11-09-job5-retranslate-compare.md`. **Không restart.**
+
+- **Audit VI job 9c3af (video 5)** (~20:52). YT VTT → 4132 cue; verdict poor (tên/xưng hô/calque/ASR-TTS). Report `docs/reviews/2026-11-09-job5-vi-audit.md`. Sandbox retranslate còn chạy. **Không restart.**
+
+- **ASR-heal follow-up (onomat + pre-review)** (~20:40). Codebak `…_review-asr-merge\translate.py.before-onomat-followup`. `heal_obvious_internal_stutter` không cắt `叮当叮当`/`哈哈…`; `run_review` gọi `apply_asr_stutter_heal` trước LLM; prompt E có ví dụ; `review_batch` mặc định `_rmodel()`. Sandbox: heal i=17, giữ i=109; filter synthetic E PASS; Gemma vẫn hay bỏ sót E nên deterministic heal là lưới chính. Sync V2/V4/V5. **Restart :8801** khi queue rảnh.
+
+- **REVIEW chữa ASR cut/repeat** (~20:25). Backup zip `Z:\PinelineV2_backup_2026-11-09_2016.zip` + codebak `Z:\PinelineV2_codebak\2026-11-09_review-asr-merge\`. `translate.py`: duty E rà stutter/tail→head; filter giữ sửa merge có bằng chứng; post-pass gỡ lặp nội bộ rõ ràng; làm mềm `吃醋` (`ghen` thường đúng nhưng `uống giấm` không tự động là hard error). Probe sandbox i=17 + sample i=582 + tail-head PASS; pytest 2 passed. Sync V2/V4/V5. **Restart :8801** khi queue rảnh.
+
+- **REVIEW → Gemma4 12b local** (~20:07). Backup zip `…_2007.zip` + `…_review-gemma12b\`. `REVIEW_MODEL`/`REVIEW_PRESET=gemma4-12b-qat-mtp-fast` (cùng preset dịch cũ). Sync V2/V4/V5. **Không restart** (config hot). Job review tiếp theo auto-switch gemma.
+
+- **REVIEW → local qwen36-turbo** (~14:20). Backup zip `…_1419.zip` + `…_review-qwen36\`. `REVIEW_MODEL=llama/qwen36-turbo` (pineline.config + config.json). Smoke review_batch OK ~15s. Sync V2/V4/V5. **Không restart** (config hot). Lần review đầu có thể mất ~70s nạp GGUF nếu đang gemma translate. *(superseded ~20:07 → Gemma4 12b)*
+
+- **Poster hg 502 junk name** (~14:05). Backup zip `…_1402.zip` + `…_hg-poster-502\`. `hg_name` part/job/`downloads` → derive parent Lib; poster missing/junk **404** không 502; Films UI `resolveFilmPosterName`; heal 6 hàng DB. Fix `docs/fixes/2026-11-09-hg-poster-502-junk-name.md`. Sync V2/V4/V5. **Restart :8801** (chờ yes — `1e2379edb4fe_p01` running) để nạp `routes_hg` 404; hard refresh Films UI.
+
+- **Meta AI image → :3377** (~13:58). Backup zip `…_1358.zip` + `…_meta-chatgpt-3377\`. `meta_studio` đọc config `CHATGPT_*` (không chỉ env); ưu tiên local; Bearer `sk-local`; timeout ảnh theo config; `/api/meta/ai-image` 300s. Smoke ~23s / 1.5MB. Fix `docs/fixes/2026-11-09-meta-ai-image-3377.md`. Sync V2/V4/V5. **Không bắt buộc restart** (sidecar reload `meta_studio`); restart :8802 chỉ để nạp timeout 300 trong handler.
+
+- **ChatGPT timeout 900s** (~13:55). Backup `…_chatgpt-timeout\`. Bỏ trần 120s; `CHATGPT_TIMEOUT=900` (+ PLAN_FILE 900, trần 1800). Sync. **Restart :8801** (chờ yes) — đang có job thì đợi idle.
 
 - **Restart :8801 nạp ChatGPT :3377** (~08:07). `restart_server.py --clean-env` · PID **34240**. Job `9c3af49061a2_p01` mux bị đứt giữa chừng (TTS đã đủ 2122). **Không cần restart lại.**
 
@@ -467,3 +532,6 @@ Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần resta
 ## 2026-09-24 → 25
 
 Xem `docs/fixes/` (stop mux, hardsub hwaccel/drawbox, run-all stale mux, queue voice stop race, duck bgm truncate) và `docs/superpowers/` (job queue tuần tự).
+
+
+

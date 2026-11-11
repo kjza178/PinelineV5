@@ -13,6 +13,11 @@ Chạy tay:
 Yêu cầu: funasr đã cài (install_funasr_safe.bat). Không cần pip thêm.
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[2])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import argparse
 import json

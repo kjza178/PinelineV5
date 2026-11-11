@@ -1,0 +1,12 @@
+{
+ "src": "/sessions/rcw-01shq1sdz7rh5e6qhszlytsi/mnt/PinelineV2",
+ "dst": "/sessions/rcw-01shq1sdz7rh5e6qhszlytsi/mnt/PinelineV5",
+ "package": true,
+ "written": [],
+ "same": [
+  "agents/agent_autopilot.py",
+  "tools/migrate_work.py"
+ ],
+ "warn": [],
+ "moved": []
+}

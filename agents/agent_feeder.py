@@ -23,10 +23,10 @@ from typing import Any
 
 import requests
 
-import agent_autopilot as ap
-import film_db
+import agents.agent_autopilot as ap
+import core.film_db as film_db
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / "work"
 STATE_PATH = WORK / "logs" / "feeder_state.json"
 
@@ -155,7 +155,7 @@ def _post(base: str, path: str, body: dict | None = None, timeout: float = 120) 
 # ─── thư viện + job đã có ────────────────────────────────────────────────
 
 def _hg():
-    import hongguo_bridge as hg  # noqa: PLC0415
+    import agents.hongguo_bridge as hg  # noqa: PLC0415
     return hg
 
 
@@ -258,7 +258,7 @@ def candidates(base: str, st: dict, items: list[dict] | None = None, *, manual: 
 
     # Bỏ qua các mùa đã bị chặn bản quyền YouTube (Content ID Block)
     try:
-        import film_db
+        import core.film_db as film_db
         lib_blocks = film_db.list_library_blocks()
     except Exception:
         lib_blocks = {}
@@ -483,7 +483,7 @@ def library_view(base: str) -> dict:
     tr = _translate(base, [g["core"] for g in out] + [s["title"] for g in out for s in g["seasons"]], st)
     # Gắn trạng thái bản quyền từ films.db (library_blocks)
     try:
-        import film_db
+        import core.film_db as film_db
         lib_blocks = film_db.list_library_blocks()
     except Exception:
         lib_blocks = {}
@@ -578,7 +578,7 @@ def library_action(base: str, action: str, names: list[str] | None = None, cores
             return {"ok": False, "error": f"Không tìm thấy thư mục thư viện ({root})"}
 
         try:
-            import film_db
+            import core.film_db as film_db
             lib_blocks = film_db.list_library_blocks()
         except Exception:
             lib_blocks = {}
@@ -1309,7 +1309,7 @@ def combine_rendered_jobs(
     pub_res = None
     if auto_publish:
         try:
-            import auto_publisher
+            import agents.auto_publisher as auto_publisher
             # File gộp >11.5h: từ chối trừ khi UI đã confirm (allow_oversized).
             if (not allow_oversized) and float(total_dur or 0) > getattr(
                 auto_publisher, "YT_MAX_DURATION_SEC", 41400
@@ -1611,7 +1611,7 @@ _PARSE_SYS = (
 
 def _llm_cfg() -> tuple[str, str, list[str]]:
     """Cùng nguồn với agent chat (config.agent_llm): sidecar không còn cần key trong .bat."""
-    import config as _cfg
+    import core.config as _cfg
     c = _cfg.agent_llm()
     return c["base"], c["key"], [c["model"]] + ([c["fallback"]] if c["fallback"] else [])
 

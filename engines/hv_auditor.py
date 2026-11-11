@@ -16,7 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 KV_PATH = ROOT / "data" / "unihan" / "kVietnamese.json"
 
 _HAN_RE = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
@@ -55,12 +55,24 @@ _SIMP_TO_TRAD: dict[str, str] = {
     "业": "業", "万": "萬", "与": "與", "义": "義", "干": "幹",
 }
 
+# CHỈ auto-fix các trap nhầm chữ (âm của chữ KHÁC). Unihan kVietnamese
+# thiếu/sai nhiều âm tên riêng (沈≠đắm, 帝≠đấy, 司徒≠Ti…) → không đè mù.
+# fold(wrong) → reading đúng (Unihan hoặc EXTRA đơn nghĩa).
+_CONFUSION_TRAPS: dict[str, dict[str, str]] = {
+    # 逆 nghịch ← hay đọc nhầm như 议/議 nghị
+    "逆": {"nghi": "nghịch"},
+}
+
 
 def _fold(s: str) -> str:
-    """Bỏ dấu để so âm (Nghịch≈nghich). đ→d."""
+    """Bỏ dấu để so âm (Nghịch≈nghich). đ→d; y/i cuối coi tương đương nhẹ."""
     s = (s or "").strip().lower().replace("đ", "d").replace("Đ", "d")
     s = unicodedata.normalize("NFD", s)
-    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    # Kỳ ≈ Kì (chính tả)
+    if s.endswith("y") and len(s) > 1:
+        s = s[:-1] + "i"
+    return s
 
 
 def _title_vi(syl: str) -> str:
@@ -125,21 +137,16 @@ def vi_syllables(vi: str) -> list[str]:
 
 
 def looks_like_han_viet(zh: str, vi: str) -> bool:
-    """Đủ điều kiện audit: số âm ≈ số chữ Hán, VI dạng Title/HV ngắn."""
+    """Đủ điều kiện audit: số âm == số chữ Hán (khớp 1-1), VI dạng Title HV."""
     chars = zh_chars(zh)
     syls = vi_syllables(vi)
     if len(chars) < 2 or len(syls) < 2:
         return False
-    if abs(len(chars) - len(syls)) > 1:
-        # cho phép lệch 1 (đệm nhi/chi…) — vẫn thử nếu gần
-        if abs(len(chars) - len(syls)) > 2:
-            return False
-    # Quá dài / câu nghĩa → bỏ
-    if len(vi or "") > 48 and " " in (vi or "") and not all(
-        s[:1].isupper() for s in syls if s
-    ):
+    # Bắt buộc khớp độ dài — lệch thứ tự/đệm dễ sửa bậy (圣女 Dao Trì…)
+    if len(chars) != len(syls):
         return False
-    # Phần lớn âm tiết viết hoa đầu
+    if len(vi or "") > 64:
+        return False
     titled = sum(1 for s in syls if s[:1].isupper())
     return titled >= max(2, len(syls) - 1)
 
@@ -182,6 +189,7 @@ def audit_entry(zh: str, vi: str) -> dict[str, Any]:
         "fixed_vi": None,
         "issues": [],
         "suspect": False,
+        "warn": False,
         "skipped": False,
     }
     if not looks_like_han_viet(zh, vi):
@@ -212,16 +220,21 @@ def audit_entry(zh: str, vi: str) -> dict[str, Any]:
         exp_f = {_fold(e) for e in expect}
         if got_f in exp_f:
             continue
-        # Sai âm
-        issue = {"ch": ch, "got": syl, "expect": expect}
-        result["issues"].append(issue)
-        result["ok"] = False
-        # Chỉ auto-fix khi Unihan+EXTRA còn ĐÚNG 1 âm (đa âm → không đoán, tránh 行 hàng/hành)
-        if len(exp_f) == 1:
-            new_syls[i] = _title_vi(expect[0]) if syl[:1].isupper() else expect[0]
+        # Trap nhầm chữ? (逆→nghị) — đây mới được auto-fix
+        trap = (_CONFUSION_TRAPS.get(ch) or {}).get(got_f)
+        if trap:
+            issue = {"ch": ch, "got": syl, "expect": [trap], "trap": True}
+            result["issues"].append(issue)
+            result["ok"] = False
+            new_syls[i] = _title_vi(trap) if syl[:1].isupper() else trap
             changed = True
-        else:
-            result["suspect"] = True
+            continue
+        # Unihan lệch nhưng KHÔNG chắc (tên riêng / đa âm) → cảnh báo, không đè
+        if expect:
+            result["issues"].append({
+                "ch": ch, "got": syl, "expect": expect, "warn_only": True,
+            })
+            result["warn"] = True
 
     if changed:
         # Rebuild VI: thay khối âm tiết đầu; giữ suffix chú thích
@@ -380,6 +393,7 @@ def audit_and_fix_plan(plan: dict | None, *, fix: bool = True) -> dict:
         if res.get("ok") and not res.get("issues"):
             n_ok += 1
             item.pop("hv_suspect", None)
+            item.pop("hv_warn", None)
             continue
         if res.get("issues"):
             issues.append({
@@ -392,13 +406,16 @@ def audit_and_fix_plan(plan: dict | None, *, fix: bool = True) -> dict:
             item["vi"] = res["fixed_vi"]
             item["hv_fixed"] = True
             n_fixed += 1
-            if not res.get("suspect"):
-                item.pop("hv_suspect", None)
-                n_ok += 1
-                continue
-        if res.get("suspect") or (res.get("issues") and not res.get("fixed_vi")):
+            item.pop("hv_suspect", None)
+            item.pop("hv_warn", None)
+            n_ok += 1
+            continue
+        if res.get("suspect"):
             item["hv_suspect"] = True
             n_suspect += 1
+        elif res.get("warn"):
+            item["hv_warn"] = True
+            # không chặn series — chỉ meta cảnh báo Unihan≠tên riêng
 
     cons = enforce_char_consistency(plan) if fix else []
     n_fixed += sum(1 for c in cons if c.get("action") == "consistency")
@@ -431,27 +448,28 @@ def audit_and_fix_plan(plan: dict | None, *, fix: bool = True) -> dict:
     }
 
 
-def filter_series_entries(entries: list, *, drop_suspect: bool = False) -> list:
-    """Hygiene: bỏ/không kế thừa mục hv_suspect; ưu tiên bản đã hv_fixed."""
+def filter_series_entries(entries: list, *, drop_suspect: bool = True) -> list:
+    """Hygiene: auto-fix trap; bỏ mục hv_suspect cứng; giữ hv_warn (Unihan lệch tên riêng)."""
     out = []
     for e in entries or []:
         if not isinstance(e, dict):
             continue
-        if e.get("hv_suspect") and drop_suspect:
-            continue
-        # Re-audit nhẹ trước khi nhận vào series
+        e = dict(e)
         zh, vi = e.get("zh") or "", e.get("vi") or ""
         if zh and vi and looks_like_han_viet(zh, vi):
             res = audit_entry(zh, vi)
             if res.get("fixed_vi") and res["fixed_vi"] != vi:
-                e = dict(e)
                 e["vi"] = res["fixed_vi"]
                 e["hv_fixed"] = True
                 e.pop("hv_suspect", None)
-            elif res.get("suspect") or (res.get("issues") and not res.get("fixed_vi")):
+                e.pop("hv_warn", None)
+            elif res.get("suspect"):
+                e["hv_suspect"] = True
                 if drop_suspect:
                     continue
-                e = dict(e)
-                e["hv_suspect"] = True
+            elif res.get("warn"):
+                e["hv_warn"] = True
+        if e.get("hv_suspect") and drop_suspect:
+            continue
         out.append(e)
     return out

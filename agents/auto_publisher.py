@@ -18,10 +18,10 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-import film_db
-import meta_studio
+import core.film_db as film_db
+import agents.meta_studio as meta_studio
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 CONFIG_FILE = DATA_DIR / "auto_publish_config.json"
 YT_DIR = Path(os.getenv("YT_UPLOADER_DIR") or r"Z:\yt_uploader")
@@ -100,7 +100,7 @@ def update_auto_state(**kwargs) -> dict[str, Any]:
         AUTO_STATE.update(kwargs)
         cur = dict(AUTO_STATE)
     try:
-        from fileio import atomic_write_json
+        from core.fileio import atomic_write_json
         atomic_write_json(STATE_FILE, cur)
     except Exception:
         pass
@@ -119,7 +119,7 @@ def _read_publish_queue() -> list[dict[str, Any]]:
 
 def _write_publish_queue(items: list[dict[str, Any]]) -> None:
     try:
-        from fileio import atomic_write_json
+        from core.fileio import atomic_write_json
         atomic_write_json(PUBLISH_QUEUE_FILE, items)
     except Exception:
         pass
@@ -173,7 +173,7 @@ def _enqueue_job_record(
         )
         return _read_publish_queue()
     try:
-        from fileio import file_lock
+        from core.fileio import file_lock
         with file_lock(QUEUE_LOCK_FILE, timeout=5.0, stale_sec=30.0):
             items = _read_publish_queue()
             existing = next((it for it in items if it.get("job_id") == job_id), None)
@@ -197,7 +197,7 @@ def _enqueue_job_record(
                 })
             # Sắp xếp hàng chờ theo thứ tự bộ & phần (P1 -> Pn)
             try:
-                from job_queue import job_sort_key
+                from core.job_queue import job_sort_key
                 items.sort(key=lambda x: job_sort_key(x.get("job_id") or ""))
             except Exception:
                 pass
@@ -222,7 +222,7 @@ def _dequeue_job_record(job_id: str) -> list[dict[str, Any]]:
     """Xoá job khỏi hàng chờ upload sau khi đã xử lý xong."""
     job_id = str(job_id or "").strip()
     try:
-        from fileio import file_lock
+        from core.fileio import file_lock
         with file_lock(QUEUE_LOCK_FILE, timeout=5.0, stale_sec=30.0):
             items = [it for it in _read_publish_queue() if it.get("job_id") != job_id]
             _write_publish_queue(items)
@@ -687,7 +687,7 @@ def _revert_job_to_done(job_id: str, error_msg: str | None = None) -> None:
     """Hoàn trả trạng thái job về 'done' khi quá trình upload bị lỗi hoặc gián đoạn để không bị kẹt ở 'uploading'."""
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        from manifest import Manifest
+        from core.manifest import Manifest
         w_dir = ROOT / "work" / job_id
         if (w_dir / "manifest.json").is_file():
             m = Manifest(w_dir)
@@ -1025,14 +1025,26 @@ def _publish_job_internal(
 
     title_vi = (row.get("title_vi") or row.get("title") or m_data.get("title_vi") or "").strip()
     title_zh = (row.get("title") or "").strip()
-    poster_name = row.get("hg_name") or row.get("title") or row.get("series") or ""
+    try:
+        from core.film_db import derive_hg_name, is_junk_hg_name
+        poster_name = (row.get("hg_name") or "").strip()
+        if is_junk_hg_name(poster_name, job_id):
+            poster_name = derive_hg_name(
+                job_id,
+                {"hg_name": row.get("hg_name"), "parent_job_id": (job_id.rsplit("_p", 1)[0] if "_p" in job_id else "")},
+                row.get("title") or "",
+            )
+        if is_junk_hg_name(poster_name, job_id):
+            poster_name = ""
+    except Exception:
+        poster_name = row.get("hg_name") or row.get("title") or row.get("series") or ""
     f_size_mb = Path(out_path).stat().st_size // (1024 * 1024) if Path(out_path).is_file() else 0
 
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Đánh dấu upload_status = 'uploading' vào manifest và films.db ngay từ đầu để scanner không quét trúng
     try:
-        from manifest import Manifest
+        from core.manifest import Manifest
         m = Manifest(ROOT / "work" / job_id)
         m.data["upload_status"] = "uploading"
         m.data["upload_started_at"] = now_utc
@@ -1067,7 +1079,7 @@ def _publish_job_internal(
 
         season_no = row.get("season")
         if season_no is None:
-            from job_queue import get_job_info
+            from core.job_queue import get_job_info
             season_no = get_job_info(job_id).get("season")
             if season_no is None:
                 season_no = 1
@@ -1151,7 +1163,7 @@ def _publish_job_internal(
 
             # AI vẽ luôn chữ 3D (NEW/HOT + hook neo tên) — không dùng Pillow overlay
             print(f"[auto-publish] {job_id}: Đang tạo Thumbnail 16:9 (AI typography)...", flush=True)
-            from agent_tele_cmd import _fetch_poster_bytes
+            from agents.agent_tele_cmd import _fetch_poster_bytes
             poster_bytes = _fetch_poster_bytes(poster_name)
 
             ai_img_bytes = None
@@ -1298,7 +1310,7 @@ def _publish_job_internal(
 
     # 7. Cập nhật manifest.json của job
     try:
-        from manifest import Manifest
+        from core.manifest import Manifest
         m = Manifest(ROOT / "work" / job_id)
         m.data["yt_url"] = yt_url
         m.data["uploaded_at"] = now_utc
@@ -1402,7 +1414,7 @@ def _collect_and_enqueue_done_jobs() -> list[dict[str, Any]]:
 
     # Sắp xếp tuần tự theo Tên Bộ & Phần (P1 -> P2 -> P3 -> P4)
     try:
-        from job_queue import job_sort_key
+        from core.job_queue import job_sort_key
         pending_upload.sort(key=lambda f: job_sort_key(f.get("job_id") or ""))
     except Exception:
         pass
@@ -1464,7 +1476,7 @@ def scan_and_publish_completed_jobs() -> dict[str, Any]:
         }
 
     try:
-        from fileio import file_lock
+        from core.fileio import file_lock
         # Scan chỉ giữ lock ngắn — stale 3 phút (trước 4h khiến worker kẹt sau restart sidecar)
         with file_lock(SCAN_LOCK_FILE, timeout=0.5, stale_sec=180.0):
             count = _scan_and_publish_impl()

@@ -22,7 +22,7 @@ import core.film_db as film_db
 
 ROOT = Path(__file__).resolve().parents[1]
 LIB_ROOT = Path(os.getenv("LIB_ROOT") or r"D:\Lib")
-SAMPLE_DIR = ROOT / "data" / "samples"
+SAMPLE_DIR = Path(r"Z:\PinelineV2\data\samples")
 YT_DIR = Path(os.getenv("YT_UPLOADER_DIR") or r"Z:\yt_uploader")
 YT_QUEUE = YT_DIR / "queue_state.json"
 

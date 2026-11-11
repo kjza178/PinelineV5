@@ -62,8 +62,12 @@ class FireRedAsrAed(torch.nn.Module):
                     nbest_hyps[n][0]["timestamp"] = None
                     continue
 
+                # torchaudio.forced_align: chỉ float64/32/16 — BF16 phải cast
+                align_logits = n_ctc_logits
+                if align_logits.dtype not in (torch.float64, torch.float32, torch.float16):
+                    align_logits = align_logits.float()
                 alignment, _ = torchaudio.functional.forced_align(
-                    n_ctc_logits.unsqueeze(0), y.unsqueeze(0), blank=0)
+                    align_logits.unsqueeze(0), y.unsqueeze(0), blank=0)
                 alignment = alignment[0].cpu().tolist()
                 start_times, end_times = self.ctc.ctc_alignment_to_timestamp(alignment,
                     self.encoder.input_preprocessor.subsampling, blank_id=0)

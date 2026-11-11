@@ -149,11 +149,16 @@ _stop = False
 _thread: threading.Thread | None = None
 _runner: Callable[[str, dict], tuple[str, str]] | None = None
 _clear_stop_hook: Callable[[str], None] | None = None
+# Studio invariant: HOLD / soát dở → park ghế, KHÔNG nhảy job kế đến khi sẵn sàng / stop / remove.
+_PARK_STATUSES = frozenset({"held", "parked", "waiting_review"})
+_park_ready_hook: Callable[[str], bool] | None = None
+_PARK_POLL_SEC = float(os.getenv("QUEUE_PARK_POLL_SEC", "5") or "5")
 
 
 def _reset_for_tests(load_disk: bool = False) -> None:
     """Chỉ dùng trong pytest."""
     global _q, _current, _opts, _opts_by_job, _hist, _stop, _thread, _runner, _clear_stop_hook
+    global _park_ready_hook
     with _lock:
         _stop = True
         old_thread = _thread
@@ -169,6 +174,7 @@ def _reset_for_tests(load_disk: bool = False) -> None:
         _thread = None
         _runner = None
         _clear_stop_hook = None
+        _park_ready_hook = None
         set_stop_hook(None)
     if load_disk:
         _load()
@@ -177,6 +183,63 @@ def _reset_for_tests(load_disk: bool = False) -> None:
 def set_runner(fn: Callable[[str, dict], tuple[str, str]]) -> None:
     global _runner
     _runner = fn
+
+
+def set_park_ready_hook(fn: Callable[[str], bool] | None) -> None:
+    """Server gắn hook: True = job HOLD/waiting có thể chạy tiếp (TTS/mux)."""
+    global _park_ready_hook
+    _park_ready_hook = fn
+
+
+def is_park_status(status: str | None) -> bool:
+    return str(status or "").strip().lower() in _PARK_STATUSES
+
+
+def _default_park_ready(job_id: str) -> bool:
+    """Fallback khi chưa wire hook: bỏ HOLD flags + (waiting_review → hết câu chưa rv)."""
+    wd = WORK_ROOT / str(job_id)
+    mf = wd / "manifest.json"
+    if not mf.is_file():
+        return False
+    try:
+        data = json.loads(mf.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    agent = data.get("agent") or {}
+    if agent.get("hold_after_translate") or agent.get("qa_blocked"):
+        return False
+    held = str(agent.get("held_at") or "").strip()
+    if held in ("", "waiting_review"):
+        if held == "waiting_review":
+            sp = wd / "script.json"
+            if not sp.is_file():
+                return False
+            try:
+                rows = json.loads(sp.read_text(encoding="utf-8"))
+            except Exception:
+                return False
+            if not isinstance(rows, list):
+                return False
+            unrev = sum(
+                1
+                for r in rows
+                if isinstance(r, dict)
+                and not r.get("rv")
+                and (r.get("vi") or "").strip()
+            )
+            return unrev == 0
+        return True
+    # held_at khác (qa_brain / after_translate) → cần resume/clear hold
+    return False
+
+
+def _park_ready(job_id: str) -> bool:
+    if _park_ready_hook is not None:
+        try:
+            return bool(_park_ready_hook(job_id))
+        except Exception:
+            return False
+    return _default_park_ready(job_id)
 
 
 def is_wired_done(work_dir: Path) -> bool:
@@ -544,6 +607,40 @@ def _worker_loop() -> None:
                     status = result or "failed"
         except Exception as e:  # noqa: BLE001
             status, detail = "failed", str(e)[:200]
+
+        # Studio: HOLD / soát dở → giữ ghế, chờ sẵn sàng rồi chạy lại CÙNG job.
+        # Không lấy job kế (tránh nhảy linh tinh khi Brain/review dừng sớm).
+        if is_park_status(status):
+            with _lock:
+                _hist_push(job_id, status, detail)
+                if job_id in _q:
+                    _q.remove(job_id)
+                _q.insert(0, job_id)
+                _opts_by_job[job_id] = dict(opts)
+                _current = job_id
+                _save()
+            poll = max(0.5, float(_PARK_POLL_SEC) or 5.0)
+            while True:
+                with _lock:
+                    if _stop:
+                        _current = None
+                        _thread = None
+                        _save()
+                        return
+                    if job_id not in _q:
+                        # user remove / clear — nhường ghế
+                        _current = None
+                        _opts_by_job.pop(job_id, None)
+                        _save()
+                        break
+                if _park_ready(job_id):
+                    with _lock:
+                        _current = None
+                        _save()
+                    break
+                time.sleep(poll)
+            continue
+
         with _lock:
             _hist_push(job_id, status, detail)
             _current = None

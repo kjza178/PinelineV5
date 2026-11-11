@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 
-ROOT = Path(__file__).resolve().parent.parent  # project root (file lives in agents/)
+ROOT = Path(__file__).resolve().parents[1]
 FONTS_DIR = Path("C:/Windows/Fonts")
 DEFAULT_FONT = str(FONTS_DIR / "arialbd.ttf") if (FONTS_DIR / "arialbd.ttf").exists() else str(FONTS_DIR / "arial.ttf")
 SEGOE_FONT = str(FONTS_DIR / "segoeuib.ttf") if (FONTS_DIR / "segoeuib.ttf").exists() else DEFAULT_FONT
@@ -986,15 +986,43 @@ def _clean_json_response(raw: str) -> dict:
     return {}
 
 
+def _cfg(key: str, default: str = "") -> str:
+    try:
+        from core.config import get as _cget
+        v = _cget(key)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    except Exception:
+        pass
+    return (os.getenv(key) or default).strip()
+
+
 def _get_chatgpt_token() -> str:
-    """Đọc Access Token của ChatGPT từ data/chatgpt_token.txt hoặc biến môi trường."""
+    """Đọc Access Token / API key ChatGPT: config → env → data/chatgpt_token.txt."""
+    for k in ("CHATGPT_API_KEY", "CHATGPT_ACCESS_TOKEN"):
+        v = _cfg(k)
+        if v:
+            return v
     token_file = ROOT / "data" / "chatgpt_token.txt"
     if token_file.exists():
         try:
             return token_file.read_text(encoding="utf-8").strip()
         except Exception:
             pass
-    return os.getenv("CHATGPT_ACCESS_TOKEN", "").strip()
+    return ""
+
+
+def _chatgpt_candidate_bases() -> list[str]:
+    """Ưu tiên CHATGPT_BASE_URL trong pineline.config (local :3377), rồi Aurora LAN."""
+    bases: list[str] = []
+    for k in ("AURORA_BASE_URL", "CHATGPT_BASE_URL"):
+        v = _cfg(k).rstrip("/")
+        if v and v not in bases:
+            bases.append(v)
+    for u in ("http://127.0.0.1:3377/v1", "http://192.168.31.247:5005/v1", "http://192.168.31.244:5005/v1"):
+        if u not in bases:
+            bases.append(u)
+    return bases
 
 
 def extract_job_summary(job_id: str, max_chars: int = 5500) -> str:
@@ -1200,7 +1228,7 @@ def get_job_reference_images(job_id: str = "", poster_name: str = "") -> list[by
         if not poster_bytes:
             try:
                 import urllib.parse
-                url = f"http://127.0.0.1:8801/api/hg/poster?name={urllib.parse.quote(poster_name)}"
+                url = f"http://127.0.0.1:{os.getenv('PINELINE_PORT') or '8801'}/api/hg/poster?name={urllib.parse.quote(poster_name)}"
                 req = urllib.request.Request(url, headers={"User-Agent": "Pineline"})
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     poster_bytes = _normalize_ref_jpeg(resp.read())
@@ -1235,15 +1263,7 @@ def _call_chatgpt(messages: list[dict], model: str = "gpt-5-6") -> str:
     """
     import requests
     token = _get_chatgpt_token()
-
-    candidate_urls = []
-    custom_url = os.getenv("AURORA_BASE_URL") or os.getenv("CHATGPT_BASE_URL", "").strip()
-    if custom_url:
-        candidate_urls.append(custom_url.rstrip("/"))
-    candidate_urls.extend([
-        "http://192.168.31.244:5005/v1",
-        "http://192.168.31.247:5005/v1",
-    ])
+    candidate_urls = _chatgpt_candidate_bases()
 
     # Danh sách model theo thứ tự ưu tiên mới nhất
     target_models = []
@@ -1323,13 +1343,12 @@ def generate_ai_image(
     import requests
 
     token = _get_chatgpt_token()
-    candidate_urls = []
-    custom_url = os.getenv("AURORA_BASE_URL") or os.getenv("CHATGPT_BASE_URL", "").strip()
-    if custom_url:
-        candidate_urls.append(custom_url.rstrip("/"))
-    for u in ("http://192.168.31.244:5005/v1", "http://192.168.31.247:5005/v1"):
-        if u not in candidate_urls:
-            candidate_urls.append(u)
+    candidate_urls = _chatgpt_candidate_bases()
+    try:
+        cfg_t = int(_cfg("CHATGPT_TIMEOUT", "900") or 900)
+    except Exception:
+        cfg_t = 900
+    timeout = max(int(timeout or 0), min(max(cfg_t, 180), 1800))
 
     # Chuẩn bị danh sách ảnh tham chiếu (Reference Images)
     ref_list: list[bytes] = []
@@ -1347,9 +1366,11 @@ def generate_ai_image(
     if not ref_list and (job_id or poster_name):
         ref_list = get_job_reference_images(job_id=job_id, poster_name=poster_name)
 
-    auth_headers_list = [{}]
+    # Local :3377 cần Bearer sk-local; Aurora pool có thể không cần token.
+    auth_headers_list: list[dict] = []
     if token:
-        auth_headers_list = [{"Authorization": f"Bearer {token}"}, {}]
+        auth_headers_list.append({"Authorization": f"Bearer {token}"})
+    auth_headers_list.append({})
 
     # 1. NẾU CÓ ẢNH THAM CHIẾU -> GỌI /v1/images/edits (Bám sát ngoại hình nhân vật & Visual DNA ảnh gốc)
     if ref_list:

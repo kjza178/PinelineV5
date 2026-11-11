@@ -1,8 +1,13 @@
 """Hộp thoại chọn NHIỀU folder cùng lúc (Listbox multi-select).
-Chạy: python tools/pick_dirs_dialog.py [initial_dir]
+Chạy: python pick_dirs_dialog.py [initial_dir]
 Stdout: mỗi path 1 dòng (UTF-8). Rỗng = hủy.
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[1])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import re
 import sys

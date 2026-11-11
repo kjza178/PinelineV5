@@ -428,38 +428,38 @@ def launch_yt_uploader_process():
 
 def _usa_json(fn, *args, **kwargs):
     """Bridge sang uploader_settings_api (sidecar-compatible)."""
-    import uploader_settings_api as usa
+    import agents.uploader_settings_api as usa
     code, body = fn(*args, **kwargs)
     return JSONResponse(body, status_code=code)
 
 
 @router.post("/api/uploader/skip")
 def uploader_skip_item(payload: Dict[str, Any] = Body(...)):
-    import uploader_settings_api as usa
+    import agents.uploader_settings_api as usa
     return _usa_json(usa.skip_upload_item, payload)
 
 
 @router.post("/api/uploader/skip-current")
 def uploader_skip_current():
-    import uploader_settings_api as usa
+    import agents.uploader_settings_api as usa
     return _usa_json(usa.skip_current_upload)
 
 
 @router.post("/api/uploader/clear-skipped")
 def uploader_clear_skipped():
-    import uploader_settings_api as usa
+    import agents.uploader_settings_api as usa
     return _usa_json(usa.clear_skipped)
 
 
 @router.post("/api/uploader/move")
 def uploader_move_item(payload: Dict[str, Any] = Body(...)):
-    import uploader_settings_api as usa
+    import agents.uploader_settings_api as usa
     return _usa_json(usa.move_upload_item, payload)
 
 
 @router.post("/api/uploader/settings")
 def uploader_save_settings(payload: Dict[str, Any] = Body(...)):
-    import uploader_settings_api as usa
+    import agents.uploader_settings_api as usa
     return _usa_json(usa.save_uploader_settings, payload)
 
 

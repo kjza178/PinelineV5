@@ -18,7 +18,7 @@ import threading
 from pathlib import Path
 from typing import Iterable
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 _REPO_BASE = "ngocdang83/HachimiMT-60-zh-vi"
 _REPO_QT = "ngocdang83/HachimiMT-60-QT"
 _DEFAULT_REPO = "auto"
@@ -42,7 +42,7 @@ _active_repo: str | None = None
 
 def _cfg(key: str, default: str | None = None) -> str | None:
     try:
-        from config import get
+        from core.config import get
         return get(key, default)
     except Exception:  # noqa: BLE001
         return os.getenv(key, default)

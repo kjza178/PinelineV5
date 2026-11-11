@@ -906,7 +906,7 @@ def retry_download(series_id: str) -> dict:
         # Helper báo đang chờ licence / mất proof sau spawn lại → prove force rồi thử 1 lần
         if "licence" in msg or "license" in msg:
             try:
-                import hongguo_license_ensure as _lic  # noqa: PLC0415
+                import agents.hongguo_license_ensure as _lic  # noqa: PLC0415
                 _lic.ensure_licensed(force=True)
                 return call("downloads.retry", {"seriesId": sid}) or {"ok": True, "retried": sid}
             except HgRpcError as e2:
@@ -921,7 +921,7 @@ def retry_download(series_id: str) -> dict:
 def _ensure_licensed_quiet() -> None:
     # Classic /hongguo = Downloader :8000 — tuyệt đối không prove license
     try:
-        import hg_ui_ctx as _ctx  # noqa: PLC0415
+        import agents.hg_ui_ctx as _ctx  # noqa: PLC0415
         if _ctx.is_classic() or _ctx.get() == "http":
             raise HgRpcError(
                 "Hongguo classic dùng Downloader :8000 — không license RPC. "
@@ -934,7 +934,7 @@ def _ensure_licensed_quiet() -> None:
     except Exception:  # noqa: BLE001
         pass
     try:
-        import hongguo_license_ensure as _lic  # noqa: PLC0415
+        import agents.hongguo_license_ensure as _lic  # noqa: PLC0415
 
         _lic.ensure_or_raise()
     except HgRpcError:
@@ -1421,6 +1421,7 @@ def settings_update(patch: dict | None = None) -> dict:
 
 
 def _idle_watch() -> None:
+    global _last_used
     while True:
         time.sleep(30)
         if _IDLE_SEC <= 0:

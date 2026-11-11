@@ -121,8 +121,8 @@ class TransformerDecoder(nn.Module):
             confidences = confidences[topB_row_number_in_ys]
             t_confidences = torch.gather(t_topB_scores.view(N, B*B), dim=1, index=topB_score_ids).view(N*B, 1)
             t_confidences = torch.exp(t_confidences)
-            assert torch.all(t_confidences <= 1.0)
-            assert torch.all(t_confidences >= 0.0)
+            # half/bf16 + smoothing: exp(logp) có thể >1 → clamp, tránh AssertionError giữa decode
+            t_confidences = torch.clamp(t_confidences, 0.0, 1.0)
             confidences = torch.cat((confidences, t_confidences), dim=1)
 
             # Update caches

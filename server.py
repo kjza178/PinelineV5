@@ -28,7 +28,7 @@ os.environ.setdefault("HG_HELPER_SINGLETON", "1")
 os.environ.setdefault("HG_BACKEND", "auto")
 
 # Nạp config -> env TRƯỚC khi import llm/translate (chúng đọc env lúc import; tiến trình con kế thừa).
-import config as _config_boot  # noqa: E402
+import core.config as _config_boot  # noqa: E402
 _config_boot.inject_env()
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
@@ -49,27 +49,27 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from manifest import Manifest
-from download import download_video, job_id_from_url
-from asr import run_asr
-from vram import free_gpu_vram
-from translate import (
+from core.manifest import Manifest
+from engines.download import download_video, job_id_from_url
+from engines.asr.asr import run_asr
+from engines.vram import free_gpu_vram
+from engines.translate import (
     run_translate,
     run_review,
     count_script_missing,
     translate_coverage_gap,
     translate_ready_for_tts,
 )
-from ocr import run_ocr
-from separate import run_separate
-from render import run_render
-from render_fx import clamp_zoom
-from clone_tts import (
+from engines.ocr import run_ocr
+from engines.separate import run_separate
+from engines.render import run_render
+from engines.render_fx import clamp_zoom
+from engines.clone_tts import (
     run_clone_tts, list_clone_voices, synth_one, enroll_voice,
     resynth_clip as _clone_resynth,
 )
-from playlist import expand, expand_meta
-from subs import to_srt
+from engines.playlist import expand, expand_meta
+from engines.subs import to_srt
 
 WORK_ROOT = Path("work")
 _PROJ = Path(__file__).parent
@@ -219,7 +219,7 @@ def _queue_split_parent_merge_if_ready(parent_id: str, *, reason: str = "") -> d
 
     def _run_merge():
         try:
-            from split_parts import merge_job_parts
+            from engines.split_parts import merge_job_parts
             print(
                 f"[auto-split-heal] {parent_id}: parts ready → merge Full"
                 + (f" [{reason}]" if reason else ""),
@@ -458,6 +458,20 @@ def _heal_stale_running(work_dir: Path) -> list[str]:
     # đang OCR hardsub (chưa có ffmpeg/output) → UI hiện "Sẵn sàng" giả.
     if _job_lineage_busy(jid) or _job_proc_alive(jid):
         return []
+    # CLI/out-of-band (run_review_*.py JOBID) — không trong _PROCS nhưng đang sống
+    try:
+        import psutil
+        for p in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                cmd = " ".join(p.info.get("cmdline") or [])
+            except Exception:  # noqa: BLE001
+                continue
+            if jid and jid in cmd and (
+                "run_review" in cmd or "translate.py" in cmd or "run_review_gpt6" in cmd
+            ):
+                return []
+    except Exception:  # noqa: BLE001
+        pass
     hstrack = work_dir / "_hstrack"
     try:
         if hstrack.is_dir() and next(hstrack.glob("hs_*.jpg"), None) is not None:
@@ -499,6 +513,21 @@ def _heal_stale_running(work_dir: Path) -> list[str]:
             st = m.stage(s) or {}
             if st.get("status") != "running":
                 continue
+            # CLI/out-of-band REVIEW (vd run_review_gpt6_*.py) không vào _PROCS —
+            # đừng hạ pending khi đang soát (review_progress < 100 + updated_at tươi).
+            # Heal nhầm → UI nhảy "Sẵn sàng"/soát % tụt假 (merge3 giữ số cũ).
+            if s == "translate" and st.get("review"):
+                try:
+                    rp = float(st.get("review_progress") or 0)
+                except (TypeError, ValueError):
+                    rp = 0.0
+                try:
+                    upd = float(st.get("updated_at") or 0)
+                except (TypeError, ValueError):
+                    upd = 0.0
+                fresh = upd > 0 and (time.time() - upd) < 900
+                if rp < 100 and fresh:
+                    continue
             prev = dict(st)
             if _stage_complete_on_disk(work_dir, s):
                 keep = {k: v for k, v in prev.items()
@@ -533,6 +562,18 @@ def _next_incomplete_stage(work_dir: Path) -> str | None:
         if not m.is_done(s) or not _stage_has_artifact(work_dir, s):
             return s
     return None
+
+
+_ENGINE_SEARCH_DIRS = ("", "engines/asr", "engines", "agents", "tools", "core")
+
+
+def _engine_script_path(script: str) -> Path:
+    """Đường dẫn script engine: root (V2/V4 phẳng) hoặc package (V5: engines/asr/…)."""
+    for sub in _ENGINE_SEARCH_DIRS:
+        p = (_PROJ / sub / script) if sub else (_PROJ / script)
+        if p.is_file():
+            return p
+    return _PROJ / script
 
 
 def _run_engine(script: str, work_dir: Path, *args: str) -> None:
@@ -573,8 +614,10 @@ def _run_engine(script: str, work_dir: Path, *args: str) -> None:
     if jid in _STOP_JOBS:
         raise _Stopped(jid)
 
-    cmd = [sys.executable, str(_PROJ / script), str(Path(work_dir).resolve()), *args]
+    cmd = [sys.executable, str(_engine_script_path(script)), str(Path(work_dir).resolve()), *args]
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    # V5 package: script trong engines/asr import `core.*` → cần root trên sys.path của tiến trình con
+    env["PYTHONPATH"] = os.pathsep.join(x for x in (str(_PROJ), env.get("PYTHONPATH", "")) if x)
     # Lọc PYTHONHASHSEED lỗi: nếu env cha có giá trị rỗng/không hợp lệ, Python CON
     # sẽ "Fatal error ... must be random or int" NGAY lúc khởi động -> gỡ nó ra
     # (để con dùng mặc định 'random'). Đây là bug làm asr/TTS subprocess chết.
@@ -770,7 +813,7 @@ def _kill_job_children(job_id: str) -> None:
 
 def _stop_job(job_id: str) -> None:
     """Dừng mọi việc đang chạy của 1 job + đưa stage 'running' về 'pending'."""
-    import download as _dlmod
+    import engines.download as _dlmod
     wd = WORK_ROOT / job_id
     _STOP_JOBS.add(job_id)
     # Cờ file: render._ffmpeg_progress đọc được dù không cùng _PROCS
@@ -865,6 +908,19 @@ def _clear_stop(job_id: str) -> None:
             (base / job_id / ".stop").unlink(missing_ok=True)
         except Exception:  # noqa: BLE001
             pass
+
+
+def _check_stopped(job_id: str) -> bool:
+    """True nếu user bấm Dừng (in-memory hoặc file .stop)."""
+    if job_id in _STOP_JOBS:
+        return True
+    for base in {WORK_ROOT, Path(r"D:\PinelineV2_work")}:
+        try:
+            if (base / job_id / ".stop").exists():
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+    return False
 
 # Chuỗi BẮT BUỘC (tính % tổng): tải -> nhận diện -> dịch -> lồng tiếng -> ghép/xuất.
 WIRED_STAGES = ["download", "asr", "translate", "tts", "mux"]
@@ -1083,7 +1139,7 @@ def _resume_hg_merge():
     if _UNDER_PYTEST:
         return
     try:
-        import hongguo_bridge as _hgb
+        import agents.hongguo_bridge as _hgb
         _hgb.merge_resume()
     except Exception as e:  # noqa: BLE001
         print(f"[startup] chạy tiếp hàng đợi gộp lỗi: {e}", flush=True)
@@ -1249,6 +1305,7 @@ class RunAllReq(BaseModel):
     fit: bool = True              # khớp time (nén câu lố cho khớp phim)
     resolution: str = "source"    # source | 1080
     translate_mode: str | None = None  # oneshot | batch | auto
+    review_backup: str | None = None  # off | aurora_parallel (UI backup REVIEW)
     # Cùng opt render như Mux (1-click truyền xuống _do_render)
     flip: str = ""
     zoom: float | str = 1.12
@@ -1287,6 +1344,7 @@ class AgentChatReq(BaseModel):
     allow_mutate: bool = False          # cho phép queue add/stop
     max_steps: int = 8
     require_confirm: bool = False       # Telegram: tool phá huỷ đỗ lại chờ ✅/❌
+    force_first_tool: str | None = None  # Brain: ép gọi tool đầu (vd pineline_status)
 
 
 class AgentConfirmReq(BaseModel):
@@ -1391,7 +1449,7 @@ def _check_and_run_auto_split_parts(
     if not video or not video.exists():
         return False
 
-    from split_parts import probe_duration, split_job_to_subjobs, merge_job_parts, MIN_SPLIT_HOURS
+    from engines.split_parts import probe_duration, split_job_to_subjobs, merge_job_parts, MIN_SPLIT_HOURS
     m_chk = Manifest(wd)
     # Nếu bản thân job này đã là sub-job con của job khác thì không chia tiếp
     if m_chk.data.get("request", {}).get("parent_job_id"):
@@ -1578,8 +1636,8 @@ def _run_requested_review(wd: Path, target: str) -> dict | None:
     rq = dict(agent.get("review_request") or {})
     if not rq or rq.get("done_at"):
         return None
-    from agent_name_pass import run_name_pass
-    from translate import run_review as _run_review_sync
+    from agents.agent_name_pass import run_name_pass
+    from engines.translate import run_review as _run_review_sync
 
     pre = wd / "script.pre_agent_review.json"
     try:
@@ -1593,7 +1651,7 @@ def _run_requested_review(wd: Path, target: str) -> dict | None:
     except Exception as e:  # noqa: BLE001
         res["names"] = {"ok": False, "error": str(e)}
     try:
-        from agent_pronoun_pass import run_pronoun_pass
+        from agents.agent_pronoun_pass import run_pronoun_pass
         res["pronouns"] = run_pronoun_pass(wd, model=rq.get("model"))
     except Exception as e:  # noqa: BLE001
         res["pronouns"] = {"ok": False, "error": str(e)}
@@ -1621,7 +1679,7 @@ def _run_requested_review(wd: Path, target: str) -> dict | None:
                       f"tổng {n_changed} câu đổi")
     m.save()
     try:
-        from agent_watch import telegram_send
+        from agents.agent_watch import telegram_send
         title = (m.data.get("request") or {}).get("title") or wd.name
         telegram_send(f"✅ Rà soát xong trước lồng tiếng: {title}\n{tr['cur_text']}"
                       + ("" if res["style"].get("ok") else f"\n⚠ rà văn phong lỗi: {res['style'].get('error')}"),
@@ -1633,13 +1691,18 @@ def _run_requested_review(wd: Path, target: str) -> dict | None:
 
 def _save_series_glossary(wd: Path) -> None:
     try:
-        import series_glossary
+        import engines.series_glossary as series_glossary
         r = series_glossary.save_from(wd)
         if r.get("ok"):
             print(f"[auto] {wd.name}: lưu bảng nhân vật bộ «{r['core']}» ({r['n_characters']} nhân vật)",
                   flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"[auto] {wd.name}: lưu bảng bộ lỗi: {e}", flush=True)
+
+
+# fix 2026-11-11 B2: job park waiting_review được chạy lại sau _REVIEW_RETRY_SEC, tối đa _REVIEW_RETRY_MAX lượt
+_REVIEW_RETRY_SEC = float(os.getenv("QUEUE_REVIEW_RETRY_SEC", "300") or 300)
+_REVIEW_RETRY_MAX = int(os.getenv("QUEUE_REVIEW_RETRY_MAX", "3") or 3)
 
 
 def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
@@ -1671,15 +1734,119 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
         _run_engine(_asr_script(asr_eng), wd)
         if stopped():
             return
-        run_translate(wd, target=target, mode=translate_mode)
+        try:
+            run_translate(wd, target=target, mode=translate_mode)
+        except Exception as e_tr:  # noqa: BLE001
+            if "stopped by user" in str(e_tr).lower() or stopped():
+                print(f"[auto] {job_id}: DỪNG lúc dịch/soát — không nhảy TTS", flush=True)
+                raise _Stopped(job_id) from e_tr
+            raise
         # TỰ KIỂM TRA missing + coverage ASR (không tin n_missing cũ / script salvage ngắn)
         n_miss = count_script_missing(wd)
         gap = translate_coverage_gap(wd)
         if n_miss > 0 or gap > 0:
             print(f"[auto] {job_id}: dịch còn miss={n_miss} gap={gap} -> vá lô nhỏ")
-            run_translate(wd, batch=25, target=target, mode="batch")
+            try:
+                run_translate(wd, batch=25, target=target, mode="batch")
+            except Exception as e_tr2:  # noqa: BLE001
+                if "stopped by user" in str(e_tr2).lower() or stopped():
+                    print(f"[auto] {job_id}: DỪNG lúc vá dịch — không nhảy TTS", flush=True)
+                    raise _Stopped(job_id) from e_tr2
+                raise
             n_miss = count_script_missing(wd)
             gap = translate_coverage_gap(wd)
+        # Soát dở (còn câu chưa rv) → không TTS khi AUTO_REVIEW bật
+        try:
+            from core.config import get as _cfg_get
+            _ar = (_cfg_get("AUTO_REVIEW", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
+        except Exception:  # noqa: BLE001
+            _ar = True
+        if _ar:
+            try:
+                rows_chk = json.loads((wd / "script.json").read_text(encoding="utf-8"))
+                n_unrev = sum(1 for r in rows_chk if isinstance(r, dict) and not r.get("rv") and (r.get("vi") or "").strip())
+            except Exception:  # noqa: BLE001
+                n_unrev = -1
+            if n_unrev > 0:
+                # Studio SOP: cùng ghế queue — chạy hết soát rồi mới TTS (không nhả job).
+                print(
+                    f"[auto] {job_id}: còn {n_unrev} câu chưa rv — chạy REVIEW trong ghế "
+                    f"(Aurora∥ / local fallback), không nhảy job",
+                    flush=True,
+                )
+                try:
+                    from engines.translate import run_review as _finish_review
+                    _finish_review(wd, target=target, force=False)
+                except Exception as e_rv:  # noqa: BLE001
+                    if "stopped by user" in str(e_rv).lower() or stopped():
+                        print(f"[auto] {job_id}: DỪNG lúc soát — không TTS", flush=True)
+                        raise _Stopped(job_id) from e_rv
+                    print(f"[auto] {job_id}: REVIEW lỗi: {e_rv}", flush=True)
+                try:
+                    rows_chk2 = json.loads((wd / "script.json").read_text(encoding="utf-8"))
+                    n_unrev = sum(
+                        1
+                        for r in rows_chk2
+                        if isinstance(r, dict)
+                        and not r.get("rv")
+                        and (r.get("vi") or "").strip()
+                    )
+                except Exception:  # noqa: BLE001
+                    n_unrev = -1
+                if n_unrev > 0:
+                    print(
+                        f"[auto] {job_id}: sau REVIEW vẫn còn {n_unrev} chưa rv — PARK ghế",
+                        flush=True,
+                    )
+                    try:
+                        m_pend = Manifest(wd)
+                        tr = m_pend.data.setdefault("stages", {}).setdefault("translate", {})
+                        tr.update({
+                            "status": "pending",
+                            "cur_text": f"soát dở — còn {n_unrev} câu chưa rv",
+                            "updated_at": time.time(),
+                        })
+                        m_pend.data["stages"]["translate"] = tr
+                        tts = m_pend.data.setdefault("stages", {}).setdefault("tts", {})
+                        if tts.get("status") == "running":
+                            tts["status"] = "pending"
+                            tts["cur_text"] = "chờ soát xong"
+                        agent_wr = dict(m_pend.data.get("agent") or {})
+                        agent_wr["held_at"] = "waiting_review"
+                        agent_wr["hold_reason"] = f"soát dở — còn {n_unrev} câu chưa rv"
+                        # fix 2026-11-11 B2: park waiting_review = THỬ LẠI sau X giây (không chờ vô hạn)
+                        n_try = int(agent_wr.get("review_retries") or 0) + 1
+                        agent_wr["review_retries"] = n_try
+                        if n_try > _REVIEW_RETRY_MAX:
+                            agent_wr["held_at"] = "review_failed"
+                            agent_wr["hold_after_translate"] = True
+                            agent_wr["hold_reason"] = (
+                                f"REVIEW thất bại {n_try - 1} lượt — còn {n_unrev} câu chưa rv, cần người xem"
+                            )
+                            agent_wr.pop("review_retry_at", None)
+                        else:
+                            agent_wr["review_retry_at"] = time.time() + _REVIEW_RETRY_SEC
+                        m_pend.data["agent"] = agent_wr
+                        m_pend.save()
+                    except Exception as e_pend:  # noqa: BLE001
+                        print(f"[auto] {job_id}: stamp review-incomplete: {e_pend}", flush=True)
+                    return
+            # Soát xong (unrev=0) → gỡ waiting_review để tiếp TTS
+            if n_unrev == 0:
+                try:
+                    m_clr = Manifest(wd)
+                    ag_clr = dict(m_clr.data.get("agent") or {})
+                    if ag_clr.get("held_at") == "waiting_review" or "review_retries" in ag_clr:
+                        if ag_clr.get("held_at") == "waiting_review":
+                            ag_clr.pop("held_at", None)
+                        if "soát" in str(ag_clr.get("hold_reason") or "").lower():
+                            ag_clr.pop("hold_reason", None)
+                        ag_clr.pop("review_retries", None)
+                        ag_clr.pop("review_retry_at", None)
+                        m_clr.data["agent"] = ag_clr
+                        m_clr.save()
+                except Exception:  # noqa: BLE001
+                    pass
         ready, why = translate_ready_for_tts(wd)
         if not ready:
             # TRƯỚC: «TTS sẽ bỏ qua câu thiếu» → nhảy TTS với script dở (vd 398/2698)
@@ -1700,13 +1867,44 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
             return
         if stopped():
             return
+        # Second Brain: scan/heal chất lượng VI trước khi TTS
+        try:
+            from agents.agent_quality import scan_and_heal_job
+            qb = scan_and_heal_job(wd, write=True)
+            if int(qb.get("high_open") or 0) > 0 and not (
+                (Manifest(wd).data.get("agent") or {}).get("qa_override")
+            ):
+                m_br = Manifest(wd)
+                agent_br = dict(m_br.data.get("agent") or {})
+                agent_br["hold_after_translate"] = True
+                agent_br["qa_blocked"] = True
+                agent_br["held_at"] = "qa_brain"
+                agent_br["hold_reason"] = (
+                    f"Second Brain: {qb.get('high_open')} high QA — chặn TTS/mux"
+                )
+                m_br.data["agent"] = agent_br
+                tr_br = m_br.data.setdefault("stages", {}).setdefault("translate", {})
+                tr_br["cur_text"] = (
+                    f"HOLD Brain — {qb.get('high_open')} high QA flags"
+                )
+                m_br.save()
+                print(
+                    f"[auto] {job_id}: Second Brain HOLD "
+                    f"(high={qb.get('high_open')}) — bỏ qua TTS/mux",
+                    flush=True,
+                )
+                return
+        except Exception as e_br:  # noqa: BLE001
+            print(f"[auto] {job_id}: brain quality skip: {e_br}", flush=True)
         # Pineline V2 Agent: HOLD sau translate — không TTS đến khi duyệt script
         m_hold = Manifest(wd)
         agent_cfg = m_hold.data.get("agent") or {}
-        if agent_cfg.get("hold_after_translate"):
+        if agent_cfg.get("hold_after_translate") or agent_cfg.get("qa_blocked"):
             agent_cfg = dict(agent_cfg)
-            agent_cfg["held_at"] = "after_translate"
-            agent_cfg["hold_reason"] = "chờ duyệt script (Agent/UI) trước TTS"
+            if not agent_cfg.get("held_at"):
+                agent_cfg["held_at"] = "after_translate"
+            if not agent_cfg.get("hold_reason"):
+                agent_cfg["hold_reason"] = "chờ duyệt script (Agent/UI) trước TTS"
             m_hold.data["agent"] = agent_cfg
             tr = m_hold.data.setdefault("stages", {}).setdefault("translate", {})
             tr["cur_text"] = "HOLD — chờ duyệt script trước TTS"
@@ -1721,8 +1919,8 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
         qa_default = (os.getenv("AGENT_QA_GATE") or "1").strip().lower() in ("1", "true", "yes")
         qa_on = agent_cfg.get("qa_gate") if "qa_gate" in agent_cfg else qa_default
         if qa_on and not agent_cfg.get("qa_override"):
-            from agent_qa_gate import run_qa_gate
-            from translate import run_review as _run_review_sync
+            from agents.agent_qa_gate import run_qa_gate
+            from engines.translate import run_review as _run_review_sync
 
             def _rev(work_dir, target="Tiếng Việt", model=None):
                 _run_review_sync(work_dir, target=target, model=model)
@@ -1730,10 +1928,21 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
             print(f"[auto] {job_id}: QA gate — snapshot + review…")
             gate = run_qa_gate(wd, run_review_fn=_rev, target=target)
             if not gate.get("pass"):
-                print(
-                    f"[auto] {job_id}: QA BLOCK — "
-                    f"{(gate.get('diff') or {}).get('fail_reasons') or gate.get('error')}"
-                )
+                reasons = (gate.get("diff") or {}).get("fail_reasons") or gate.get("error")
+                print(f"[auto] {job_id}: QA BLOCK — {reasons}")
+                try:
+                    m_qa = Manifest(wd)
+                    ag_qa = dict(m_qa.data.get("agent") or {})
+                    ag_qa["held_at"] = "qa_gate"
+                    ag_qa["hold_after_translate"] = True
+                    ag_qa["qa_blocked"] = True
+                    ag_qa["hold_reason"] = f"QA gate block — {reasons}"
+                    m_qa.data["agent"] = ag_qa
+                    tr_qa = m_qa.data.setdefault("stages", {}).setdefault("translate", {})
+                    tr_qa["cur_text"] = f"HOLD QA gate — {reasons}"
+                    m_qa.save()
+                except Exception as e_qa:  # noqa: BLE001
+                    print(f"[auto] {job_id}: stamp QA HOLD: {e_qa}", flush=True)
                 return
             print(f"[auto] {job_id}: QA pass — tiếp TTS")
             if stopped():
@@ -1767,7 +1976,7 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
         if audio_mode in ("demucs_keep", "demucs_clean"):   # cần tách nền
             free_gpu_vram("trước tách nền")
             import importlib
-            import separate as _sep_mod
+            import engines.separate as _sep_mod
             _sep_mod = importlib.reload(_sep_mod)
             _sep_mod.run_separate(wd)
             if stopped():
@@ -1862,7 +2071,7 @@ def _translate_title(job_id: str) -> None:
     """Dịch tiêu đề gốc (Trung) sang tiếng Việt bằng gemma4 local, lưu title_vi."""
     ok = False
     try:
-        from llm import chat
+        from engines.llm import chat
         wd = WORK_ROOT / job_id
         m = Manifest(wd)
         if m.data.get("title_vi"):
@@ -1872,7 +2081,7 @@ def _translate_title(job_id: str) -> None:
         if not title or not _has_cjk(title):
             ok = True  # không cần dịch
             return
-        from config import get as _cfg_get
+        from core.config import get as _cfg_get
         model = _cfg_get("TRANSLATE_MODEL") or None
         msgs = [{"role": "user", "content":
                  "Dịch tiêu đề video sau sang tiếng Việt tự nhiên, ngắn gọn. "
@@ -1993,7 +2202,7 @@ def _apply_hybrid_asr_overlay(work_dir: Path, result: dict) -> dict:
         if asr.get("status") == "running":
             eng = asr.get("asr_engine") or asr.get("engine") or ""
             if eng == "hybrid_fa":
-                from asr_hybrid_progress import overlay_job_asr
+                from engines.asr.asr_hybrid_progress import overlay_job_asr
                 over = overlay_job_asr(work_dir, asr)
                 if over is not asr:
                     stages = dict(out.get("stages") or {})
@@ -2960,7 +3169,7 @@ def api_fs_pick_dirs(
     except OSError:
         init = "D:\\Lib"
 
-    script = Path(__file__).resolve().parent / "pick_dirs_dialog.py"
+    script = _engine_script_path("pick_dirs_dialog.py")
     if not script.is_file():
         return JSONResponse({"error": f"thiếu {script.name}"}, status_code=500)
     try:
@@ -3152,14 +3361,14 @@ def _run_stage(job_id: str, stage: str, target: str, force: bool,
             is_subjob = bool(req.get("parent_job_id"))
             dur = float((m.stage("download") or {}).get("duration_sec") or 0.0)
             if dur <= 0:
-                from render import _find_video
+                from engines.render import _find_video
                 v_cand = _find_video(work_dir)
                 if v_cand and v_cand.exists():
-                    from split_parts import probe_duration
+                    from engines.split_parts import probe_duration
                     dur = probe_duration(v_cand)
 
             if dur >= 3.0 * 3600.0 and not is_subjob:
-                from split_parts import split_job_to_subjobs, merge_subjob_asr_to_parent
+                from engines.split_parts import split_job_to_subjobs, merge_subjob_asr_to_parent
                 sp_res = split_job_to_subjobs(job_id)
                 sub_ids = sp_res.get("sub_job_ids") or []
                 if sub_ids:
@@ -3196,7 +3405,7 @@ def _run_stage(job_id: str, stage: str, target: str, force: bool,
         elif stage == "separate":
             free_gpu_vram("trước tách nền")
             import importlib
-            import separate as _sep_mod
+            import engines.separate as _sep_mod
             _sep_mod = importlib.reload(_sep_mod)
             _sep_mod.run_separate(work_dir, force=force)
         elif stage == "mux":
@@ -3206,6 +3415,22 @@ def _run_stage(job_id: str, stage: str, target: str, force: bool,
     except _Stopped:
         print(f"[stage {stage}] job {job_id}: đã DỪNG theo yêu cầu")
     except Exception as e:  # noqa: BLE001
+        # translate/review raise RuntimeError("stopped by user") — coi như Stop, không fail→TTS
+        if "stopped by user" in str(e).lower() or job_id in _STOP_JOBS:
+            print(f"[stage {stage}] job {job_id}: đã DỪNG theo yêu cầu ({e})")
+            try:
+                m_stop = Manifest(work_dir)
+                st = m_stop.stage(stage) or {}
+                if st.get("status") == "running":
+                    st = dict(st)
+                    st["status"] = "pending"
+                    st["cur_text"] = "đã dừng theo yêu cầu"
+                    st["updated_at"] = time.time()
+                    m_stop.data.setdefault("stages", {})[stage] = st
+                    m_stop.save()
+            except Exception:  # noqa: BLE001
+                pass
+            return
         print(f"[stage {stage}] job {job_id} lỗi: {e}")
         try:
             m_err = Manifest(work_dir)
@@ -3494,7 +3719,7 @@ def _do_tts(work_dir: Path, voice: str, speed: float, engine: str, force: bool):
     print(f"[tts] _do_tts START job={work_dir.name} engine={engine} voice={voice} force={force}",
           flush=True)
     import importlib as _imp_tts
-    import clone_tts as _clone_tts_mod
+    import engines.clone_tts as _clone_tts_mod
     _clone_tts_mod = _imp_tts.reload(_clone_tts_mod)
     _clone_tts_mod.run_clone_tts(work_dir, engine, voice, speed=speed, force=force)
 
@@ -3562,7 +3787,7 @@ def _do_render(work_dir: Path, force: bool = True, audio_mode: str = "voice_bgm"
         tts_json = work_dir / "tts.json"
         if tts_json.exists():
             import importlib as _imp_asm
-            import assemble as _asm_mod
+            import engines.assemble as _asm_mod
             _asm_mod = _imp_asm.reload(_asm_mod)
             assemble, assemble_fit, NAIVE_MAX_SEC = (
                 _asm_mod.assemble, _asm_mod.assemble_fit, _asm_mod.NAIVE_MAX_SEC
@@ -3619,9 +3844,9 @@ def _do_render(work_dir: Path, force: bool = True, audio_mode: str = "voice_bgm"
             pass
         # Reload mỗi lần mux — WrapStyle/CUT/config SUB_* đổi mà không cần restart server
         import importlib
-        import config as _cfg_mod
-        import subs as _subs_mod
-        import render as _render_mod
+        import core.config as _cfg_mod
+        import engines.subs as _subs_mod
+        import engines.render as _render_mod
         importlib.reload(_cfg_mod)
         importlib.reload(_subs_mod)
         _render_mod = importlib.reload(_render_mod)
@@ -3801,7 +4026,7 @@ def translate_fill(job_id: str):
     """VÁ câu trống ở bước Dịch: chạy lại dịch với LÔ NHỎ (25) — run_translate tự
     resume đúng câu chưa có bản dịch (đỡ lỗi JSON lô lớn làm rớt câu)."""
     import importlib
-    import translate as _tr
+    import engines.translate as _tr
     _tr = importlib.reload(_tr)
     work_dir = WORK_ROOT / job_id
     if not (work_dir / "script.json").exists():
@@ -3880,7 +4105,7 @@ def edit_script_line(job_id: str, req: ScriptLineEdit):
         zh = (req.zh or "").strip()
         # Rút spam cười/ư khi lưu tay (ASR hay dính hàng trăm 哈/呃)
         try:
-            from translate import clean_zh_spam
+            from engines.translate import clean_zh_spam
             zh = clean_zh_spam(zh)
         except Exception:  # noqa: BLE001
             pass
@@ -3915,7 +4140,7 @@ def edit_script_line(job_id: str, req: ScriptLineEdit):
     if req.zh is not None:
         # sub.zh.srt mặc định lấy asr.json — khi sửa tay ở bước dịch thì ghi từ script
         try:
-            from subs import to_srt
+            from engines.subs import to_srt
             (work_dir / "sub.zh.srt").write_text(to_srt(rows, key="zh"), encoding="utf-8")
         except Exception:  # noqa: BLE001
             pass
@@ -3950,8 +4175,8 @@ def edit_script_line(job_id: str, req: ScriptLineEdit):
 @app.post("/api/jobs/{job_id}/script-clean-spam")
 def clean_script_spam(job_id: str):
     """Rút chuỗi 哈/呃 spam trong script.json (ASR lỗi) + prefill vi trivial nếu trống."""
-    from translate import clean_zh_spam, _trivial_vi
-    from subs import to_srt
+    from engines.translate import clean_zh_spam, _trivial_vi
+    from engines.subs import to_srt
 
     work_dir = WORK_ROOT / job_id
     sp = work_dir / "script.json"
@@ -3999,6 +4224,23 @@ def set_tts_voice(job_id: str, req: "TTSVoiceReq"):
     if req.engine:
         _save_tts_engine(work_dir, req.engine)
     return {"ok": True, "voice": req.voice, "speed": req.speed, "engine": req.engine}
+
+
+def _req_audio(work_dir: Path, req) -> tuple[str, float, float]:
+    """fix 2026-11-11 B6: audio của run-all / mux = trường client GỬI → queue_opts đã pin của job
+    → config batch. Trước: mặc định cứng của model (voice_bgm / 0.6) đè config batch (sfx_lib…)."""
+    keys = ("audio_mode", "voice_vol", "orig_vol")
+    sent = getattr(req, "model_fields_set", None)
+    explicit = {k: getattr(req, k, None) for k in keys if sent is None or k in sent}
+    try:
+        pinned = Manifest(work_dir).data.get("queue_opts") or {}
+    except Exception:  # noqa: BLE001
+        pinned = {}
+    o = batch_config.resolve_job_opts({k: pinned.get(k) for k in keys}, explicit, fill_voice=False)
+    am = str(o.get("audio_mode") or "duck_bgm")
+    vv = float(o["voice_vol"]) if o.get("voice_vol") is not None else 0.2
+    ov = float(o["orig_vol"]) if o.get("orig_vol") is not None else 0.22
+    return am, vv, ov
 
 
 @app.post("/api/jobs/{job_id}/run-all")
@@ -4071,9 +4313,11 @@ def run_all(job_id: str, req: "RunAllReq"):
     except Exception:  # noqa: BLE001
         pass
 
+    _am, _vv, _ov = _req_audio(work_dir, req)
+
     def _wrapped_all():
         # Claim __all__ giữ đến hết _auto_gpu (release trong _auto_pipeline/_gpu_wrapped)
-        _auto_pipeline(job_id, req.audio_mode, req.voice_vol, req.orig_vol,
+        _auto_pipeline(job_id, _am, _vv, _ov,
                        bool(req.ocr), req.fit, getattr(req, "resolution", None) or "source",
                        getattr(req, "translate_mode", None), render_kw,
                        asr_engine=getattr(req, "asr_engine", None))
@@ -4286,16 +4530,25 @@ def _queue_run_one(job_id: str, opts: dict) -> tuple[str, str]:
                 print(f"[auto-split] heal parent stages {job_id}: {e_heal}", flush=True)
         if job_queue.is_wired_done(work_dir):
             try:
-                import auto_publisher
+                import agents.auto_publisher as auto_publisher
                 auto_publisher.enqueue_publish(job_id)
             except Exception as e_pub:
                 print(f"[auto-publish] Lỗi trigger tự động: {e_pub}", flush=True)
             return "done", "hoàn tất"
-        held = (Manifest(work_dir).data.get("agent") or {}).get("held_at")
-        if held:
-            return "held", f"dừng chờ duyệt ({held}) — duyệt xong gọi «chạy tiếp»"
-        # Bóc tách lỗi cụ thể từ stage bị dừng (vd dịch hết quota LLM) để báo chính xác
         m_curr = Manifest(work_dir)
+        agent_end = m_curr.data.get("agent") or {}
+        held = agent_end.get("held_at")
+        if held or agent_end.get("hold_after_translate") or agent_end.get("qa_blocked"):
+            why_h = held or (
+                "qa_blocked" if agent_end.get("qa_blocked") else "after_translate"
+            )
+            return "held", f"dừng chờ duyệt ({why_h}) — giữ ghế hàng đợi đến khi sẵn sàng"
+        # Soft park khi stamp soát/HOLD trên translate (không fail → worker không nhảy job kế)
+        tr_end = m_curr.stage("translate") or {}
+        cur_tr = str(tr_end.get("cur_text") or "")
+        if "soát dở" in cur_tr or "HOLD" in cur_tr:
+            return "held", f"chờ soát/HOLD — {cur_tr[:120]}"
+        # Bóc tách lỗi cụ thể từ stage bị dừng (vd dịch hết quota LLM) để báo chính xác
         for stg in ("download", "asr", "translate", "tts", "mux"):
             stg_info = m_curr.stage(stg) or {}
             if stg_info.get("status") == "failed" and stg_info.get("error"):
@@ -4397,7 +4650,7 @@ def _list_asr_sources(work_dir: Path) -> list[dict]:
 def _promote_asr_source(work_dir: Path, source: str) -> dict:
     """Copy sidecar → asr.json + sub.zh.srt; backup asr.json cũ."""
     import shutil
-    from subs import to_srt
+    from engines.subs import to_srt
 
     src_name = Path(source).name  # chống path traversal
     if not src_name.startswith("asr") or not src_name.endswith(".json"):
@@ -4428,7 +4681,7 @@ def _promote_asr_source(work_dir: Path, source: str) -> dict:
         raise ValueError(f"{src_name} không có câu text")
     # Tự rút spam tiếng nền + vá từ sidecar khác (không cần check tay)
     try:
-        from asr_spam import sanitize_asr_rows
+        from engines.asr.asr_spam import sanitize_asr_rows
         norm, spam_info = sanitize_asr_rows(
             norm, work_dir=work_dir, source_path=src, heal=True)
         if spam_info.get("n_cleaned") or spam_info.get("n_healed"):
@@ -4812,7 +5065,7 @@ def get_translate_alts(job_id: str):
     work_dir = WORK_ROOT / job_id
     if not (work_dir / "manifest.json").exists():
         return JSONResponse({"error": "not found"}, status_code=404)
-    from translate_alts import analyze_pack_report
+    from engines.translate_alts import analyze_pack_report
     out: dict = {"report": analyze_pack_report(work_dir)}
     st = Manifest(work_dir).stage("translate_alts") or {}
     out["stage"] = st
@@ -4837,7 +5090,7 @@ def run_translate_alts_api(job_id: str, req: TranslateAltsReq):
 
     def _wrapped():
         try:
-            from translate_alts import run_ambiguous_alts
+            from engines.translate_alts import run_ambiguous_alts
             run_ambiguous_alts(
                 work_dir,
                 force=bool(req.force),
@@ -4883,7 +5136,7 @@ def apply_alt_pick(job_id: str, req: ApplyAltReq):
     hit["manual"] = True
     sp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     try:
-        from subs import to_srt
+        from engines.subs import to_srt
         (work_dir / "sub.vi.srt").write_text(to_srt(rows, key="vi"), encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
@@ -4925,7 +5178,7 @@ def run_hardsub_asr_api(job_id: str, req: HardsubAsrReq):
 
     def _wrapped():
         try:
-            from hardsub_asr import run_hardsub_asr
+            from engines.asr.hardsub_asr import run_hardsub_asr
             run_hardsub_asr(
                 work_dir,
                 dur=req.dur,
@@ -5272,7 +5525,7 @@ def _write_srt(work_dir: Path, lang: str) -> tuple[Path, str] | None:
                 segs = None
         if not segs and script_p.exists():
             try:
-                from subs import split_bilingual_rows, sub_split_cfg, to_srt as _to_srt
+                from engines.subs import split_bilingual_rows, sub_split_cfg, to_srt as _to_srt
                 rows = json.loads(script_p.read_text(encoding="utf-8"))
                 mz, mv, md = sub_split_cfg()
                 segs = split_bilingual_rows(
@@ -5283,7 +5536,7 @@ def _write_srt(work_dir: Path, lang: str) -> tuple[Path, str] | None:
                 segs = json.loads(script_p.read_text(encoding="utf-8"))
         if not segs:
             return None
-        from subs import to_srt as _to_srt
+        from engines.subs import to_srt as _to_srt
         srt = _to_srt(segs, key="vi")
         out = work_dir / "sub.vi.srt"
         try:
@@ -5329,7 +5582,7 @@ def list_voices():
 def list_frames():
     """Danh sách PNG khung trong assets/overlays/frames."""
     try:
-        from render_fx import list_frame_files
+        from engines.render_fx import list_frame_files
         return {"frames": [p.name for p in list_frame_files()]}
     except Exception as e:  # noqa: BLE001
         return {"frames": [], "error": str(e)}
@@ -5339,7 +5592,7 @@ def list_frames():
 def list_brand_logos():
     """Logo kênh (assets/overlays/logos hoặc brand)."""
     try:
-        from render_fx import list_brand_logo_files
+        from engines.render_fx import list_brand_logo_files
         return {"logos": [p.name for p in list_brand_logo_files()]}
     except Exception as e:  # noqa: BLE001
         return {"logos": [], "error": str(e)}
@@ -5518,7 +5771,7 @@ def voice_sample(engine: str = TTS_ENGINE_DEFAULT, voice: str = "",
     stale = False
     if out.exists():
         try:
-            from clone_tts import voice_ref_text
+            from engines.clone_tts import voice_ref_text
             vr = voice_ref_text(voice)
             if vr and vr[0].exists() and out.stat().st_mtime < vr[0].stat().st_mtime:
                 stale = True
@@ -5568,7 +5821,7 @@ def regen_tts(job_id: str, req: TTSReq):
 
     # Kiểm tra python engine TRƯỚC khi xếp hàng — tránh kẹt "starting" mãi
     try:
-        from clone_tts import resolve_engine_python
+        from engines.clone_tts import resolve_engine_python
         py = resolve_engine_python(eng)
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"error": str(e)}, status_code=400)
@@ -5830,7 +6083,7 @@ def delete_audio(job_id: str):
 def _translate_batch_size() -> int:
     """Cỡ lô dịch — đọc TRANSLATE_BATCH (mặc định 20). Không hardcode 100."""
     try:
-        from config import get as _cfg_get
+        from core.config import get as _cfg_get
         return max(5, int(_cfg_get("TRANSLATE_BATCH", "20") or 20))
     except Exception:  # noqa: BLE001
         try:
@@ -5855,8 +6108,19 @@ def _translate_flow(work_dir: Path, target: str, model: str | None,
         if not review_only:
             run_translate(work_dir, batch, target, bool(force), model or None, mode)
         if review_only or review_model:
-            run_review(work_dir, min(40, max(batch, 20)), target, review_model or None)
+            # review_only: force=True để soát lại từ đầu khi user bấm Soát lại
+            run_review(
+                work_dir,
+                min(40, max(batch, 20)),
+                target,
+                review_model or None,
+                force=bool(review_only or force),
+            )
     except Exception as e:  # noqa: BLE001
+        msg = str(e).lower()
+        if "stopped by user" in msg or (work_dir / ".stop").exists():
+            print(f"[translate flow] job {work_dir.name}: DỪNG theo yêu cầu", flush=True)
+            raise
         print(f"[translate flow] job {work_dir.name} lỗi: {e}")
 
 
@@ -5896,6 +6160,7 @@ def retranslate_job(job_id: str, req: TranslateReq):
             ),
             "mode": mode_s,
             "model": req.model,
+            "review_model": req.review_model or st.get("review_model"),
             "updated_at": time.time(),
         })
         m.data["stages"]["translate"] = st
@@ -5952,7 +6217,7 @@ def mux_job(job_id: str, req: MuxReq):
     except Exception:  # noqa: BLE001
         pass
     res = _submit_claimed(
-        _gpu, job_id, "mux", _do_render, work_dir, True, req.audio_mode, req.voice_vol, req.orig_vol,
+        _gpu, job_id, "mux", _do_render, work_dir, True, *_req_audio(work_dir, req),
         req.add_sub, req.fit, req.resolution or "source", (req.flip or "").strip(),
         clamp_zoom(req.zoom), bool(req.motion), bool(req.lut),
         (req.grain or "weak"), bool(getattr(req, "brand", False)),
@@ -5979,7 +6244,7 @@ def assemble_job(job_id: str, fit: bool = True, max_speed: float = 1.0):
         return busy
     if not _claim_stage(job_id, "assemble"):
         return JSONResponse({"error": "đã nhận lệnh trước đó — không gửi trùng"}, status_code=409)
-    from assemble import assemble, assemble_fit
+    from engines.assemble import assemble, assemble_fit
     try:
         return assemble_fit(work_dir, max_speed=max_speed) if fit else assemble(work_dir)
     except Exception as e:  # noqa: BLE001
@@ -5995,7 +6260,7 @@ def get_split_plan(job_id: str, target_hours: float = 2.5):
     video = _find_video(work_dir)
     if not video or not video.exists():
         return JSONResponse({"error": "chưa có video nguồn"}, status_code=400)
-    from split_parts import compute_smart_plan, probe_duration
+    from engines.split_parts import compute_smart_plan, probe_duration
     try:
         dur = probe_duration(video)
         plan = compute_smart_plan(video, target_hours=target_hours)
@@ -6013,7 +6278,7 @@ def get_split_plan(job_id: str, target_hours: float = 2.5):
 @app.post("/api/jobs/{job_id}/split-parts")
 def api_split_job_parts(job_id: str, target_hours: float = 2.5):
     """Chia video dài thành các sub-jobs (Part 1, Part 2...) để chạy pipeline độc lập chống lệch time."""
-    from split_parts import split_job_to_subjobs
+    from engines.split_parts import split_job_to_subjobs
     try:
         res = split_job_to_subjobs(job_id, target_hours=target_hours, work_root=WORK_ROOT)
         return res
@@ -6024,7 +6289,7 @@ def api_split_job_parts(job_id: str, target_hours: float = 2.5):
 @app.post("/api/jobs/{job_id}/merge-parts")
 def api_merge_job_parts(job_id: str):
     """Ghép các sub-jobs đã render hoàn chỉnh thành bản Full output_full.mp4 (lossless concat 30s)."""
-    from split_parts import merge_job_parts
+    from engines.split_parts import merge_job_parts
     try:
         res = merge_job_parts(job_id, work_root=WORK_ROOT)
         return res
@@ -6135,8 +6400,8 @@ def delete_job(job_id: str):
 # ===== Hongguo Downloader bridge (local :8000) =====
 
 
-import job_queue
-import batch_config
+import core.job_queue as job_queue
+import core.batch_config as batch_config
 
 job_queue.WORK_ROOT = WORK_ROOT
 _UNDER_PYTEST = "pytest" in sys.modules
@@ -6147,12 +6412,54 @@ job_queue.set_stop_hook(_stop_job)
 job_queue.set_clear_stop_hook(_clear_stop)
 
 
+def _queue_park_ready(job_id: str) -> bool:
+    """True khi job đang park (HOLD/soát) có thể chạy tiếp TTS — không nhảy job khác."""
+    wd = WORK_ROOT / job_id
+    if not (wd / "manifest.json").is_file():
+        return False
+    try:
+        m = Manifest(wd)
+    except Exception:  # noqa: BLE001
+        return False
+    agent = m.data.get("agent") or {}
+    if agent.get("hold_after_translate") or agent.get("qa_blocked"):
+        return False
+    held = str(agent.get("held_at") or "").strip()
+    if held == "waiting_review":
+        try:
+            rows = json.loads((wd / "script.json").read_text(encoding="utf-8"))
+            unrev = sum(
+                1
+                for r in rows
+                if isinstance(r, dict)
+                and not r.get("rv")
+                and (r.get("vi") or "").strip()
+            )
+        except Exception:  # noqa: BLE001
+            return False
+        if unrev == 0:
+            return True
+        # fix 2026-11-11 B2: tới hạn thử lại → chạy lại cùng job (REVIEW trong ghế), không treo hàng đợi
+        try:
+            due = float(agent.get("review_retry_at") or 0)
+        except (TypeError, ValueError):
+            due = 0.0
+        return bool(due) and time.time() >= due
+    if held:
+        # qa_brain / qa_gate / after_translate — cần resume/clear hold
+        return False
+    return True
+
+
+job_queue.set_park_ready_hook(_queue_park_ready)
+
+
 # ===== Route tách file (đợt 7): UI, Hongguo, Agent =====
 # Phải nạp sau mọi hàm/model lõi ở trên; các module này đọc server qua `import server as S`.
-import routes_ui  # noqa: E402
-import routes_hg  # noqa: E402
-import routes_agent  # noqa: E402
-from routes_ui import (  # noqa: E402,F401
+import http_routes.routes_ui as routes_ui  # noqa: E402
+import http_routes.routes_hg as routes_hg  # noqa: E402
+import http_routes.routes_agent as routes_agent  # noqa: E402
+from http_routes.routes_ui import (  # noqa: E402,F401
     _html_file,
     find_index,
     index,
@@ -6161,7 +6468,7 @@ from routes_ui import (  # noqa: E402,F401
     ui_hongguo,
     ui_hongguo2,
 )
-from routes_hg import (  # noqa: E402,F401
+from http_routes.routes_hg import (  # noqa: E402,F401
     HgRankEpsIn,
     HgTranslateTitlesIn,
     _hg_base,
@@ -6189,7 +6496,7 @@ from routes_hg import (  # noqa: E402,F401
     hg_translate_titles,
     hg_web_search,
 )
-from routes_agent import (  # noqa: E402,F401
+from http_routes.routes_agent import (  # noqa: E402,F401
     AgentAvSyncHealReq,
     AgentAvSyncScanReq,
     AgentHealBatchReq,
@@ -6243,6 +6550,23 @@ app.include_router(routes_ui.router)
 app.include_router(routes_hg.router)
 app.include_router(routes_agent.router)
 
+# fix 2026-11-11: router tuỳ cây (V4: films/meta + uploader settings). Không có file → bỏ qua,
+# nên server.py dùng chung được cho V2/V4 mà không mất route của cây nào.
+for _opt_router in ("routes_films", "routes_uploader_settings"):
+    import importlib as _il_r
+    for _cand in (_opt_router, f"http_routes.{_opt_router}"):
+        try:
+            app.include_router(_il_r.import_module(_cand).router)
+            print(f"[startup] router {_cand} ON", flush=True)
+            break
+        except ModuleNotFoundError as _e_r:
+            if getattr(_e_r, "name", "") not in (_cand, _opt_router, "http_routes"):
+                print(f"[startup] router {_cand} lỗi import: {_e_r}", flush=True)
+                break
+        except Exception as _e_r:  # noqa: BLE001
+            print(f"[startup] router {_cand} lỗi: {_e_r}", flush=True)
+            break
+
 
 @app.middleware("http")
 async def _hg1_hg2_split(request, call_next):
@@ -6251,7 +6575,7 @@ async def _hg1_hg2_split(request, call_next):
     - `/api/hg2/*` → rewrite thành `/api/hg/*` (hoặc `/api/disk`) + ép RPC
     - `/api/hg/*`  → ép HTTP Downloader :8000 (classic, không license)
     """
-    import hg_ui_ctx as ctx
+    import agents.hg_ui_ctx as ctx
     path = request.scope.get("path") or ""
     if path == "/api/hg2/disk" or path.startswith("/api/hg2/disk/"):
         request.state.hg_ui = "2"
@@ -6279,7 +6603,7 @@ async def _hg1_hg2_split(request, call_next):
 @app.on_event("startup")
 def _start_agent_watch():
     try:
-        from agent_watch import start_watcher
+        from agents.agent_watch import start_watcher
         on = start_watcher(WORK_ROOT, list_jobs=list_jobs, hooks=_HEAL_HOOKS)
         if on:
             print("[startup] Agent watcher ON (AGENT_WATCH=1)")
@@ -6289,12 +6613,42 @@ def _start_agent_watch():
         print(f"[startup] agent watch lỗi: {e}")
 
 
+@app.on_event("startup")
+def _start_agent_brain():
+    """Second Brain — daemon full-silent (ops + quality + infra)."""
+    try:
+        from agents.agent_brain import start_brain
+        hooks = dict(_HEAL_HOOKS)
+        hooks["set_hold"] = _agent_set_hold
+        hooks["set_hold_after_translate"] = _agent_set_hold
+        on = start_brain(WORK_ROOT, hooks=hooks, list_jobs=list_jobs)
+        if on:
+            print("[startup] Second Brain ON (AGENT_BRAIN=1, full silent)")
+        else:
+            print("[startup] Second Brain OFF (set AGENT_BRAIN=1 để bật)")
+    except Exception as e:  # noqa: BLE001
+        print(f"[startup] agent brain lỗi: {e}")
+
+
+@app.post("/api/agent/brain/tick")
+def api_agent_brain_tick():
+    """Chạy 1 tick Second Brain thủ công (ops/debug)."""
+    try:
+        from agents.agent_brain import brain_once
+        hooks = dict(_HEAL_HOOKS)
+        hooks["set_hold"] = _agent_set_hold
+        hooks["set_hold_after_translate"] = _agent_set_hold
+        return brain_once(WORK_ROOT, hooks=hooks, list_jobs=list_jobs)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @app.get("/api/models")
 @app.get("/api/llm/models")
 def get_available_llm_models():
     """Trả về danh sách toàn bộ các model LLM khả dụng (llama-server :8083, Ollama, 9router)."""
     try:
-        from llm import list_available_models
+        from engines.llm import list_available_models
         return list_available_models()
     except Exception as e:
         return {"models": [], "default": "", "error": str(e)}
@@ -6310,6 +6664,8 @@ if __name__ == "__main__":
     ap.add_argument("--host", default=os.getenv("HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.getenv("PORT", "8800")))
     args = ap.parse_args()
+    # fix 2026-11-11: agent_brain / brain_context gọi HTTP về CHÍNH server này (không cứng :8801)
+    os.environ["PINELINE_PORT"] = str(args.port)
 
     # 1 bản / cổng: bản thứ 2 sẽ chạy startup (kill engine "orphan" = engine của bản đang chạy).
     import msvcrt

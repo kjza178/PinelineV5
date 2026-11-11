@@ -1057,6 +1057,26 @@ const jq=s=>JSON.stringify(String(s??'')).replace(/&/g,'&amp;').replace(/"/g,'&q
 const POSTER_BASE='http://127.0.0.1:8801/api/hg/poster?name=';
 const dur=s=>{if(!s)return'';const m=Math.round(s/60);return m>=60?Math.floor(m/60)+'h'+String(m%60).padStart(2,'0'):m+'m'};
 const POSTER=POSTER_BASE;
+/** Bỏ hg_name = job_id / downloads / …_p01 — dùng title series Lib. */
+function resolveFilmPosterName(f){
+  const jid = String(f.job_id||'').trim();
+  const stripPart = (s)=>String(s||'').replace(/\s*-\s*Phần\s+\d+\s*\/\s*\d+\s*$/i,'').trim();
+  const junk = (n)=>{
+    n = String(n||'').trim();
+    if(!n) return true;
+    if(jid && n===jid) return true;
+    const low=n.toLowerCase();
+    if(low==='downloads'||low==='download'||low==='work') return true;
+    if(/^[0-9a-f]{8,16}(_p\d{2})?$/i.test(n)) return true;
+    if(/^\d{1,3}$/.test(n)) return true;
+    return false;
+  };
+  for(const cand of [f.hg_name, stripPart(f.title), stripPart(f.series), f.title, f.series]){
+    const n = String(cand||'').trim();
+    if(!junk(n)) return n;
+  }
+  return '';
+}
 
 function toast(t){
   const e=$('toast');
@@ -2816,7 +2836,7 @@ async function load(){
     const titleVi = f.title_vi ? esc(f.title_vi) : esc(f.title);
     const titleOrig = f.title_vi ? `<small style="color:#888">${esc(f.title)}</small>` : '';
     const gone = !f.work_exists;
-    const posterName = f.hg_name || f.title || f.series || '';
+    const posterName = resolveFilmPosterName(f);
     const posterUrl = posterName ? (POSTER + encodeURIComponent(posterName)) : '';
     const mergeInfo = MERGEABLE_MAP[f.job_id];
     const canMergeParts = mergeInfo && mergeInfo.merge_ready && mergeInfo.job_id === parentJobId(f.job_id);

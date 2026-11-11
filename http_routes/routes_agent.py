@@ -14,9 +14,9 @@ import core.batch_config as batch_config
 
 from fastapi import APIRouter
 
-router = APIRouter()
+import server as S
 
-import server as S  # noqa: E402  — after router so server.include_router works if we imported first
+router = APIRouter()
 
 __all__ = [
     "AgentAvSyncHealReq",
@@ -70,7 +70,7 @@ __all__ = [
 ]
 
 
-# ===== Pineline V4 — AI Agent nhúng (agent_core) =====
+# ===== Pineline V2 — AI Agent nhúng (agent_core) =====
 import agents.agent_core as _agent_core
 
 
@@ -149,7 +149,13 @@ def _agent_run_stage(job_id: str, stage: str, opts: dict) -> dict:
         if h.get("qa_blocked") or h.get("held_at") == "qa_gate":
             from agents.agent_qa_gate import set_qa_gate
             set_qa_gate(S.WORK_ROOT / job_id, True, override_pass=True)
-    return S.run_stage(job_id, stage, force=force, voice=voice, speed=speed, engine=engine)
+    res = S.run_stage(job_id, stage, force=force, voice=voice, speed=speed, engine=engine)
+    if isinstance(res, JSONResponse):
+        try:
+            return json.loads(res.body.decode("utf-8"))
+        except Exception:
+            return {"error": f"run_stage {stage} failed", "status_code": res.status_code}
+    return res if isinstance(res, dict) else {"ok": True, "res": res}
 
 
 def _agent_stop_job(job_id: str):
@@ -453,6 +459,7 @@ def api_agent_chat(req: S.AgentChatReq):
             allow_mutate=bool(req.allow_mutate),
             max_steps=max(1, min(int(req.max_steps or 8), 16)),
             require_confirm=bool(req.require_confirm),
+            force_first_tool=(getattr(req, "force_first_tool", None) or None),
         )
         return {
             "ok": True,

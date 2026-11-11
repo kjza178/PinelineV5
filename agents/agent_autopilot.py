@@ -1,11 +1,11 @@
 """
-Auto-pilot — queue need_queue + heal safe qua HTTP Pineline (PORT / PINELINE_BASE).
+Auto-pilot — queue need_queue + heal safe qua HTTP Pineline (:8801).
 Chạy trong sidecar (agent_tele_cmd) — không cần restart server.
 """
 from __future__ import annotations
 
-import json
 import os
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,10 +16,9 @@ import requests
 import core.batch_config as batch_config
 from core.fileio import atomic_write_text, file_lock
 
-ROOT = Path(__file__).resolve().parent.parent  # project root (file lives in agents/)
+ROOT = Path(__file__).resolve().parents[1]
 STATE_PATH = ROOT / "work" / "logs" / "autopilot_state.json"
-_port = (os.getenv("PORT") or "8805").strip()
-DEFAULT_BASE = (os.getenv("PINELINE_BASE") or f"http://127.0.0.1:{_port}").strip().rstrip("/")
+DEFAULT_BASE = (os.getenv("PINELINE_BASE") or "http://127.0.0.1:8801").rstrip("/")
 
 
 def _now() -> str:
@@ -293,7 +292,7 @@ def hard_stop(base: str = DEFAULT_BASE) -> dict:
 
     # Stop mọi job đang running trên disk
     stopped: list[str] = []
-    work = Path(__file__).resolve().parent.parent / "work"
+    work = Path(__file__).resolve().parents[1] / "work"
     if work.is_dir():
         for d in work.iterdir():
             if not d.is_dir() or not (d / "manifest.json").is_file():

@@ -497,11 +497,7 @@ def reset_job_state(
             pass
 
     # 2. Gỡ cờ .stop
-    for stop_p in (
-        work / ".stop",
-        Path(f"D:/PinelineV4_work/{job_id}/.stop"),
-        Path(f"D:/PinelineV2_work/{job_id}/.stop"),  # legacy work path nếu job cũ
-    ):
+    for stop_p in (work / ".stop", Path(f"D:/PinelineV2_work/{job_id}/.stop")):
         try:
             if stop_p.exists():
                 stop_p.unlink(missing_ok=True)
@@ -557,11 +553,11 @@ def reset_job_state(
     # 3. Dọn dẹp artifact theo stage
     deleted: list[str] = []
 
-    # Real dirs (work_root + junction/alias V4/V2 trên D:)
+    # Real dirs (hỗ trợ cả work_root lẫn D:\PinelineV2_work nếu là junction/alias)
     target_dirs = {work}
-    for alt in (Path(f"D:/PinelineV4_work/{job_id}"), Path(f"D:/PinelineV2_work/{job_id}")):
-        if alt.is_dir():
-            target_dirs.add(alt)
+    d_alt = Path(f"D:/PinelineV2_work/{job_id}")
+    if d_alt.is_dir():
+        target_dirs.add(d_alt)
 
     for d in target_dirs:
         if "translate" in target_stages:

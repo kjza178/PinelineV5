@@ -15,7 +15,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-_HERE = Path(__file__).resolve().parents[1]  # project root (engines/ → ..)
+_HERE = Path(__file__).resolve().parents[1]
 _CACHE_PATH = _HERE / "work" / "_hg_title_cache.json"
 _lock = threading.Lock()
 _cache: dict | None = None

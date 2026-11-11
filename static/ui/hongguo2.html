@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Hongguo Downloader</title>
 <style>
-:root{
+  :root{
   --bg:#161412; --bg2:#1a1714; --panel:#22201c; --raise:#2a2723;
   --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
   --text:#f4efe9; --muted:#9a9188; --accent:#e8a15a; --ok:#7dca8a; --bad:#e07a7a;
@@ -17,7 +17,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--text)}
 body{display:flex;min-height:100vh;overflow:hidden}
 button,input{font:inherit;color:inherit}
 select{font:inherit}
-button{cursor:pointer}
+  button{cursor:pointer}
 a{color:inherit;text-decoration:none}
 
 .side{
@@ -99,20 +99,20 @@ a{color:inherit;text-decoration:none}
 .play-pill .ico{font-size:12px;line-height:1}
 .qual-inline{display:contents}
 .prev-mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:55;align-items:center;justify-content:center;padding:24px}
-.prev-mask.on{display:flex}
+  .prev-mask.on{display:flex}
 .prev-box{width:min(320px,90vw);max-height:90vh;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
 .prev-box.land{width:min(560px,94vw)}
 .prev-box .ph{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--bg2)}
-.prev-box .ph b{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.prev-box .psub{font-size:11px;color:var(--muted);margin-right:8px;white-space:nowrap}
+  .prev-box .ph b{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prev-box .psub{font-size:11px;color:var(--muted);margin-right:8px;white-space:nowrap}
 .prev-box .ptabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line)}
-.prev-box .epchip{font-size:12px;padding:4px 10px;border-radius:8px;border:1px solid var(--line2);background:transparent;color:var(--text);cursor:pointer}
+  .prev-box .epchip{font-size:12px;padding:4px 10px;border-radius:8px;border:1px solid var(--line2);background:transparent;color:var(--text);cursor:pointer}
 .prev-box .epchip.on{border-color:var(--accent);color:var(--accent);background:rgba(232,161,90,.1)}
 .prev-box .pstage{position:relative;flex:none;align-self:center;margin:8px 10px 10px;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:var(--pv-ar,9/16);width:min(42vh,70vw);max-width:calc(100% - 20px)}
-.prev-box .pstage > video,.prev-box .pstage > iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:#000;object-fit:contain}
-.prev-box .pstage > video[hidden],.prev-box .pstage > iframe[hidden]{display:none!important}
+  .prev-box .pstage > video,.prev-box .pstage > iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;background:#000;object-fit:contain}
+  .prev-box .pstage > video[hidden],.prev-box .pstage > iframe[hidden]{display:none!important}
 .prev-box .pmsg{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:#fff;background:rgba(0,0,0,.55);font-size:13px;flex-direction:column;gap:8px}
-.prev-box .pmsg[hidden]{display:none!important}
+  .prev-box .pmsg[hidden]{display:none!important}
 .head-row{
   display:flex;align-items:flex-start;justify-content:space-between;
   gap:16px;margin:10px 0 14px;flex-wrap:wrap;
@@ -453,7 +453,7 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
   <div class="brand">
     <div class="logo" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M8 5v14l11-7z"/></svg>
-    </div>
+  </div>
     <span>Hongguo Downloader</span>
   </div>
   <button class="nav-btn active" data-nav="browse"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M3 12a9 9 0 0 1 18 0 9 9 0 0 1-18 0z"/></svg><span>Browse</span></button>
@@ -474,7 +474,7 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
     <div class="lic-row bad" id="licPill" title="License">
       <span class="check" id="licCheck">✓</span>
       <span id="licText">Checking…</span>
-    </div>
+      </div>
     <div class="foot-row">
       <button class="ghost" data-nav="settings" title="Settings">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -483,9 +483,9 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
       <div class="theme-tog" title="Theme">
         <button type="button" id="themeLight" aria-label="Light">☀</button>
         <button type="button" id="themeDark" class="on" aria-label="Dark">☾</button>
+    </div>
       </div>
     </div>
-  </div>
 </aside>
 
 <main class="main">
@@ -494,7 +494,7 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
       <span aria-hidden="true" style="opacity:.7">⌕</span>
       <input id="q" placeholder="Search dramas, or paste a link" autocomplete="off"/>
     </form>
-  </div>
+      </div>
   <div class="content">
     <section id="view-browse">
       <div class="head-row">
@@ -503,7 +503,7 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
           <div class="filters" id="browseFilters"></div>
           <button type="button" class="dd-reset hidden" id="browseReset">Reset filters</button>
         </div>
-      </div>
+          </div>
       <div class="grid" id="browseGrid"></div>
       <p class="muted" id="browseEmpty">Loading…</p>
       <div class="browse-sentinel idle" id="browseSentinel" aria-hidden="true"></div>
@@ -513,7 +513,7 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
       <div class="head-row">
         <div><h1>Ranking</h1></div>
         <div class="chips" id="rankCats"></div>
-      </div>
+        </div>
       <div class="tabs" id="rankTabs"></div>
       <p class="sub" id="rankHint">Updated · leaderboards</p>
       <div class="grid" id="rankGrid"></div>
@@ -524,9 +524,9 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
         <div>
           <h1>New</h1>
           <div class="sub" id="newSub">Released in the last 7 days, newest first.</div>
-        </div>
+          </div>
         <div class="chips" id="newDays"></div>
-      </div>
+        </div>
       <div class="grid" id="newGrid"></div>
     </section>
 
@@ -536,7 +536,7 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
         <div class="row">
           <input class="field" id="linkText" type="text" placeholder="https://… or series id" style="flex:1;max-width:none"/>
           <button class="btn" id="btnResolve">Resolve</button>
-        </div>
+      </div>
         <div id="linkResult" style="margin-top:14px"></div>
       </div>
     </section>
@@ -549,7 +549,7 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
           <span id="dlActiveN">0 active</span>
           <button type="button" class="linkish" id="btnStopAll">Stop all</button>
           <button type="button" class="linkish" id="btnClearFinished">Clear finished</button>
-        </div>
+    </div>
       </div>
       <div class="chips" id="dlFilters" style="margin:0 0 14px"></div>
       <div id="dlList"></div>
@@ -573,7 +573,7 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
           </button>
           <button type="button" class="btn secondary hidden" id="btnLibDownloadNew" style="padding:8px 12px">Download new seasons</button>
           <button type="button" class="btn secondary hidden" id="btnLibDelete" style="padding:8px 12px">Delete</button>
-        </div>
+      </div>
       </div>
       <div class="chips" id="libFilters" style="margin-bottom:14px"></div>
       <div class="grid" id="libGrid"></div>
@@ -623,39 +623,39 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
           <div class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="7" height="14" rx="1"/><rect x="13" y="5" width="7" height="14" rx="1"/></svg></div>
           <div class="set-body"><div class="set-title">Merge episodes after download</div><div class="set-desc">Joins a finished series into one merged.mp4. No re-encode.</div></div>
           <div class="set-ctrl"><button type="button" class="sw" id="swMerge" data-key="merge" aria-label="Merge"><i></i></button></div>
-        </div>
+              </div>
         <div class="set-row">
           <div class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M8 11v7M12 11v7M16 11v7M6 20h12"/></svg></div>
           <div class="set-body"><div class="set-title">Delete episodes after merging</div><div class="set-desc">Keeps only merged.mp4. Needs merging on.</div></div>
           <div class="set-ctrl"><button type="button" class="sw" id="swDeleteAfter" data-key="deleteAfterMerge" aria-label="Delete after merge"><i></i></button></div>
-        </div>
+              </div>
         <div class="set-row">
           <div class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 15V9l3 3 3-3v6"/></svg></div>
           <div class="set-body"><div class="set-title">H.264 copy for older players</div><div class="set-desc">Better compatibility, slower. Not higher quality.</div></div>
           <div class="set-ctrl"><button type="button" class="sw" id="swH264" data-key="h264Copy" aria-label="H264 copy"><i></i></button></div>
-        </div>
+            </div>
         <div class="set-row">
           <div class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 0 1 14-5M20 12a8 8 0 0 1-14 5"/><path d="M18 3v4h-4M6 21v-4h4"/></svg></div>
           <div class="set-body"><div class="set-title">Overwrite existing files</div><div class="set-desc">When off, episodes already on disk are skipped.</div></div>
           <div class="set-ctrl"><button type="button" class="sw" id="swOverwrite" data-key="overwrite" aria-label="Overwrite"><i></i></button></div>
-        </div>
-      </div>
+            </div>
+          </div>
 
       <div class="set-lic">
         <h3>License <span class="muted" style="font-weight:500">(Pineline — WinUI app giữ license riêng)</span></h3>
         <p class="muted" style="margin:0 0 10px">Paste key một lần → DPAPI máy này. Không hiện key. Status: <b id="setLicState">—</b> · key <span id="setHasKey">—</span> · host <span id="setHost">—</span></p>
         <div class="row" style="margin:0 0 10px">
           <input type="password" id="keyInput" placeholder="HG-… license key" autocomplete="off"/>
-        </div>
+            </div>
         <div class="row">
           <button class="btn" id="btnSaveKey">Save key</button>
           <button class="btn secondary" id="btnProve">Prove now</button>
           <button class="btn secondary" id="btnClearKey">Clear key</button>
-        </div>
+          </div>
         <p class="muted" style="margin-top:12px" id="setMsg"></p>
-      </div>
+        </div>
     </section>
-  </div>
+      </div>
 </main>
 
 <div class="prev-mask" id="prevMask">
@@ -671,15 +671,15 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
       <iframe id="prevFrame" title="Preview" sandbox="allow-same-origin" allow="autoplay; fullscreen; picture-in-picture" hidden></iframe>
       <div class="pmsg" id="prevMsg" hidden></div>
     </div>
+    </div>
   </div>
-</div>
 
 <div class="drawer" id="drawer">
   <div class="sheet" role="dialog" aria-modal="true">
     <div class="sheet-body">
       <div style="display:flex;justify-content:flex-end">
         <button class="ghost" id="drawerClose" title="Close">✕</button>
-      </div>
+    </div>
       <div class="detail-top">
         <div class="detail-cover"><img id="dCover" alt=""/></div>
         <div class="detail-main">
@@ -689,20 +689,20 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
           <div class="detail-tags" id="dTags"></div>
           <div class="detail-intro" id="dIntro"></div>
           <div class="detail-intro-zh" id="dIntroZh"></div>
-        </div>
-      </div>
+    </div>
+  </div>
 
       <div class="sec-label">
         <span id="dSeasonLabel">Seasons</span>
         <button type="button" class="linkish" id="dDownloadAll">Download all seasons</button>
-      </div>
+</div>
       <div class="season-row" id="dSeasons"></div>
 
       <div class="sec-label"><span>Quality</span></div>
       <div class="qual-row" id="dQualRow">
         <button type="button" class="play-pill" id="dPlay" title="Xem thử tập miễn phí"><span class="ico">▶</span> Play</button>
         <span class="qual-inline" id="dQuals"></span>
-      </div>
+    </div>
 
       <div class="sec-label">
         <span id="dEpLabel">Episodes</span>
@@ -711,9 +711,9 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
           ·
           <button type="button" class="linkish" id="dEpClear">Clear</button>
         </span>
-      </div>
+  </div>
       <div class="ep-grid" id="dEps"></div>
-    </div>
+      </div>
     <div class="sheet-foot">
       <div class="path-line">📁 <code id="dPath">D:\Lib</code></div>
       <div class="row">
@@ -913,8 +913,8 @@ async function applyTitleVi(root){
         slot.className = 'tvi';
         const tt = el.querySelector('.tt');
         if(tt) tt.after(slot);
-        else el.appendChild(slot);
-      }
+          else el.appendChild(slot);
+        }
       slot.textContent = vi;
       slot.title = vi;
     }
@@ -1885,7 +1885,7 @@ function renderDlList(){
         if(bucket==='active'){
           await jpost('/api/hg2/downloads/cancel', {series_id: sid});
           toast('Stopped');
-        } else {
+      } else {
           await jpost('/api/hg2/downloads/remove', {series_id: sid});
           toast('Removed');
         }
@@ -1981,7 +1981,7 @@ function _pvStop(){
   if(frame){
     try{
       const v = frame.contentDocument && frame.contentDocument.querySelector('video');
-      if(v){ v.pause(); v.removeAttribute('src'); v.load(); }
+    if(v){ v.pause(); v.removeAttribute('src'); v.load(); }
     }catch(_){}
     frame.onload = null;
     frame.srcdoc = '';

@@ -1,0 +1,132 @@
+{
+  "n_changed": 7,
+  "example_before": [
+    {
+      "i": 0,
+      "start": 14.0,
+      "end": 16.0,
+      "zh": "我也一样，之前。",
+      "vi": "Tôi cũng vậy, trước đó."
+    },
+    {
+      "i": 1,
+      "start": 16.0,
+      "end": 18.5,
+      "zh": "之前那些不舒服的感觉。",
+      "vi": "Những cảm giác khó chịu trước đó."
+    }
+  ],
+  "example_after": [
+    {
+      "i": 0,
+      "start": 14.0,
+      "end": 16.0,
+      "zh": "我也一样，之前。",
+      "vi": "Tôi cũng vậy.",
+      "rv": 1
+    },
+    {
+      "i": 1,
+      "start": 16.0,
+      "end": 18.5,
+      "zh": "之前那些不舒服的感觉。",
+      "vi": "Những cảm giác khó chịu trước đó.",
+      "rv": 1
+    }
+  ],
+  "pass1": {
+    "style_brief": "Văn phong hiện đại, gần gũi với game thủ (có sử dụng thuật ngữ như 'treo cấp', 'quét màn hình', 'đại thần', 'bế quan'). Giữ nguyên sắc thái khẩu ngữ, ngắn gọn, trực diện.",
+    "register": "toi-cau",
+    "nonsense_i": [
+      0,
+      1,
+      2,
+      5,
+      6,
+      9,
+      10,
+      11,
+      14,
+      16,
+      21
+    ],
+    "half_cue_pairs": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "notes": [
+      "Câu [i=0] và [i=1] cần đọc liền mạch để hiểu rõ đối tượng của 'cảm giác khó chịu'.",
+      "Câu [i=2] và [i=3] là một ý liên tục về việc so sánh độ khó.",
+      "Câu [i=14] là thán từ, cần đọc nối với [i=15] để đủ ý."
+    ],
+    "model": "chatgpt/gpt-5-6-mini",
+    "n_lines": 26,
+    "heuristic_flags": [
+      0,
+      1,
+      2,
+      5,
+      6,
+      9,
+      10,
+      11,
+      14,
+      16,
+      21
+    ]
+  },
+  "sample_diffs": [
+    {
+      "i": 0,
+      "zh": "我也一样，之前。",
+      "before": "Tôi cũng vậy, trước đó.",
+      "after": "Tôi cũng vậy."
+    },
+    {
+      "i": 9,
+      "zh": "谁也不敢跟，",
+      "before": "Ai cũng không dám đi theo",
+      "after": "Ai cũng không dám theo,"
+    },
+    {
+      "i": 10,
+      "zh": "谁敢啊，",
+      "before": "Ai dám chứ",
+      "after": "Ai dám chứ,"
+    },
+    {
+      "i": 14,
+      "zh": "唉，",
+      "before": "Ối.",
+      "after": "Haiz,"
+    },
+    {
+      "i": 15,
+      "zh": "鬼知道明天轮到哪儿，",
+      "before": "Quỷ mới biết ngày mai đến phiên nơi nào",
+      "after": "Quỷ mới biết ngày mai đến phiên nơi nào,"
+    },
+    {
+      "i": 16,
+      "zh": "又开始刷屏了，",
+      "before": "Lại bắt đầu quét màn hình,",
+      "after": "Lại bắt đầu quét màn hình rồi,"
+    },
+    {
+      "i": 21,
+      "zh": "耍了好些天了，",
+      "before": "Chơi đùa mấy ngày rồi,",
+      "after": "Đã chơi đùa mấy ngày rồi,"
+    }
+  ]
+}

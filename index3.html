@@ -1119,6 +1119,7 @@ function autoBarHtml(j){
       <option value="0.6">rất to</option>
     </select></label>
     <label class="chk">🈶 <select id="auto-tr-mode"><option value="batch" selected>batch</option><option value="auto">auto</option><option value="oneshot">oneshot</option></select></label>
+    <label class="chk" title="off = REVIEW_MODEL config; Aurora∥ = rà bằng chatgpt/gpt-6 (Aurora/:3377)">🛡 <select id="auto-review-backup"><option value="off">REVIEW: config</option><option value="aurora_parallel" selected>Aurora GPT∥</option></select></label>
     <label class="chk"><input type="checkbox" id="auto-ocr"> OCR</label>
     <label class="chk"><input type="checkbox" id="auto-fit" checked> Khớp time</label>
     <label class="chk">🖥 <select id="auto-res"><option value="source" selected>Nguồn</option><option value="1080">1080p</option></select></label>
@@ -2004,7 +2005,7 @@ function muxModeChanged(){
 }
 // Lựa chọn áp cho cả batch (không lưu theo job) — giữ nguyên khi chuyển job / F5
 const AUTO_PREF_KEY='pineline.ui3.autobar';
-const AUTO_PREF_IDS=['auto-audio','auto-ovol','auto-tr-mode','auto-ocr','auto-fit','auto-res',
+const AUTO_PREF_IDS=['auto-audio','auto-ovol','auto-tr-mode','auto-review-backup','auto-ocr','auto-fit','auto-res',
   'auto-zoom','auto-motion','auto-lut','auto-hs-blur','auto-grain','auto-vbit','auto-flip','auto-frame',
   'auto-brand-mode','auto-brand-text','auto-brand-logo'];
 function autoPrefLoad(){ try{ return JSON.parse(localStorage.getItem(AUTO_PREF_KEY)||'{}')||{}; }catch(e){ return {}; } }
@@ -2077,7 +2078,7 @@ async function flushBatchPush(){
     markPerJobDiff(d.opts||{});
   }catch(e){ _btnFlash('btn-batchcfg-save','✗ Sidecar :8802 tắt — chưa đồng bộ'); }
 }
-const BATCH_TO_AUTO={audio_mode:'auto-audio',orig_vol:'auto-ovol',translate_mode:'auto-tr-mode',ocr:'auto-ocr',
+const BATCH_TO_AUTO={audio_mode:'auto-audio',orig_vol:'auto-ovol',translate_mode:'auto-tr-mode',review_backup:'auto-review-backup',ocr:'auto-ocr',
   fit:'auto-fit',resolution:'auto-res',zoom:'auto-zoom',motion:'auto-motion',lut:'auto-lut',
   hardsub_blur:'auto-hs-blur',grain:'auto-grain',
   vbitrate:'auto-vbit',flip:'auto-flip',frame:'auto-frame',brand_mode:'auto-brand-mode',
@@ -2557,6 +2558,7 @@ function collectRunAllOpts(){
   const fit=(document.getElementById('auto-fit')||{checked:true}).checked;
   const resolution=(document.getElementById('auto-res')||{value:'source'}).value||'source';
   const translate_mode=(document.getElementById('auto-tr-mode')||{value:'batch'}).value||'batch';
+  const review_backup=(document.getElementById('auto-review-backup')||{value:'off'}).value||'off';
   const zAuto=(document.getElementById('auto-zoom')||{value:'1.12'}).value;
   const zoom=(zAuto==='off'||zAuto==='1.0')?'off':(parseFloat(zAuto)||1.12);
   const motion=!!(document.getElementById('auto-motion')||{checked:true}).checked;
@@ -2570,7 +2572,7 @@ function collectRunAllOpts(){
   const brand_logo=(document.getElementById('auto-brand-logo')||{value:'off'}).value||'off';
   const orig_vol=parseFloat((document.getElementById('auto-ovol')||{value:(audio_mode==='duck_bgm')?'0.22':'0.6'}).value);
   const hardsub_blur=!!(document.getElementById('auto-hs-blur')||{checked:true}).checked;
-  return {voice,speed,tts_engine,asr_engine,audio_mode,voice_vol:0.2,orig_vol,ocr,fit,resolution,translate_mode,
+  return {voice,speed,tts_engine,asr_engine,audio_mode,voice_vol:0.2,orig_vol,ocr,fit,resolution,translate_mode,review_backup,
     zoom,motion,lut,hardsub_blur,grain,flip,frame,brand:brand_mode!=='off',brand_mode,brand_text,brand_logo,vbitrate};
 }
 

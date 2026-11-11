@@ -20,6 +20,11 @@ Chạy:
   python asr_repair.py work/<job> --src asr.aligned_fa.json --max-gaps 80 --max-cer 80
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[2])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import argparse
 import json
@@ -32,7 +37,7 @@ from pathlib import Path
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
 
-from asr_fix_align import DEFAULT_PAD_S, _save_asr, step2_forced_align
+from engines.asr.asr_fix_align import DEFAULT_PAD_S, _save_asr, step2_forced_align
 from engines.asr.asr_vad_utils import DEFAULT_PAD_S as VAD_PAD
 from engines.asr.fun_asr_nano import MODEL_ID as NANO_ID, _pick_device, _spread_sentences, _wav_dur
 from engines.subs import split_long_segments, sub_split_cfg, _plain_len

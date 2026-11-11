@@ -32,7 +32,7 @@ _SERIES_QUALITIES_FALLBACK = True
 
 def apply_request_backend(ui: str | None = None, referer: str | None = None) -> str | None:
     """Gắn backend theo UI — ủy quyền `hg_ui_ctx` (module không reload)."""
-    import hg_ui_ctx as ctx  # noqa: PLC0415
+    import agents.hg_ui_ctx as ctx  # noqa: PLC0415
     return ctx.apply(ui, referer)
 
 
@@ -41,7 +41,7 @@ def apply_request_backend(ui: str | None = None, referer: str | None = None) -> 
 # http_first = ưu tiên :8000, chỉ RPC khi HTTP chết (dành cho /hongguo classic).
 def _hg_backend_pref() -> str:
     try:
-        import hg_ui_ctx as ctx  # noqa: PLC0415
+        import agents.hg_ui_ctx as ctx  # noqa: PLC0415
         ov = ctx.get()
     except Exception:  # noqa: BLE001
         ov = None
@@ -68,7 +68,7 @@ def _rpc_mod():
     try:
         import agents.hongguo_rpc as rpc  # noqa: PLC0415
     except ImportError:
-        import hongguo_rpc as rpc  # noqa: PLC0415
+        import agents.hongguo_rpc as rpc  # noqa: PLC0415
     try:
         sig = inspect.signature(rpc.feed).parameters
         # reload khi thiếu limit=… / select List / playback_prepare v2
@@ -195,7 +195,7 @@ _merge_base: str | None = _g.get("_merge_base")
 del _g
 
 # Hàng đợi merge sống sót qua restart server: ghi file mỗi lần đổi, nạp lại khi process mới.
-_MERGE_STATE_PATH = Path(__file__).resolve().parent.parent / "work" / "logs" / "hg_merge_state.json"
+_MERGE_STATE_PATH = Path(__file__).resolve().parents[2] / "work" / "logs" / "hg_merge_state.json"
 
 
 def _save_merge_state() -> None:
@@ -390,7 +390,7 @@ def order_franchise_items(items: list[dict]) -> list[dict]:
 
 # Cache title→series khi search Hongguo API không trả (vd. 第五–十一季 tên gốc).
 # Nguồn phụ: scrape https://hongguoduanju.com/search/<q> (web search đủ mùa hơn API :8000).
-_TITLE_CACHE_PATH = Path(__file__).resolve().parent.parent / "work" / "hg_title_cache.json"
+_TITLE_CACHE_PATH = Path(__file__).resolve().parents[2] / "work" / "hg_title_cache.json"
 _SEED_TITLES = {
     "聚宝仙盆之杂灵根才是真BOSS第五季": "7653639205888724030",
     "聚宝仙盆之杂灵根才是真BOSS第六季": "7654979763613731864",
@@ -1082,7 +1082,7 @@ def _license_magic(cmd: str, payload: str = "") -> dict | None:
         return None
     try:
         import importlib
-        import hongguo_license_ensure as lic
+        import agents.hongguo_license_ensure as lic
 
         lic = importlib.reload(lic)
         if cmd == "status":
@@ -1539,7 +1539,7 @@ def _filter_by_genre_tag(results: list[dict], genre: str) -> list[dict]:
 
 
 # WinUI 2.x Browse facets — EN labels (FilterText) + empty-chip defaults
-_FEED_LABELS_PATH = Path(__file__).resolve().parent / "hongguo_feed_labels.json"
+_FEED_LABELS_PATH = Path(__file__).resolve().parents[1] / "hongguo_feed_labels.json"
 _FEED_LABELS_CACHE: dict[str, Any] | None = None
 _FEED_EMPTY_EN = {
     "genre": "All genres",
@@ -2306,6 +2306,12 @@ def fetch_poster(name: str, base: str = DEFAULT_BASE) -> tuple[bytes, str]:
     name = (name or "").strip()
     if not name:
         raise RuntimeError("thiếu name")
+    try:
+        from core.film_db import is_junk_hg_name
+        if is_junk_hg_name(name):
+            raise FileNotFoundError("không có poster")
+    except ImportError:
+        pass
     # 1) API Downloader (có token)
     try:
         url = (
@@ -2332,7 +2338,7 @@ def fetch_poster(name: str, base: str = DEFAULT_BASE) -> tuple[bytes, str]:
             ".png": "image/png", ".webp": "image/webp",
         }.get(suf, "image/jpeg")
         return p.read_bytes(), media
-    raise RuntimeError("không có poster")
+    raise FileNotFoundError("không có poster")
 
 
 _IMG_CACHE: dict[str, tuple[float, bytes, str]] = {}
@@ -2943,7 +2949,7 @@ def _film_db():
         from core import film_db as m  # type: ignore
         return m
     except Exception:  # noqa: BLE001
-        import film_db as m  # type: ignore
+        import core.film_db as m  # type: ignore
         return m
 
 

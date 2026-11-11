@@ -5,12 +5,17 @@ tự detect + rút spam; nếu còn filler thuần thì mượn chữ từ sidec
 (cùng cửa sổ thời gian) nếu sidecar đó có lời thật.
 
 Dùng:
-    from engines.asr.asr_spam import sanitize_asr_rows, sanitize_asr_file, is_bg_filler_spam
+    from asr_spam import sanitize_asr_rows, sanitize_asr_file, is_bg_filler_spam
 
     rows, info = sanitize_asr_rows(rows, work_dir=wd)
     sanitize_asr_file(wd / "asr.fun_nano.json", work_dir=wd)
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[2])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import json
 import re

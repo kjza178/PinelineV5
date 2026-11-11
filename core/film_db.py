@@ -13,12 +13,96 @@ import csv
 import io
 import json
 import os
+import re
 import shutil
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# Thư mục/parent không phải tên series Hongguo — không dùng làm hg_name/poster.
+_HG_NAME_JUNK = frozenset({
+    "downloads", "download", "work", "tmp", "temp", "_split_parts",
+    "parts", "output", "videos", "video",
+})
+_RE_JOB_FOLDER = re.compile(r"^[0-9a-f]{8,16}(_p\d{2})?$", re.I)
+_RE_PART_SUFFIX = re.compile(r"\s*-\s*Phần\s+\d+\s*/\s*\d+\s*$", re.I)
+
+
+def _strip_part_suffix(title: str) -> str:
+    return _RE_PART_SUFFIX.sub("", title or "").strip()
+
+
+def is_junk_hg_name(name: str, job_id: str = "") -> bool:
+    """True nếu không nên dùng làm tên folder Lib / query /api/hg/poster."""
+    n = (name or "").strip()
+    if not n:
+        return True
+    if job_id and n == job_id:
+        return True
+    if n.lower() in _HG_NAME_JUNK:
+        return True
+    if _RE_JOB_FOLDER.fullmatch(n):
+        return True
+    # "5", "4" từ bilibili downloads — không phải series HG
+    if n.isdigit() and len(n) <= 3:
+        return True
+    return False
+
+
+def derive_hg_name(job_id: str, req: dict | None, title_clean: str = "") -> str:
+    """Tên folder Hongguo/Lib cho poster — không lấy job_id / downloads / part folder."""
+    req = req or {}
+    job_id = (job_id or "").strip()
+    explicit = str(req.get("hg_name") or "").strip()
+    if explicit and not is_junk_hg_name(explicit, job_id):
+        return explicit
+
+    parent_id = str(req.get("parent_job_id") or "").strip()
+    if parent_id:
+        try:
+            prow = get(parent_id)
+            ph = str((prow or {}).get("hg_name") or "").strip()
+            if ph and not is_junk_hg_name(ph, parent_id):
+                return ph
+        except Exception:
+            pass
+        try:
+            pmf = WORK / parent_id / "manifest.json"
+            if pmf.is_file():
+                pm = json.loads(pmf.read_text(encoding="utf-8"))
+                preq = pm.get("request") or {}
+                ph = str(preq.get("hg_name") or "").strip()
+                if not ph and preq.get("orig_path"):
+                    ph = Path(preq["orig_path"]).parent.name
+                if ph and not is_junk_hg_name(ph, parent_id):
+                    return ph
+                pt = _strip_part_suffix(
+                    str(preq.get("title") or (pm.get("meta") or {}).get("title") or "")
+                )
+                if pt and not is_junk_hg_name(pt, parent_id):
+                    return pt
+        except Exception:
+            pass
+
+    orig = str(req.get("orig_path") or "").strip()
+    if orig:
+        try:
+            parent_folder = Path(orig).parent.name
+            if parent_folder and not is_junk_hg_name(parent_folder, job_id):
+                return parent_folder
+        except Exception:
+            pass
+
+    for cand in (
+        _strip_part_suffix(title_clean),
+        _strip_part_suffix(str(req.get("group_title") or "")),
+        _strip_part_suffix(str(req.get("title") or "")),
+    ):
+        if cand and not is_junk_hg_name(cand, job_id):
+            return cand
+    return ""
 
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / "work"
@@ -64,10 +148,7 @@ CREATE TABLE IF NOT EXISTS films (
     block_status  TEXT DEFAULT 'unknown',
     block_reason  TEXT,
     checked_at    TEXT,
-    updated_at    TEXT,
-    group_index   INTEGER,
-    series_ui     TEXT,
-    season_ui     INTEGER
+    updated_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS films_source ON films(source_key);
 CREATE INDEX IF NOT EXISTS films_series ON films(series);
@@ -147,12 +228,6 @@ def connect() -> sqlite3.Connection:
                 con.execute("ALTER TABLE films ADD COLUMN block_reason TEXT")
             if "checked_at" not in cols:
                 con.execute("ALTER TABLE films ADD COLUMN checked_at TEXT")
-            if "group_index" not in cols:
-                con.execute("ALTER TABLE films ADD COLUMN group_index INTEGER")
-            if "series_ui" not in cols:
-                con.execute("ALTER TABLE films ADD COLUMN series_ui TEXT")
-            if "season_ui" not in cols:
-                con.execute("ALTER TABLE films ADD COLUMN season_ui INTEGER")
     except Exception:
         pass
     try:
@@ -241,7 +316,7 @@ def row_from_manifest(job_id: str, m: dict) -> dict:
     title = req.get("title") or dl.get("title") or job_id
     clean = title.replace(" (merged)", "").strip()
     src = req.get("orig_path") or req.get("url") or dl.get("source_url") or ""
-    hg_name = Path(req["orig_path"]).parent.name if req.get("orig_path") else ""
+    hg_name = derive_hg_name(job_id, req, clean)
     status, stage = _status_of(stages)
     if status == "done":
         if m.get("yt_url") or m.get("upload_status") == "uploaded":
@@ -256,27 +331,10 @@ def row_from_manifest(job_id: str, m: dict) -> dict:
         except OSError:
             out_bytes = None
     series, season = _series_season(clean, None)
-    try:
-        from .job_meta import info_from_manifest_dict  # noqa: PLC0415
-        ui = info_from_manifest_dict(job_id, m)
-    except Exception:  # noqa: BLE001
-        ui = {
-            "series_ui": "",
-            "season_ui": season,
-            "group_index": req.get("group_index"),
-        }
-    gi = ui.get("group_index")
-    try:
-        gi = int(gi) if gi is not None and str(gi).strip() != "" else None
-    except (TypeError, ValueError):
-        gi = None
     return {
         "job_id": job_id, "title": clean, "title_vi": m.get("title_vi") or "",
         "series": series, "season": season,
         "group_id": req.get("group_id"), "group_title": req.get("group_title"),
-        "group_index": gi,
-        "series_ui": (ui.get("series_ui") or ui.get("series") or "") or "",
-        "season_ui": ui.get("season_ui") if ui.get("season_ui") is not None else season,
         "hg_name": hg_name, "source_path": src, "source_key": norm_path(src) if req.get("orig_path") else src,
         "status": status, "stage": stage,
         "duration_sec": _num(dl.get("duration_sec")), "width": _num(mux.get("width") or dl.get("width"), int),
@@ -292,8 +350,7 @@ def row_from_manifest(job_id: str, m: dict) -> dict:
 
 # ─── đồng bộ ─────────────────────────────────────────────────────────────
 
-_SYNC_COLS = ("title", "title_vi", "series", "season", "group_id", "group_title", "group_index",
-              "series_ui", "season_ui", "hg_name", "source_path",
+_SYNC_COLS = ("title", "title_vi", "series", "season", "group_id", "group_title", "hg_name", "source_path",
               "source_key", "status", "stage", "duration_sec", "width", "height", "output_path", "output_bytes",
               "voice", "tts_engine", "audio_mode", "opts_json", "created_at", "finished_at")
 
@@ -562,36 +619,6 @@ def get(job_id: str) -> dict | None:
         d["events"] = [dict(e) for e in con.execute(
             "SELECT ts, kind, detail FROM events WHERE job_id=? ORDER BY id", (job_id,))]
         return d
-
-
-def get_lite(job_id: str) -> dict | None:
-    """1 row films, không kèm events — cho queue/sort."""
-    with _lock, connect() as con:
-        r = con.execute("SELECT * FROM films WHERE job_id=?", (job_id,)).fetchone()
-        return dict(r) if r else None
-
-
-def get_many(job_ids: list[str]) -> dict[str, dict]:
-    """Batch SELECT films theo job_id (không events). Giữ thứ tự ưu tiên theo input."""
-    ids: list[str] = []
-    seen: set[str] = set()
-    for raw in job_ids or []:
-        jid = str(raw or "").strip()
-        if not jid or jid in seen:
-            continue
-        seen.add(jid)
-        ids.append(jid)
-    if not ids:
-        return {}
-    out: dict[str, dict] = {}
-    # SQLite giới hạn biến — chunk 400
-    with _lock, connect() as con:
-        for i in range(0, len(ids), 400):
-            chunk = ids[i:i + 400]
-            ph = ",".join("?" * len(chunk))
-            for r in con.execute(f"SELECT * FROM films WHERE job_id IN ({ph})", chunk):
-                out[r["job_id"]] = dict(r)
-    return out
 
 
 def delete_film(job_id: str, delete_work: bool = True) -> dict:
@@ -982,7 +1009,7 @@ def watchlist_cores(limit: int = 40) -> list[str]:
             return (hg.franchise_core(c) or c).strip()
         except Exception:  # noqa: BLE001
             try:
-                import hongguo_bridge as hg  # noqa: PLC0415
+                import agents.hongguo_bridge as hg  # noqa: PLC0415
                 return (hg.franchise_core(c) or c).strip()
             except Exception:  # noqa: BLE001
                 return c

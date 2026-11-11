@@ -129,7 +129,7 @@ def test_core_package_layout():
     # JSON folder (namespace package) — assert against job_queue instead.
     sys.modules.pop("job_queue", None)
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("job_queue")
+        importlib.import_module("core.job_queue")
     # core.config must be the real module, not the preset namespace dir.
     assert hasattr(config, "get") and hasattr(config, "ROOT")
 
@@ -177,4 +177,4 @@ def test_engines_phase_e_roots():
     # Bare `import render` must fail (no root shim).
     sys.modules.pop("render", None)
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("render")
+        importlib.import_module("engines.render")

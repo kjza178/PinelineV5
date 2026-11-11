@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .fileio import atomic_write_text, file_lock
+from core.fileio import atomic_write_text, file_lock
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "work" / "logs" / "batch_config.json"
@@ -25,10 +25,11 @@ DEFAULTS: dict[str, Any] = {
     "voice_vol": 0.2,
     "orig_vol": 0.22,
     "translate_mode": "batch",
+    "review_backup": "off",
     "ocr": False,
     "fit": True,
     "resolution": "source",
-    "zoom": 1.12,
+    "zoom": "1.12",
     "lut": True,
     "motion": True,
     "grain": "weak",
@@ -40,11 +41,6 @@ DEFAULTS: dict[str, Any] = {
     "frame": "off",
     "render_speed": 1.0,
     "hardsub_blur": True,
-    # Phim dài: tự detect duration ≥ auto_split_min_h → chia part (chống lệch sub)
-    "auto_split": True,
-    "auto_split_hours": 2.5,
-    "auto_split_min_h": 3.0,
-    "auto_merge": True,
 }
 
 CHOICES: dict[str, tuple[str, ...]] = {
@@ -52,6 +48,7 @@ CHOICES: dict[str, tuple[str, ...]] = {
     "asr_engine": ("nano_fa", "hybrid_fa", "fun_asr_nano", "paraformer_zh", "sensevoice", "firered_asr"),
     "audio_mode": ("duck_bgm", "sfx_lib", "voice_bgm", "voice_only", "duck", "demucs_keep", "demucs_clean"),
     "translate_mode": ("batch", "auto", "oneshot"),
+    "review_backup": ("off", "aurora_parallel"),
     "zoom": ("off", "1.10", "1.12", "1.15"),
     "grain": ("off", "weak", "medium", "strong"),
 }
@@ -65,6 +62,7 @@ LABELS: dict[str, str] = {
     "voice_vol": "Âm lượng giọng Việt",
     "orig_vol": "Tiếng gốc nền (khi ducking)",
     "translate_mode": "Dịch",
+    "review_backup": "REVIEW backup (Aurora parallel)",
     "ocr": "OCR",
     "fit": "Fit",
     "resolution": "Độ phân giải",
@@ -80,10 +78,6 @@ LABELS: dict[str, str] = {
     "frame": "Khung",
     "render_speed": "Tốc độ Render (Lách bản quyền)",
     "hardsub_blur": "Che hardsub (blur/stretch)",
-    "auto_split": "Tự chia part phim dài",
-    "auto_split_hours": "Độ dài mỗi part (giờ)",
-    "auto_split_min_h": "Ngưỡng bắt đầu chia (giờ)",
-    "auto_merge": "Tự ghép full khi đủ part",
 }
 
 
@@ -106,6 +100,17 @@ def as_bool(val: Any, default: bool = True) -> bool:
 
 
 def _coerce(key: str, val: Any) -> Any:
+    if key == "zoom":
+        s = "" if val is None else str(val).strip().lower()
+        if s in ("off", "none", "0", "false", "no", "1", "1.0", "1.00"):
+            return "off"
+        try:
+            f = float(s)
+            if f <= 1.01:
+                return "off"
+            return f"{f:.2f}"
+        except ValueError:
+            return "1.12"
     base = DEFAULTS[key]
     if isinstance(base, bool):
         if isinstance(val, str):
@@ -168,7 +173,7 @@ def resolve_job_opts(*layers: dict[str, Any] | None, fill_voice: bool = True) ->
 
 def _norm_zoom(v: Any) -> float:
     if v is None:
-        return DEFAULTS["zoom"]
+        v = DEFAULTS["zoom"]
     s = str(v).strip().lower()
     if s in ("off", "none", "0", "false", "no", "1", "1.0", "1.00"):
         return 1.0
@@ -176,7 +181,7 @@ def _norm_zoom(v: Any) -> float:
         f = float(s)
         return 1.0 if f <= 1.01 else f
     except ValueError:
-        return DEFAULTS["zoom"]
+        return 1.12
 
 
 def render_kwargs(o: dict[str, Any]) -> dict[str, Any]:
@@ -277,3 +282,14 @@ def describe(opts: dict[str, Any] | None = None) -> str:
             v = "—"
         lines.append(f"{LABELS.get(k, k)} ({k}) = {v}")
     return "\n".join(lines)
+
+
+def review_backup_mode(opts: dict | None = None) -> str:
+    """off | aurora_parallel — Aurora GPT làm REVIEW (qua REVIEW_MODEL / AURORA_REVIEW_MODEL).
+
+    aurora_parallel: ép model chatgpt + `translate.run_review` fan-out
+    `REVIEW_PARALLEL` worker (mặc định 6). Cloud lỗi → fallback local REVIEW_PRESET.
+    """
+    o = opts or load()
+    v = str(o.get("review_backup") or "off").strip().lower()
+    return v if v in ("off", "aurora_parallel") else "off"

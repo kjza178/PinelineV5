@@ -13,7 +13,7 @@ try:
 except ImportError:
     import sys
     sys.path.insert(0, r"Z:\PinelineV2")
-    from agent_tool_loop import pipeline_loop, run_stage_wait, stage_snapshot, wait_stage
+    from agents.agent_tool_loop import pipeline_loop, run_stage_wait, stage_snapshot, wait_stage
 
 
 def _write_manifest(work: Path, job: str, stages: dict) -> Path:

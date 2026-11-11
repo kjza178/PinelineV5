@@ -1,0 +1,965 @@
+{
+ "generated_at": "2026-11-11 02:38",
+ "modules": {
+  "agent_brain": {
+   "sha1": "ba61b4ab2c5513265c1d25231787939b3cd40d7f",
+   "loc": 1221,
+   "rel": "agent_brain.py"
+  },
+  "agent_brain_context": {
+   "sha1": "afd4c3244d1e83543c11e540fe08506943d2907b",
+   "loc": 256,
+   "rel": "agent_brain_context.py"
+  },
+  "agent_core": {
+   "sha1": "3ad725c4775d3195a3751474f1b2ea5e720499d9",
+   "loc": 2072,
+   "rel": "agent_core.py"
+  },
+  "agent_feeder": {
+   "sha1": "08a3b066a9d18f5ee29ca8dfcd5d1adab6b672f9",
+   "loc": 2065,
+   "rel": "agent_feeder.py"
+  },
+  "agent_hang_fix": {
+   "sha1": "8281d71aae27eca6fd5477748578e4b973637e59",
+   "loc": 368,
+   "rel": "agent_hang_fix.py"
+  },
+  "agent_qa_gate": {
+   "sha1": "1b0edf472865563155f70b489a7167f711578076",
+   "loc": 226,
+   "rel": "agent_qa_gate.py"
+  },
+  "agent_quality": {
+   "sha1": "fc43fe4a13a86520ad1e16f9079e92edfc1b4906",
+   "loc": 356,
+   "rel": "agent_quality.py"
+  },
+  "agent_tele_cmd": {
+   "sha1": "7420fbcd301fc398acf1245910864d5194ac084a",
+   "loc": 2333,
+   "rel": "agent_tele_cmd.py"
+  },
+  "agent_tool_loop": {
+   "sha1": "5b6c2cdbcae8cef06f37552b72c11b350c81001b",
+   "loc": 475,
+   "rel": "agent_tool_loop.py"
+  },
+  "agents.__init__": {
+   "sha1": "a5d0b277adfca175651d03302b1210f21b9c2aa8",
+   "loc": 1,
+   "rel": "agents/__init__.py"
+  },
+  "agents.agent_autopilot": {
+   "sha1": "4f0cd7119f0cefad103378fce1f7751da3d27183",
+   "loc": 331,
+   "rel": "agents/agent_autopilot.py"
+  },
+  "agents.agent_av_sync": {
+   "sha1": "7dc879ae297e104c29d871c0f1a13e27d1a5f123",
+   "loc": 567,
+   "rel": "agents/agent_av_sync.py"
+  },
+  "agents.agent_core": {
+   "sha1": "92ee735021c9d9bd5a6c3d7959aed45c04fc37a4",
+   "loc": 2038,
+   "rel": "agents/agent_core.py"
+  },
+  "agents.agent_error_class": {
+   "sha1": "e395cd2a0d8bbe12806addc6774c2fdaaa685245",
+   "loc": 121,
+   "rel": "agents/agent_error_class.py"
+  },
+  "agents.agent_feeder": {
+   "sha1": "08a3b066a9d18f5ee29ca8dfcd5d1adab6b672f9",
+   "loc": 2065,
+   "rel": "agents/agent_feeder.py"
+  },
+  "agents.agent_heal": {
+   "sha1": "9187bbbc8e60225c2f1c720324d545b19ae183ef",
+   "loc": 665,
+   "rel": "agents/agent_heal.py"
+  },
+  "agents.agent_hongguo": {
+   "sha1": "56bfcbd3dceda4830e88a0f4da3c35cd2f9afe3c",
+   "loc": 1570,
+   "rel": "agents/agent_hongguo.py"
+  },
+  "agents.agent_name_pass": {
+   "sha1": "df1a1bd11f18c5d1b576ae2a4c8172da3d9301a5",
+   "loc": 134,
+   "rel": "agents/agent_name_pass.py"
+  },
+  "agents.agent_pronoun_pass": {
+   "sha1": "c4c613aac0cd695ff38c73e7b4a3ed8a52210eba",
+   "loc": 256,
+   "rel": "agents/agent_pronoun_pass.py"
+  },
+  "agents.agent_qa_gate": {
+   "sha1": "69824b3fc60462d7ba85f5f47e03eda0c9f31fb2",
+   "loc": 201,
+   "rel": "agents/agent_qa_gate.py"
+  },
+  "agents.agent_stage_io": {
+   "sha1": "13f574576c5a716ac6a14c5dcafc29c6ec3e27f9",
+   "loc": 286,
+   "rel": "agents/agent_stage_io.py"
+  },
+  "agents.agent_tele_cmd": {
+   "sha1": "5904e3b2a73857fbb8c4bdd33f683c29bdc9d764",
+   "loc": 2328,
+   "rel": "agents/agent_tele_cmd.py"
+  },
+  "agents.agent_tool_loop": {
+   "sha1": "5b6c2cdbcae8cef06f37552b72c11b350c81001b",
+   "loc": 475,
+   "rel": "agents/agent_tool_loop.py"
+  },
+  "agents.agent_watch": {
+   "sha1": "3155e961d02968b77eb5a15a8bd8c1a6321bb1df",
+   "loc": 375,
+   "rel": "agents/agent_watch.py"
+  },
+  "agents.auto_publisher": {
+   "sha1": "bec50fc519587334c3c40202b9b07d538e42cb2e",
+   "loc": 1555,
+   "rel": "agents/auto_publisher.py"
+  },
+  "agents.canva_client": {
+   "sha1": "19407b1891cbb651a57555b9a80c77f3ff0bba9d",
+   "loc": 406,
+   "rel": "agents/canva_client.py"
+  },
+  "agents.hongguo_bridge": {
+   "sha1": "16b07bb99fc746f4fd65835d90f7ec4d08ff0543",
+   "loc": 4210,
+   "rel": "agents/hongguo_bridge.py"
+  },
+  "agents.hongguo_license_ensure": {
+   "sha1": "717f0a1aea532849c1ad81c0de5a582045b06a25",
+   "loc": 270,
+   "rel": "agents/hongguo_license_ensure.py"
+  },
+  "agents.hongguo_rpc": {
+   "sha1": "cc227608a3a8a29618c9999702048bb4bfbe5b14",
+   "loc": 1449,
+   "rel": "agents/hongguo_rpc.py"
+  },
+  "agents.meta_studio": {
+   "sha1": "8e22426814ac1e3a802b23866953b7acbbdd0e7f",
+   "loc": 1897,
+   "rel": "agents/meta_studio.py"
+  },
+  "agents.test_channel": {
+   "sha1": "66265176624a655078e12ce2d785903e232d9e0b",
+   "loc": 1283,
+   "rel": "agents/test_channel.py"
+  },
+  "app_desktop": {
+   "sha1": "68b8955ebb8c55589da605ca243bbc25042b6d04",
+   "loc": 147,
+   "rel": "app_desktop.py"
+  },
+  "auto_publisher": {
+   "sha1": "077c68d3f678f593c0d0d8d1753de3dd606ee889",
+   "loc": 1567,
+   "rel": "auto_publisher.py"
+  },
+  "batch_config": {
+   "sha1": "8251967b5449465aae17813a506d4791d997316d",
+   "loc": 295,
+   "rel": "batch_config.py"
+  },
+  "config": {
+   "sha1": "af4401b1f1ee8afeec5c8dc8bbf36a5db4afcef9",
+   "loc": 188,
+   "rel": "config.py"
+  },
+  "core.__init__": {
+   "sha1": "a1d13f9b305c8ed766c5b8bd36121b51aa1e2990",
+   "loc": 1,
+   "rel": "core/__init__.py"
+  },
+  "core.batch_config": {
+   "sha1": "f3f6a6f36454058452bc3ea589394dbb68d22b73",
+   "loc": 282,
+   "rel": "core/batch_config.py"
+  },
+  "core.config": {
+   "sha1": "8825d062336b88731330707ed52b2152fccc28b8",
+   "loc": 201,
+   "rel": "core/config.py"
+  },
+  "core.fileio": {
+   "sha1": "e820e73bf10e584894b3756619021d26934dd7c3",
+   "loc": 104,
+   "rel": "core/fileio.py"
+  },
+  "core.film_db": {
+   "sha1": "70648478eefadb2b23daf33ab7b54e2bfc7c32c1",
+   "loc": 1064,
+   "rel": "core/film_db.py"
+  },
+  "core.job_meta": {
+   "sha1": "d72619d52b863a048cefce5df1278f7f7fe412af",
+   "loc": 164,
+   "rel": "core/job_meta.py"
+  },
+  "core.job_queue": {
+   "sha1": "9661f66ff69f0edcb581312c8eb5fbce2c29a797",
+   "loc": 658,
+   "rel": "core/job_queue.py"
+  },
+  "core.manifest": {
+   "sha1": "c7cd54c8e3786b8f613124898480b190a4cd5a03",
+   "loc": 242,
+   "rel": "core/manifest.py"
+  },
+  "engines.__init__": {
+   "sha1": "a58cc3b4afefe4ccecfdb23707b1db7f15a5518c",
+   "loc": 1,
+   "rel": "engines/__init__.py"
+  },
+  "engines.asr.__init__": {
+   "sha1": "3a44d0169b5ed49bbb5b27c135fa334e901218f8",
+   "loc": 1,
+   "rel": "engines/asr/__init__.py"
+  },
+  "engines.asr.asr": {
+   "sha1": "6320b73d0bab43631d018443b7a69a71fee1bb5e",
+   "loc": 442,
+   "rel": "engines/asr/asr.py"
+  },
+  "engines.asr.asr_align_nano_para": {
+   "sha1": "ce92c7aa9dbb352b2207c57d954269d05e026eef",
+   "loc": 384,
+   "rel": "engines/asr/asr_align_nano_para.py"
+  },
+  "engines.asr.asr_fix_align": {
+   "sha1": "5f4fccb0cd2520cfdd10ad17bb59f7a71f754316",
+   "loc": 330,
+   "rel": "engines/asr/asr_fix_align.py"
+  },
+  "engines.asr.asr_hybrid_progress": {
+   "sha1": "c1f2db1366ed778bc976a600ddcc3a26f1966aa5",
+   "loc": 144,
+   "rel": "engines/asr/asr_hybrid_progress.py"
+  },
+  "engines.asr.asr_repair": {
+   "sha1": "4a50a2bfdb68122b9f53be409528097106a909c7",
+   "loc": 546,
+   "rel": "engines/asr/asr_repair.py"
+  },
+  "engines.asr.asr_spam": {
+   "sha1": "64433df3dfd3f6dfb2769ee1fa53b2f7eff7e2b6",
+   "loc": 464,
+   "rel": "engines/asr/asr_spam.py"
+  },
+  "engines.asr.asr_vad_utils": {
+   "sha1": "c031df59e18ffcf3b2e21698a419a7818afd1eb7",
+   "loc": 158,
+   "rel": "engines/asr/asr_vad_utils.py"
+  },
+  "engines.asr.firered_asr": {
+   "sha1": "7bfcaac2b3b313552eabb67c44aa3c9b9498f42a",
+   "loc": 346,
+   "rel": "engines/asr/firered_asr.py"
+  },
+  "engines.asr.fun_asr_nano": {
+   "sha1": "14d1281219dce67dfbe0df4555e69e7cd795916d",
+   "loc": 597,
+   "rel": "engines/asr/fun_asr_nano.py"
+  },
+  "engines.asr.hardsub_asr": {
+   "sha1": "d8d44910615c549a53819655e2ea299668485ba2",
+   "loc": 452,
+   "rel": "engines/asr/hardsub_asr.py"
+  },
+  "engines.asr.hybrid_asr": {
+   "sha1": "09a5cca6b2d5658a7f5826a7bb056fc19afc5489",
+   "loc": 202,
+   "rel": "engines/asr/hybrid_asr.py"
+  },
+  "engines.asr.nano_fa_asr": {
+   "sha1": "f481fc55944b610052901a27ec0413fc179ebc2b",
+   "loc": 337,
+   "rel": "engines/asr/nano_fa_asr.py"
+  },
+  "engines.asr.paraformer_zh": {
+   "sha1": "b6b09ddaf2a57d0052a7f581312b9f4463ee48cc",
+   "loc": 309,
+   "rel": "engines/asr/paraformer_zh.py"
+  },
+  "engines.asr.sensevoice_asr": {
+   "sha1": "d1b7d75b786301bcea940342914b5ef687fbb130",
+   "loc": 255,
+   "rel": "engines/asr/sensevoice_asr.py"
+  },
+  "engines.assemble": {
+   "sha1": "fc2163acde2f2384b7d2222a8f4da89a07f9ea18",
+   "loc": 417,
+   "rel": "engines/assemble.py"
+  },
+  "engines.check_block": {
+   "sha1": "c2b2642ec548c32ee9a0e05b2a8bff736faac13f",
+   "loc": 350,
+   "rel": "engines/check_block.py"
+  },
+  "engines.clone_tts": {
+   "sha1": "5705cadb289f73e03b7a5f47f2e32f1a488406f6",
+   "loc": 1115,
+   "rel": "engines/clone_tts.py"
+  },
+  "engines.download": {
+   "sha1": "b1a07f7cb5dcce19df1f59354be4277d4b92b042",
+   "loc": 692,
+   "rel": "engines/download.py"
+  },
+  "engines.hv_auditor": {
+   "sha1": "53992ecc3fc3603a9327ddb15a302618c40be100",
+   "loc": 457,
+   "rel": "engines/hv_auditor.py"
+  },
+  "engines.llm": {
+   "sha1": "3cddd85b29e17a780d4ef55082f0ccc03c7eb7ae",
+   "loc": 872,
+   "rel": "engines/llm.py"
+  },
+  "engines.media_ts": {
+   "sha1": "f415ad9e96c77bd74bd0e8c6d0dc08e771443c70",
+   "loc": 304,
+   "rel": "engines/media_ts.py"
+  },
+  "engines.mt_zh_vi": {
+   "sha1": "f625d482fb6534d303715537f5b778d715f6c246",
+   "loc": 302,
+   "rel": "engines/mt_zh_vi.py"
+  },
+  "engines.mux": {
+   "sha1": "0b05721da4114a004ac9b5580e07b8287d01c7ae",
+   "loc": 135,
+   "rel": "engines/mux.py"
+  },
+  "engines.ocr": {
+   "sha1": "1ac59f8eb0206dad5597cdacae615df5fea76a07",
+   "loc": 273,
+   "rel": "engines/ocr.py"
+  },
+  "engines.playlist": {
+   "sha1": "d97cf6d1e918dbaa030495b9f9887de012aebb2c",
+   "loc": 214,
+   "rel": "engines/playlist.py"
+  },
+  "engines.pronoun_consistency": {
+   "sha1": "4ebfca4fc5fdf04a1fb773d03c2c2470be9b0928",
+   "loc": 870,
+   "rel": "engines/pronoun_consistency.py"
+  },
+  "engines.render": {
+   "sha1": "c204d346755908b1a453eb9cb10cc5a74e538055",
+   "loc": 3079,
+   "rel": "engines/render.py"
+  },
+  "engines.render_fx": {
+   "sha1": "33cbe711b1f241cd6f23b0ce16826af24e239dde",
+   "loc": 564,
+   "rel": "engines/render_fx.py"
+  },
+  "engines.script_lint": {
+   "sha1": "c7bf09d576e56f798386f21a3e66ae24d97f42b6",
+   "loc": 170,
+   "rel": "engines/script_lint.py"
+  },
+  "engines.separate": {
+   "sha1": "c56e29a236da1ccdaa27f3595018fa4519015ba3",
+   "loc": 370,
+   "rel": "engines/separate.py"
+  },
+  "engines.series_glossary": {
+   "sha1": "bebc1be20dbb25735981b2861b2c5cefd5055b57",
+   "loc": 176,
+   "rel": "engines/series_glossary.py"
+  },
+  "engines.sfx_lib": {
+   "sha1": "676ff4a046a90b859f0a26815c8763bf46c5a01b",
+   "loc": 438,
+   "rel": "engines/sfx_lib.py"
+  },
+  "engines.split_parts": {
+   "sha1": "9a96e41455d9d9ef84a95fc0e3130381f848a6e5",
+   "loc": 845,
+   "rel": "engines/split_parts.py"
+  },
+  "engines.subs": {
+   "sha1": "92e5f6bd187898de0f2090616f29be3654a65992",
+   "loc": 1106,
+   "rel": "engines/subs.py"
+  },
+  "engines.title_mt": {
+   "sha1": "7e1e3e0b2f606ad6edce40858aad82593ef14a6e",
+   "loc": 172,
+   "rel": "engines/title_mt.py"
+  },
+  "engines.translate": {
+   "sha1": "b36f55a0050fe619803ef6fc590ecb8c85de780f",
+   "loc": 2992,
+   "rel": "engines/translate.py"
+  },
+  "engines.translate_alts": {
+   "sha1": "78539aea1b3e72eb89871cb8af4cc69cd7efa9ec",
+   "loc": 377,
+   "rel": "engines/translate_alts.py"
+  },
+  "engines.vram": {
+   "sha1": "0c23090f499e9e4ea5c373fbe6c733d10db107cf",
+   "loc": 89,
+   "rel": "engines/vram.py"
+  },
+  "fileio": {
+   "sha1": "e820e73bf10e584894b3756619021d26934dd7c3",
+   "loc": 104,
+   "rel": "fileio.py"
+  },
+  "film_db": {
+   "sha1": "8104b8759a738ae276de1d917bcfe948e44505ab",
+   "loc": 1091,
+   "rel": "film_db.py"
+  },
+  "films_merge_api": {
+   "sha1": "6dd023f1a466ce3bbd67b1d64a4f80ffa45ba8b8",
+   "loc": 174,
+   "rel": "films_merge_api.py"
+  },
+  "hg_ui_ctx": {
+   "sha1": "28a700e760f8183f02ba00f10afad941445a6016",
+   "loc": 46,
+   "rel": "hg_ui_ctx.py"
+  },
+  "hongguo_bridge": {
+   "sha1": "4061519a8d5ba3cc1cf27155c58a8eb8f65c31f7",
+   "loc": 4216,
+   "rel": "hongguo_bridge.py"
+  },
+  "hongguo_license_ensure": {
+   "sha1": "25806b34e52b26f0cc089edc8884ea48dc0d80a6",
+   "loc": 285,
+   "rel": "hongguo_license_ensure.py"
+  },
+  "hongguo_rpc": {
+   "sha1": "759061d1fc3d3b64d1caeae002ce3d1b5ea9a44c",
+   "loc": 1449,
+   "rel": "hongguo_rpc.py"
+  },
+  "http_routes.__init__": {
+   "sha1": "f0e7ebbc86341b35551d63cef222cbcaa9ad59c6",
+   "loc": 1,
+   "rel": "http_routes/__init__.py"
+  },
+  "http_routes.routes_agent": {
+   "sha1": "aa7922b1208aeaed99d400eb345768153add9298",
+   "loc": 638,
+   "rel": "http_routes/routes_agent.py"
+  },
+  "http_routes.routes_films": {
+   "sha1": "56a5ca912ab8f02b1590cc8f26807cb946a6899f",
+   "loc": 370,
+   "rel": "http_routes/routes_films.py"
+  },
+  "http_routes.routes_hg": {
+   "sha1": "9770ce5365156447213da7c1bb3bbf0129ec2969",
+   "loc": 993,
+   "rel": "http_routes/routes_hg.py"
+  },
+  "http_routes.routes_ui": {
+   "sha1": "cd3e35a93e0ef59a7d3369596fe566b8131dd3af",
+   "loc": 102,
+   "rel": "http_routes/routes_ui.py"
+  },
+  "http_routes.routes_uploader_settings": {
+   "sha1": "44aa912d692f4d59fcd9007e0d7e757a72a11846",
+   "loc": 658,
+   "rel": "http_routes/routes_uploader_settings.py"
+  },
+  "hv_auditor": {
+   "sha1": "24869f8ebc367fc1a57780a17c7d96395161afb4",
+   "loc": 475,
+   "rel": "hv_auditor.py"
+  },
+  "job_queue": {
+   "sha1": "9661f66ff69f0edcb581312c8eb5fbce2c29a797",
+   "loc": 658,
+   "rel": "job_queue.py"
+  },
+  "llm": {
+   "sha1": "88188a5f75c3fae1a9c2024709e84455d0bfbdfb",
+   "loc": 894,
+   "rel": "llm.py"
+  },
+  "meta_studio": {
+   "sha1": "a5a39c7f630556454b1177c55e8456790f60811d",
+   "loc": 1918,
+   "rel": "meta_studio.py"
+  },
+  "mt_zh_vi": {
+   "sha1": "f625d482fb6534d303715537f5b778d715f6c246",
+   "loc": 302,
+   "rel": "mt_zh_vi.py"
+  },
+  "pineline.__init__": {
+   "sha1": "5831ebf8a3a4419f26e24cca896672499cce8673",
+   "loc": 3,
+   "rel": "pineline/__init__.py"
+  },
+  "pineline.server.__init__": {
+   "sha1": "1589c88281e15de4919f09b98b7c10ad8a0e8732",
+   "loc": 1,
+   "rel": "pineline/server/__init__.py"
+  },
+  "pineline.server.routes.__init__": {
+   "sha1": "72b9623dd0e4a147d68d03a0c69acf6a225002ea",
+   "loc": 1,
+   "rel": "pineline/server/routes/__init__.py"
+  },
+  "pineline.server.routes.assets": {
+   "sha1": "187af1df6af5a7b9b2678adff16a70061e453325",
+   "loc": 32,
+   "rel": "pineline/server/routes/assets.py"
+  },
+  "pineline.server.routes.fs": {
+   "sha1": "0365c426c623475eead09c7871df9d34d530e4b2",
+   "loc": 23,
+   "rel": "pineline/server/routes/fs.py"
+  },
+  "pineline.server.routes.jobs": {
+   "sha1": "381520cd4a9a83f96e5e4b813e0a558e8127f55b",
+   "loc": 79,
+   "rel": "pineline/server/routes/jobs.py"
+  },
+  "pineline.server.routes.queue": {
+   "sha1": "d45810b0a6125f09b8f9bf5cd455650d421552ea",
+   "loc": 38,
+   "rel": "pineline/server/routes/queue.py"
+  },
+  "pronoun_register_policy": {
+   "sha1": "1c044b773eeaf218d86fb10defb7ca25fd4e9c0a",
+   "loc": 243,
+   "rel": "pronoun_register_policy.py"
+  },
+  "render": {
+   "sha1": "c204d346755908b1a453eb9cb10cc5a74e538055",
+   "loc": 3079,
+   "rel": "render.py"
+  },
+  "restart_server": {
+   "sha1": "dc953f8128deef2aba85181626bd369f1c2431d3",
+   "loc": 250,
+   "rel": "restart_server.py"
+  },
+  "routes_agent": {
+   "sha1": "312524376fda8101cf3f6478382d6aba7670e114",
+   "loc": 645,
+   "rel": "routes_agent.py"
+  },
+  "routes_films": {
+   "sha1": "816e9a6c6c6312d46cd95908588eb0d87a671683",
+   "loc": 370,
+   "rel": "routes_films.py"
+  },
+  "routes_hg": {
+   "sha1": "2e333e85d70a55af96cadcc4a0529cb16899c135",
+   "loc": 1018,
+   "rel": "routes_hg.py"
+  },
+  "routes_ui": {
+   "sha1": "bdf45df42989c4079b6c0ae28f0fda66047194db",
+   "loc": 107,
+   "rel": "routes_ui.py"
+  },
+  "rvc_bridge.omnivoice_batch": {
+   "sha1": "c8f48ec784e36041d8e037213280ca6f5007fb66",
+   "loc": 47,
+   "rel": "rvc_bridge/omnivoice_batch.py"
+  },
+  "rvc_bridge.vieneu_batch": {
+   "sha1": "f3bafd6faa61329e90073e46d7c95d25f2c70513",
+   "loc": 183,
+   "rel": "rvc_bridge/vieneu_batch.py"
+  },
+  "scripts._hg_watchlist_snippet": {
+   "sha1": "4628859127e546ff2bb5d07cf7167aad8f51a29a",
+   "loc": 26,
+   "rel": "scripts/_hg_watchlist_snippet.py"
+  },
+  "scripts._patch_hongguo2_discover_api": {
+   "sha1": "fc206739d3eb9f748e29ae5c65b95851167fb1a8",
+   "loc": 113,
+   "rel": "scripts/_patch_hongguo2_discover_api.py"
+  },
+  "scripts._patch_hongguo2_discover_only": {
+   "sha1": "4c887692d422cb5f1ab5f348bc086c2c3daf0ca4",
+   "loc": 221,
+   "rel": "scripts/_patch_hongguo2_discover_only.py"
+  },
+  "scripts._patch_hongguo2_update_ux": {
+   "sha1": "168eaba3830aba866045ffbc188ad8b7e611ef9e",
+   "loc": 327,
+   "rel": "scripts/_patch_hongguo2_update_ux.py"
+  },
+  "scripts._port_hg_watchlist_bridge": {
+   "sha1": "5f3cfd8c4a65aabf3f7556f79e6e7df0ea8ad80c",
+   "loc": 41,
+   "rel": "scripts/_port_hg_watchlist_bridge.py"
+  },
+  "scripts._port_hg_watchlist_film_db": {
+   "sha1": "1d7685ef28c4ddd66c1043f0bae564f34eb1ec94",
+   "loc": 38,
+   "rel": "scripts/_port_hg_watchlist_film_db.py"
+  },
+  "scripts._rebuild_v5_map_funcs": {
+   "sha1": "ad73fb792216a18ab3861beaf9a41496ae929a4e",
+   "loc": 147,
+   "rel": "scripts/_rebuild_v5_map_funcs.py"
+  },
+  "scripts._tmp_count_sigs": {
+   "sha1": "e81512a1c2da275ee8176fce9efe66cc9792f2e3",
+   "loc": 17,
+   "rel": "scripts/_tmp_count_sigs.py"
+  },
+  "scripts._tmp_extract_sigs_batch2": {
+   "sha1": "b049403ef58c0d3eba86b03dcc3aa22caa1fa69a",
+   "loc": 191,
+   "rel": "scripts/_tmp_extract_sigs_batch2.py"
+  },
+  "scripts._tmp_inspect_films_db": {
+   "sha1": "2db762b86e7929516377b713499c564be8844186",
+   "loc": 26,
+   "rel": "scripts/_tmp_inspect_films_db.py"
+  },
+  "scripts._tmp_inspect_films_db2": {
+   "sha1": "a08bec0e9e5b64a6c0332a81cd4e7ca6072c806d",
+   "loc": 35,
+   "rel": "scripts/_tmp_inspect_films_db2.py"
+  },
+  "scripts.brain_build": {
+   "sha1": "0494d084d799bd21ec42420e41d9b8b637691b42",
+   "loc": 857,
+   "rel": "scripts/brain_build.py"
+  },
+  "scripts.check_batch1": {
+   "sha1": "57ac0abf8c56a1df6789d35f1bf5ee92de7c7062",
+   "loc": 307,
+   "rel": "scripts/check_batch1.py"
+  },
+  "scripts.check_batch2": {
+   "sha1": "dced6717a7f4ba7da32323d5d3cd1179c1c026bb",
+   "loc": 327,
+   "rel": "scripts/check_batch2.py"
+  },
+  "scripts.check_batch3": {
+   "sha1": "4904c153845f905996980f37a9ef16cdd5f3c431",
+   "loc": 202,
+   "rel": "scripts/check_batch3.py"
+  },
+  "scripts.check_batch4": {
+   "sha1": "2537da8e4b052d9258d477cfdb8a5b94400141bb",
+   "loc": 457,
+   "rel": "scripts/check_batch4.py"
+  },
+  "scripts.check_batch5": {
+   "sha1": "81925b46481cf44bc28c04b3e09eca7097c7ac04",
+   "loc": 347,
+   "rel": "scripts/check_batch5.py"
+  },
+  "scripts.check_cookies": {
+   "sha1": "674ef50398b3b597ae4be404b8e9a68431909a03",
+   "loc": 172,
+   "rel": "scripts/check_cookies.py"
+  },
+  "scripts.check_sidecar_lock": {
+   "sha1": "9c90fcd195e645c7b9e83155a083c90fb37cc8ff",
+   "loc": 29,
+   "rel": "scripts/check_sidecar_lock.py"
+  },
+  "scripts.download_firered_models": {
+   "sha1": "aca3756417855da0bd112cbba80bfb9a318c05dd",
+   "loc": 29,
+   "rel": "scripts/download_firered_models.py"
+  },
+  "scripts.gen_sample_assets": {
+   "sha1": "98f843b4dcb43dbe3f2d0dff6086e25e2c790ed4",
+   "loc": 108,
+   "rel": "scripts/gen_sample_assets.py"
+  },
+  "scripts.tree_audit": {
+   "sha1": "c04741109eb511943fed9473b32c531b415debd0",
+   "loc": 226,
+   "rel": "scripts/tree_audit.py"
+  },
+  "series_glossary": {
+   "sha1": "ca16cc6f13704e696e76e08c1bfa8e25148d610a",
+   "loc": 199,
+   "rel": "series_glossary.py"
+  },
+  "server": {
+   "sha1": "5d1ac8d5ab42937a7acced28ff34b5046fdc03f9",
+   "loc": 6602,
+   "rel": "server.py"
+  },
+  "split_parts": {
+   "sha1": "210326769f3d3bc5b2e18b079a4d5986b3473a3f",
+   "loc": 828,
+   "rel": "split_parts.py"
+  },
+  "test_channel": {
+   "sha1": "528ece0d58b1d58b149b40fb0017ce415cfdf1a2",
+   "loc": 1435,
+   "rel": "test_channel.py"
+  },
+  "tests.__init__": {
+   "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+   "loc": 0,
+   "rel": "tests/__init__.py"
+  },
+  "tests.test_agent_core_smoke": {
+   "sha1": "ced53457d6bba49c7f62235205d13371f17eafbb",
+   "loc": 76,
+   "rel": "tests/test_agent_core_smoke.py"
+  },
+  "tests.test_agent_parser": {
+   "sha1": "d7974ab1a22706282b549d072d20ab5f9eb53719",
+   "loc": 42,
+   "rel": "tests/test_agent_parser.py"
+  },
+  "tests.test_agent_quality": {
+   "sha1": "b89d9fe6d6a882e104e59076e12bed245c519f1b",
+   "loc": 74,
+   "rel": "tests/test_agent_quality.py"
+  },
+  "tests.test_agent_tool_loop": {
+   "sha1": "92dbc49b8ee2c3a93840aff6d353d2874695816f",
+   "loc": 107,
+   "rel": "tests/test_agent_tool_loop.py"
+  },
+  "tests.test_asr_demucs": {
+   "sha1": "665d6f56c72f82b05efbb0841acc46d909f2513b",
+   "loc": 49,
+   "rel": "tests/test_asr_demucs.py"
+  },
+  "tests.test_auto_publisher_dedup": {
+   "sha1": "6b0b3926fdbc5adbb85d2459a2bd51c9a59903f9",
+   "loc": 118,
+   "rel": "tests/test_auto_publisher_dedup.py"
+  },
+  "tests.test_chatgpt_route": {
+   "sha1": "5754f2089c4c7114282f4f7908ef518447b6b949",
+   "loc": 27,
+   "rel": "tests/test_chatgpt_route.py"
+  },
+  "tests.test_film_db_queue_meta": {
+   "sha1": "7139c0ab864c114ea9b2e7128d0b19aa4c4091fd",
+   "loc": 82,
+   "rel": "tests/test_film_db_queue_meta.py"
+  },
+  "tests.test_hardsub_blur_toggle": {
+   "sha1": "2490c3db12922f6a1997a220a7d53599000dfe41",
+   "loc": 104,
+   "rel": "tests/test_hardsub_blur_toggle.py"
+  },
+  "tests.test_hg_merge_queue": {
+   "sha1": "70dbda282110a0dc3ace42d78482a4047a0d5907",
+   "loc": 82,
+   "rel": "tests/test_hg_merge_queue.py"
+  },
+  "tests.test_job_queue": {
+   "sha1": "4523be62baaf7dae36b53432eaecaa01d99660c5",
+   "loc": 238,
+   "rel": "tests/test_job_queue.py"
+  },
+  "tests.test_job_queue_worker": {
+   "sha1": "e05f898a0b44f07dfca5df454695dc9a04b298f6",
+   "loc": 180,
+   "rel": "tests/test_job_queue_worker.py"
+  },
+  "tests.test_layout_paths": {
+   "sha1": "1b04955b8d55a0bc36527c8546e06eead4365d60",
+   "loc": 180,
+   "rel": "tests/test_layout_paths.py"
+  },
+  "tests.test_meta_and_thumb": {
+   "sha1": "98880c960e5c4201916a37e8310d6838d71b33d6",
+   "loc": 141,
+   "rel": "tests/test_meta_and_thumb.py"
+  },
+  "tests.test_pronoun_consistency": {
+   "sha1": "03ff0ee3e46ebe0cafe2f12b9fd3005877410ef8",
+   "loc": 76,
+   "rel": "tests/test_pronoun_consistency.py"
+  },
+  "tests.test_pronoun_postpass": {
+   "sha1": "3b0291b7567906ee242c6213ccaf88c73d1a6d39",
+   "loc": 40,
+   "rel": "tests/test_pronoun_postpass.py"
+  },
+  "tests.test_pronoun_qa_slim_plan": {
+   "sha1": "8baff7d93e3fab879fad9fb161f47d1d3b369366",
+   "loc": 73,
+   "rel": "tests/test_pronoun_qa_slim_plan.py"
+  },
+  "tests.test_queue_http_state": {
+   "sha1": "8efd1b74c1ff4d853d6e31de4779b46262b7d721",
+   "loc": 72,
+   "rel": "tests/test_queue_http_state.py"
+  },
+  "tests.test_queue_jobs_api": {
+   "sha1": "3d2cc6763c1d5efc70b38d8ba319aa9951bddaba",
+   "loc": 77,
+   "rel": "tests/test_queue_jobs_api.py"
+  },
+  "tests.test_queue_run_one": {
+   "sha1": "a918545d1e40cf50333afcca638ead758d75e6b3",
+   "loc": 189,
+   "rel": "tests/test_queue_run_one.py"
+  },
+  "tests.test_render_expr": {
+   "sha1": "856e5ce25d04de0dd2907fc9b0ed32d63f95ba11",
+   "loc": 110,
+   "rel": "tests/test_render_expr.py"
+  },
+  "tests.test_restart_guard": {
+   "sha1": "e0aebde73769ed6edf38dc82b122ea709cbb85a6",
+   "loc": 63,
+   "rel": "tests/test_restart_guard.py"
+  },
+  "tests.test_review_batches": {
+   "sha1": "66ade26018d410fa8dc36329db7d9cf549b7d9e7",
+   "loc": 23,
+   "rel": "tests/test_review_batches.py"
+  },
+  "tests.test_review_parallel_workers": {
+   "sha1": "a5fda6bff94f8008afc0b833b6aa513a243f7689",
+   "loc": 57,
+   "rel": "tests/test_review_parallel_workers.py"
+  },
+  "tests.test_review_pass1_upload": {
+   "sha1": "567893c4170cc8dc332105476d2ee189d0950d73",
+   "loc": 35,
+   "rel": "tests/test_review_pass1_upload.py"
+  },
+  "tests.test_server_split": {
+   "sha1": "4029381e5e02821596dc47965eef9e6bc8c7c5c9",
+   "loc": 26,
+   "rel": "tests/test_server_split.py"
+  },
+  "tests.test_sfx_lib": {
+   "sha1": "8db989665bda3aacd1b2777ca4a3ebd9bfbbe5f8",
+   "loc": 163,
+   "rel": "tests/test_sfx_lib.py"
+  },
+  "tests.test_source_link": {
+   "sha1": "5af2f9f9f770906c73c22c8fb78cf81f9dab67f4",
+   "loc": 84,
+   "rel": "tests/test_source_link.py"
+  },
+  "tests.test_split_enospc_guard": {
+   "sha1": "bac54bcb782cac4b328dc1f197a1c659ea7b0432",
+   "loc": 38,
+   "rel": "tests/test_split_enospc_guard.py"
+  },
+  "tests.test_translate_force_default": {
+   "sha1": "e0fbc33dc4fb5a2c5705181923991964032ba863",
+   "loc": 70,
+   "rel": "tests/test_translate_force_default.py"
+  },
+  "tests.test_upload_limit_stop": {
+   "sha1": "3fed09b4e6cc1bef2c4698ec36327feef1f3ef2e",
+   "loc": 27,
+   "rel": "tests/test_upload_limit_stop.py"
+  },
+  "tools.__init__": {
+   "sha1": "e8fe133daf7494a5d125181bd1cce681dd44b359",
+   "loc": 1,
+   "rel": "tools/__init__.py"
+  },
+  "tools.context_studio.__init__": {
+   "sha1": "0bd955ebcdbaea61a56cd25cb0950a4e074f0750",
+   "loc": 6,
+   "rel": "tools/context_studio/__init__.py"
+  },
+  "tools.context_studio.__main__": {
+   "sha1": "3035da499e8df42a98530ab24418e570456ef5e8",
+   "loc": 67,
+   "rel": "tools/context_studio/__main__.py"
+  },
+  "tools.context_studio.address_lexicon": {
+   "sha1": "86623d3037dd65c4a1fed3a593ad6367089e9ac2",
+   "loc": 338,
+   "rel": "tools/context_studio/address_lexicon.py"
+  },
+  "tools.context_studio.analyzer": {
+   "sha1": "559ae5a64e0ed8ebf41d16e6312e787a74f11944",
+   "loc": 264,
+   "rel": "tools/context_studio/analyzer.py"
+  },
+  "tools.context_studio.app_streamlit": {
+   "sha1": "edfdc968b0ea608524de78bdd38a2298b1cdbb43",
+   "loc": 108,
+   "rel": "tools/context_studio/app_streamlit.py"
+  },
+  "tools.context_studio.character_mapper": {
+   "sha1": "a428f26b8e8f168cd2800da90ec8c9dd36f6ae3e",
+   "loc": 353,
+   "rel": "tools/context_studio/character_mapper.py"
+  },
+  "tools.context_studio.exporter": {
+   "sha1": "7692ad940f284800a1d64075097a0febe1618e0f",
+   "loc": 73,
+   "rel": "tools/context_studio/exporter.py"
+  },
+  "tools.context_studio.schema": {
+   "sha1": "e077d40fad230b974ae46ef05044490609dcc392",
+   "loc": 129,
+   "rel": "tools/context_studio/schema.py"
+  },
+  "tools.context_studio.srt_io": {
+   "sha1": "f94e74fccbcb5a26da04b6fd17009f71d5227513",
+   "loc": 99,
+   "rel": "tools/context_studio/srt_io.py"
+  },
+  "tools.lib_check": {
+   "sha1": "fe82f3ce7adc1d04b6e023f00a702bb1b51e0a3d",
+   "loc": 411,
+   "rel": "tools/lib_check.py"
+  },
+  "tools.migrate_work": {
+   "sha1": "3cdc60d8a9c29c647b2bf8413ec938df5ba87e01",
+   "loc": 299,
+   "rel": "tools/migrate_work.py"
+  },
+  "tools.pick_dirs_dialog": {
+   "sha1": "9a9157ba1d7db3a8d32855dfc25c4e846a961ea4",
+   "loc": 204,
+   "rel": "tools/pick_dirs_dialog.py"
+  },
+  "tools.preset_switcher": {
+   "sha1": "b11124341d3fd67072e2fc513961624c74cc3b41",
+   "loc": 209,
+   "rel": "tools/preset_switcher.py"
+  },
+  "tools.test_channel": {
+   "sha1": "66265176624a655078e12ce2d785903e232d9e0b",
+   "loc": 1283,
+   "rel": "tools/test_channel.py"
+  },
+  "translate": {
+   "sha1": "263ad51a679305a5d4e17f0091b1d329ad46e8d3",
+   "loc": 4083,
+   "rel": "translate.py"
+  },
+  "uploader_settings_api": {
+   "sha1": "a6d85c31398b7574eb7849694ce85fc170461ab2",
+   "loc": 670,
+   "rel": "uploader_settings_api.py"
+  }
+ }
+}

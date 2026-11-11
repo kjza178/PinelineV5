@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import batch_config
+import core.batch_config as batch_config
 from server import MuxReq, RunAllReq, mux_job, run_all
 
 

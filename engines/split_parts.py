@@ -3,6 +3,11 @@ split_parts.py — Tự động tính toán và chia video dài (3h-12h+) thành
 để chạy ASR/TTS/Render độc lập chống lệch time, sau đó ghép concat lại thành bản Full.
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[1])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import argparse
 import json
@@ -61,6 +66,18 @@ def assert_enough_space_for_split(video_path: str | Path, out_dir: str | Path) -
             f"Không đủ chỗ để split: cần ≥{need/1e9:.1f}GB, còn {free/1e9:.1f}GB "
             f"tại {Path(out_dir).resolve()} (Errno 28 / ENOSPC guard)."
         )
+
+
+def cleanup_split_parts_dir(parts_dir: str | Path) -> None:
+    """Xoá thư mục `_split_parts` dở (orphan GB sau fail / ENOSPC)."""
+    d = Path(parts_dir)
+    if not d.exists():
+        return
+    try:
+        shutil.rmtree(d, ignore_errors=True)
+        print(f"[split_parts] Đã xoá partial {d}", flush=True)
+    except Exception as e:
+        print(f"[split_parts] Không xoá được {d}: {e}", flush=True)
 
 
 def _unlink_quiet(path: Path) -> None:
@@ -358,18 +375,6 @@ def _hardlink_alias(primary: Path, alias: Path) -> bool:
         return False
 
 
-def cleanup_split_parts_dir(parts_dir: str | Path) -> None:
-    """Xoá thư mục `_split_parts` dở (orphan GB sau fail / ENOSPC)."""
-    d = Path(parts_dir)
-    if not d.exists():
-        return
-    try:
-        shutil.rmtree(d, ignore_errors=True)
-        print(f"[split_parts] Đã xoá partial {d}", flush=True)
-    except Exception as e:
-        print(f"[split_parts] Không xoá được {d}: {e}", flush=True)
-
-
 def merge_parts_to_full(part_videos: list[str | Path], out_full_mp4: str | Path) -> Path:
     """
     Nối danh sách các part đã render hoàn chỉnh thành 1 file full (lossless copy 30s).
@@ -474,6 +479,29 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
                     raise
                 shutil.copy2(part_src, part_dest)
 
+        # Tên Lib/poster: kế thừa parent — KHÔNG dùng folder work/<sub_id>
+        parent_hg = ""
+        try:
+            import core.film_db as _fdb
+            parent_hg = _fdb.derive_hg_name(
+                job_id,
+                m_parent.data.get("request") or {},
+                parent_title,
+            )
+        except Exception:
+            parent_hg = ""
+        if not parent_hg:
+            try:
+                preq = m_parent.data.get("request") or {}
+                if preq.get("orig_path"):
+                    parent_hg = Path(preq["orig_path"]).parent.name
+            except Exception:
+                parent_hg = ""
+            if not parent_hg or parent_hg.lower() in {
+                "downloads", "download", "work", "tmp", "temp", "_split_parts",
+            }:
+                parent_hg = parent_title
+
         # Tạo manifest cho sub-job
         m_sub = Manifest(sub_dir)
         m_sub.data["request"] = {
@@ -487,6 +515,7 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
             "part_title": f"Phần {k}/{total_parts}",
             "parent_job_id": job_id,
             "orig_path": str(part_dest),
+            "hg_name": parent_hg,
         }
         m_sub.data["meta"] = {
             **parent_meta,
@@ -494,15 +523,13 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
             "duration": item["duration"],
         }
         m_sub.data["opts"] = dict(parent_opts)
-        # Kế thừa queue_opts của job cha (giọng/ASR/audio…) để xếp hàng part không lệch config
-        parent_qopts = dict(m_parent.data.get("queue_opts") or {})
-        if parent_qopts:
-            m_sub.data["queue_opts"] = parent_qopts
-        # Seed TTS — tránh _resolve_voice rơi về list_clone_voices()[0]
+        qo = dict(m_parent.data.get("queue_opts") or {})
+        m_sub.data["queue_opts"] = qo
+        # Seed TTS từ parent/queue_opts — tránh _resolve_voice rơi về list_clone_voices()[0]
         parent_tts = (m_parent.data.get("stages") or {}).get("tts") or {}
-        voice = (parent_qopts.get("voice") or parent_tts.get("voice") or parent_opts.get("voice") or "").strip()
+        voice = (qo.get("voice") or parent_tts.get("voice") or parent_opts.get("voice") or "").strip()
         try:
-            speed = parent_qopts.get("speed")
+            speed = qo.get("speed")
             if speed is None:
                 speed = parent_tts.get("speed")
             if speed is None:
@@ -511,30 +538,28 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
         except (TypeError, ValueError):
             speed_f = None
         eng = (
-            parent_qopts.get("tts_engine") or parent_qopts.get("engine")
+            qo.get("tts_engine") or qo.get("engine")
             or parent_tts.get("tts_engine") or parent_tts.get("engine")
             or parent_opts.get("tts_engine") or parent_opts.get("engine")
         )
-        # Đánh dấu download done trên part (đã có file video)
-        st_dl = m_sub.data.setdefault("stages", {}).setdefault("download", {})
-        st_dl.update({
+        tts_seed: dict = {"status": "pending"}
+        if voice:
+            tts_seed["voice"] = voice
+            tts_seed["cur_text"] = f"kế thừa giọng {voice} từ parent"
+        if speed_f and speed_f > 0:
+            tts_seed["speed"] = speed_f
+        if eng:
+            tts_seed["tts_engine"] = eng
+            tts_seed["engine"] = eng
+        stages = m_sub.data.setdefault("stages", {})
+        stages["download"] = {
             "status": "done",
             "video_path": str(part_dest),
-            "updated_at": time.time(),
-            "from_split": True,
-        })
-        m_sub.data["stages"]["download"] = st_dl
+            "duration_sec": item["duration"],
+            "finished_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
         if voice or speed_f or eng:
-            tts_seed: dict = {"status": "pending"}
-            if voice:
-                tts_seed["voice"] = voice
-                tts_seed["cur_text"] = f"kế thừa giọng {voice} từ parent"
-            if speed_f and speed_f > 0:
-                tts_seed["speed"] = speed_f
-            if eng:
-                tts_seed["tts_engine"] = eng
-                tts_seed["engine"] = eng
-            m_sub.data["stages"]["tts"] = tts_seed
+            stages["tts"] = tts_seed
             try:
                 cfg = {k: tts_seed[k] for k in ("voice", "speed", "tts_engine", "engine") if k in tts_seed}
                 (sub_dir / "tts_config.json").write_text(
@@ -553,13 +578,7 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
         "sub_job_ids": sub_job_ids,
         "parts": parts_info,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "auto": bool((m_parent.data.get("split_info") or {}).get("auto")),
     }
-    # Parent không chạy ASR/TTS/mux — chờ part + merge
-    st_dl = m_parent.data.setdefault("stages", {}).setdefault("download", {})
-    if st_dl.get("status") != "done":
-        st_dl.update({"status": "done", "updated_at": time.time(), "note": "parent_after_split"})
-        m_parent.data["stages"]["download"] = st_dl
     m_parent.save()
 
     print(f"[split_parts] Job {job_id} đã được chia thành {total_parts} sub-jobs: {', '.join(sub_job_ids)}", flush=True)
@@ -619,200 +638,169 @@ def merge_job_parts(job_id: str, work_root: str | Path = "work") -> dict:
             "rendered_parts": [p.name for p in rendered_parts],
         }
 
-    # Một lần ghi → output.mp4; output_full chỉ hardlink (không copy2)
-    final_output = work_dir / "output.mp4"
+    # Một lần ghi → output.mp4; output_full.mp4 chỉ hardlink (KHÔNG copy2 nhân đôi GB)
+    parent_output = work_dir / "output.mp4"
     full_alias = work_dir / "output_full.mp4"
-    for p in (final_output, full_alias):
+    for p in (parent_output, full_alias):
         if p.exists() or p.is_symlink():
             try:
                 p.unlink()
             except OSError as e:
                 print(f"[split_parts] không xoá {p.name} cũ: {e}", flush=True)
-    merge_parts_to_full(rendered_parts, final_output)
-    linked = _hardlink_alias(final_output, full_alias)
-    full_for_manifest = full_alias if linked and full_alias.exists() else final_output
+    merge_parts_to_full(rendered_parts, parent_output)
+    linked = _hardlink_alias(parent_output, full_alias)
+    final = parent_output if parent_output.exists() else full_alias
+    full_for_manifest = full_alias if linked and full_alias.exists() else final
 
+    # Job cha không tự ASR/dịch/TTS — đánh done toàn bộ stage wired để UI/queue
+    # không báo «pipeline kết thúc nhưng output chưa hoàn chỉnh» / failed.
     now = time.time()
     stages = m_parent.data.setdefault("stages", {})
     for name in ("download", "asr", "translate", "tts", "mux"):
         st = stages.setdefault(name, {})
-        st.update({"status": "done", "updated_at": now, "from_split_merge": True})
+        st.pop("error", None)
+        st.pop("last_error", None)
+        st.update({
+            "status": "done",
+            "updated_at": now,
+            "from_split_merge": True,
+        })
         if name == "mux":
             st.update({
-                "output_path": str(final_output),
+                "output_path": str(final),
                 "output_full_path": str(full_for_manifest),
                 "is_full_merged": True,
                 "n_parts": len(rendered_parts),
+                "progress": 100,
+                "cur_text": f"Hoàn tất bản Full ({len(rendered_parts)} parts ghép lại) ✓",
                 "hardlink_alias": bool(linked),
             })
         stages[name] = st
     info = m_parent.data.setdefault("split_info", {})
     info["status"] = "merged"
     info["merged_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    info["output_path"] = str(final_output)
+    info["output_path"] = str(final)
     m_parent.save()
 
+    # Dọn cắt tạm — không còn cần sau merge
     parts_dir = work_dir / "_split_parts"
     if parts_dir.is_dir():
         cleanup_split_parts_dir(parts_dir)
 
-    print(
-        f"[split_parts] Job {job_id}: đã ghép {len(rendered_parts)} part → {final_output.name} "
-        f"({final_output.stat().st_size/1e6:.1f} MB; hardlink={bool(linked)})",
-        flush=True,
-    )
     return {
         "ok": True,
         "ready": True,
-        "output_path": str(final_output),
+        "output_path": str(final),
         "output_full_path": str(full_for_manifest),
         "hardlink_alias": bool(linked),
-        "size_mb": round(final_output.stat().st_size / 1e6, 1),
+        "size_mb": round(final.stat().st_size / 1e6, 1),
         "n_parts": len(rendered_parts),
     }
 
 
-def is_split_subjob(work_dir: str | Path) -> bool:
-    """Part đã tách (…_p01) — không auto-split lần nữa."""
-    try:
-        from core.manifest import Manifest
-        req = (Manifest(work_dir).data.get("request") or {})
-        if req.get("parent_job_id"):
-            return True
-    except Exception:  # noqa: BLE001
-        pass
-    name = Path(work_dir).name
-    return bool(re.search(r"_p\d{2}$", name))
-
-
-def maybe_auto_split_job(
-    job_id: str,
-    *,
-    work_root: str | Path = "work",
-    enabled: bool = True,
-    target_hours: float = DEFAULT_TARGET_HOURS,
-    min_hours: float | None = None,
-) -> dict:
+def merge_subjob_asr_to_parent(job_id: str, work_root: str | Path = "work") -> dict:
     """
-    Tự detect thời lượng video sau khi có source:
-    - < min_hours → không chia, chạy job thường
-    - ≥ min_hours → chia part + trả sub_job_ids (caller xếp hàng)
-    - Đã là sub-job / đã split → không làm lại
+    Gộp kết quả ASR (asr.json và sub.zh.srt) của các sub-job về job cha.
+    Tự động cộng dồn time offset của từng part để mốc thời gian khớp 100% với video cha.
     """
-    if not enabled:
-        return {"ok": True, "split": False, "skipped": "auto_split_off", "job_ids": [job_id]}
-
-    work_root = Path(work_root)
-    work_dir = work_root / job_id
-    if not work_dir.is_dir():
-        return {"ok": False, "split": False, "error": f"không tìm thấy job {job_id}"}
-
-    if is_split_subjob(work_dir):
-        return {"ok": True, "split": False, "skipped": "already_subjob", "job_ids": [job_id]}
-
     from core.manifest import Manifest
-    m = Manifest(work_dir)
-    info = m.data.get("split_info") or {}
-    existing = list(info.get("sub_job_ids") or [])
-    # Đã ghép Full → không chia / không xếp lại part
-    if info.get("status") == "merged":
-        return {
-            "ok": True,
-            "split": False,
-            "skipped": "already_merged",
-            "parent_job_id": job_id,
-            "sub_job_ids": existing,
-            "job_ids": [job_id],
-        }
-    if info.get("status") == "split_done" and existing:
-        # Mọi part đã wired-done → không kích re-queue (chống TTS/mux lại)
-        try:
-            from core.job_queue import is_wired_done
-            pending = [s for s in existing if not is_wired_done(work_root / s)]
-        except Exception:  # noqa: BLE001
-            pending = list(existing)
-        if not pending:
-            return {
-                "ok": True,
-                "split": False,
-                "skipped": "parts_already_done",
-                "already": True,
-                "total_parts": len(existing),
-                "parent_job_id": job_id,
-                "sub_job_ids": existing,
-                "job_ids": existing,
-            }
-        return {
-            "ok": True,
-            "split": True,
-            "already": True,
-            "total_parts": len(existing),
-            "parent_job_id": job_id,
-            "sub_job_ids": pending,  # chỉ part còn thiếu
-            "job_ids": pending,
-            "all_sub_job_ids": existing,
-        }
 
-    from engines.render import _find_video
-    video = _find_video(work_dir)
-    if not video or not video.exists():
-        return {"ok": True, "split": False, "skipped": "no_video", "job_ids": [job_id]}
-
-    thr = float(min_hours if min_hours is not None else MIN_SPLIT_HOURS)
-    dur = probe_duration(video)
-    if dur <= 0:
-        return {"ok": True, "split": False, "skipped": "probe_failed", "duration_sec": dur, "job_ids": [job_id]}
-    if dur < thr * 3600.0:
-        return {
-            "ok": True,
-            "split": False,
-            "skipped": "under_threshold",
-            "duration_sec": dur,
-            "duration_hours": round(dur / 3600.0, 2),
-            "min_hours": thr,
-            "job_ids": [job_id],
-        }
-
-    m.data.setdefault("split_info", {})["auto"] = True
-    m.save()
-    print(
-        f"[auto_split] {job_id}: phát hiện video {dur/3600:.2f}h ≥ {thr}h → chia part "
-        f"(target {target_hours}h/part)",
-        flush=True,
-    )
-    res = split_job_to_subjobs(job_id, target_hours=float(target_hours), work_root=work_root)
-    res["duration_sec"] = dur
-    res["duration_hours"] = round(dur / 3600.0, 2)
-    res["auto"] = True
-    if res.get("sub_job_ids"):
-        res["job_ids"] = list(res["sub_job_ids"])
-    return res
-
-
-def try_auto_merge_parent(
-    job_id: str,
-    *,
-    work_root: str | Path = "work",
-    enabled: bool = True,
-) -> dict | None:
-    """Sau khi một part mux xong: nếu mọi part done → merge output_full trên job cha."""
-    if not enabled:
-        return None
     work_root = Path(work_root)
     work_dir = work_root / job_id
     if not work_dir.is_dir():
-        return None
-    try:
-        from core.manifest import Manifest
-        req = (Manifest(work_dir).data.get("request") or {})
-        parent = str(req.get("parent_job_id") or "").strip()
-        if not parent:
-            return None
-        print(f"[auto_merge] part {job_id} xong → kiểm tra merge parent {parent}", flush=True)
-        return merge_job_parts(parent, work_root=work_root)
-    except Exception as e:  # noqa: BLE001
-        print(f"[auto_merge] {job_id}: {e}", flush=True)
-        return {"ok": False, "error": str(e)}
+        raise FileNotFoundError(f"Không tìm thấy job: {job_id}")
+
+    m_parent = Manifest(work_dir)
+    split_info = m_parent.data.get("split_info") or {}
+    parts_meta = split_info.get("parts") or []
+    sub_ids = split_info.get("sub_job_ids") or []
+
+    if not sub_ids:
+        sub_ids = sorted([p.name for p in work_root.glob(f"{job_id}_p[0-9][0-9]") if p.is_dir()])
+
+    if not sub_ids:
+        raise ValueError(f"Job {job_id} không có sub-jobs nào để gộp ASR.")
+
+    # Tạo map offset cho từng part
+    part_offsets: dict[str, float] = {}
+    for p_info in parts_meta:
+        k = p_info.get("part", 1)
+        sub_id = f"{job_id}_p{k:02d}"
+        part_offsets[sub_id] = float(p_info.get("start", 0.0))
+
+    all_segments = []
+    missing_asr = []
+
+    for idx, sid in enumerate(sub_ids):
+        s_dir = work_root / sid
+        asr_file = s_dir / "asr.json"
+        if not asr_file.exists():
+            missing_asr.append(sid)
+            continue
+
+        offset = part_offsets.get(sid, 0.0)
+        try:
+            segs = json.loads(asr_file.read_text(encoding="utf-8"))
+            if isinstance(segs, list):
+                for s in segs:
+                    st = float(s.get("start", 0.0)) + offset
+                    en = float(s.get("end", 0.0)) + offset
+                    seg_copy = dict(s)
+                    seg_copy["start"] = round(st, 3)
+                    seg_copy["end"] = round(en, 3)
+                    all_segments.append(seg_copy)
+        except Exception as e:
+            print(f"[split_parts] Lỗi đọc ASR sub-job {sid}: {e}", flush=True)
+            missing_asr.append(sid)
+
+    if missing_asr:
+        return {
+            "ok": False,
+            "message": f"Chưa thể gộp ASR vì còn các part chưa có asr.json: {', '.join(missing_asr)}",
+            "missing_parts": missing_asr,
+        }
+
+    # Sắp xếp lại theo thời gian start
+    all_segments.sort(key=lambda x: x.get("start", 0.0))
+
+    # Ghi asr.json cho job cha
+    parent_asr_path = work_dir / "asr.json"
+    parent_asr_path.write_text(json.dumps(all_segments, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Tạo sub.zh.srt cho job cha
+    def _sec_to_srt_time(sec: float) -> str:
+        ms = int(round((sec - int(sec)) * 1000))
+        s = int(sec)
+        m, s = divmod(s, 60)
+        h, m = divmod(m, 60)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+    srt_lines = []
+    for i, s in enumerate(all_segments, 1):
+        t_st = _sec_to_srt_time(float(s.get("start", 0.0)))
+        t_en = _sec_to_srt_time(float(s.get("end", 0.0)))
+        txt = (s.get("text") or "").strip()
+        srt_lines.append(f"{i}\n{t_st} --> {t_en}\n{txt}\n")
+
+    parent_srt_path = work_dir / "sub.zh.srt"
+    parent_srt_path.write_text("\n".join(srt_lines), encoding="utf-8")
+
+    # Đánh dấu stage asr của job cha xong
+    m_parent.data.setdefault("stages", {})["asr"] = {
+        "status": "done",
+        "finished_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "total_segments": len(all_segments),
+        "from_split_parts": len(sub_ids),
+    }
+    m_parent.save()
+
+    print(f"[split_parts] Đã gộp ASR {len(sub_ids)} part ({len(all_segments)} câu) về job cha {job_id} -> asr.json & sub.zh.srt", flush=True)
+    return {
+        "ok": True,
+        "total_segments": len(all_segments),
+        "parts_merged": len(sub_ids),
+        "asr_path": str(parent_asr_path),
+    }
 
 
 def main():

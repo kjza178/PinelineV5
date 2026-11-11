@@ -1,5 +1,5 @@
 """
-Chuyển Z:\\PinelineV5\\work sang ổ khác (mặc định D:\\PinelineV5_work) giữa 2 job, không mất tiến độ.
+Chuyển Z:\\PinelineV2\\work sang ổ khác (mặc định D:\\PinelineV2_work) giữa 2 job, không mất tiến độ.
 
 1. Copy trước (robocopy /MIR) trong lúc job hiện tại vẫn chạy.
 2. Rút các job đang chờ khỏi hàng + tắt Auto-pilot → worker dừng sau job hiện tại.
@@ -7,11 +7,15 @@ Chuyển Z:\\PinelineV5\\work sang ổ khác (mặc định D:\\PinelineV5_work)
 4. Dừng server + sidecar, copy nốt phần chênh, đổi work → work_old_migrated, tạo junction work → đích.
 5. Khởi động lại server + sidecar, xếp lại các job đã rút (đúng thứ tự + opts), trả Auto-pilot về như cũ.
 
-Chạy:  python -m tools.migrate_work [D:\\PinelineV5_work]
-       python tools/migrate_work.py [D:\\PinelineV5_work]
-Log:   work/logs/migrate_work.log
+Chạy:  python migrate_work.py [D:\\PinelineV2_work]
+Log:   migrate_work.log (cạnh file này, ngoài work/)
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[1])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import json
 import os
@@ -26,15 +30,12 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "work"
-DST = Path(sys.argv[1] if len(sys.argv) > 1 else r"D:\PinelineV5_work")
+DST = Path(sys.argv[1] if len(sys.argv) > 1 else r"D:\PinelineV2_work")
 OLD = ROOT / "work_old_migrated"
-_port = (os.getenv("PORT") or "8805").strip()
-BASE = (os.getenv("PINELINE_BASE") or f"http://127.0.0.1:{_port}").strip().rstrip("/")
+BASE = (os.getenv("PINELINE_BASE") or "http://127.0.0.1:8801").rstrip("/")
 SIDECAR = "http://127.0.0.1:8802"
-_LOG_DIR = ROOT / "work" / "logs"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG = _LOG_DIR / "migrate_work.log"
-PLAN = _LOG_DIR / "migrate_work_plan.json"
+LOG = ROOT / "migrate_work.log"
+PLAN = ROOT / "migrate_work_plan.json"
 
 sys.path.insert(0, str(ROOT))
 
@@ -174,10 +175,7 @@ def wait_http(url: str, sec: int) -> bool:
 
 def start_services_and_requeue(pending: list[str], opts: dict, ap_was: bool) -> bool:
     from agents.agent_autopilot import set_enabled
-    bat = "run_v5.bat"
-    if not (ROOT / bat).is_file():
-        raise SystemExit(f"Thiếu {ROOT / bat} — không fallback run_v4/run_v2 (đã archive).")
-    start_bat(bat)
+    start_bat("run_v2.bat")
     if not wait_http(BASE + "/api/agent/status", 180):
         tg("server không lên sau 3 phút — cần kiểm tra")
         return False
@@ -252,7 +250,7 @@ def main() -> None:
     tg("job xong — dừng server vài phút để chuyển nốt")
     for p in procs("agent_tele_cmd.py"):
         kill_with_parent_cmd(p)
-    for p in procs(f"server.py --host 127.0.0.1 --port {_port}"):
+    for p in procs("server.py --host 127.0.0.1 --port 8801"):
         kill_with_parent_cmd(p)
     time.sleep(4)
     try:
@@ -295,5 +293,5 @@ if __name__ == "__main__":
         main()
     except Exception as e:  # noqa: BLE001
         log(f"LỖI: {e}")
-        tg(f"LỖI: {e} — xem work/logs/migrate_work.log")
+        tg(f"LỖI: {e} — xem migrate_work.log")
         raise

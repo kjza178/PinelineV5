@@ -1,0 +1,24 @@
+---
+description: Dùng Second Brain (docs/brain) để hiểu code trước khi sửa, và sync brain sau khi sửa
+alwaysApply: true
+---
+
+# Second Brain — docs/brain/
+
+Bản đồ: `docs/brain/README.md`. Thẻ module: `docs/brain/modules/<module>.md` (khối AUTO do script sinh + khối MANUAL viết tay).
+
+## Trước khi sửa module lớn
+
+- Đọc thẻ module (ai gọi, artifact dùng chung, config key, fix logs cũ) trước khi mở `server.py`, `translate.py`, `render.py`, `hongguo_bridge.py`.
+- Tra nhanh: `python scripts/brain_build.py --module <tên>`; key/route/artifact: `docs/brain/generated/`.
+
+## Sau khi sửa (bước cuối của docs-on-change)
+
+1. `python scripts/brain_build.py` — làm mới phần tự động (không đụng khối MANUAL).
+2. Module đổi **hành vi** → sửa khối `<!-- MANUAL:START -->…<!-- MANUAL:END -->` của thẻ: Vai trò, Luồng chính, Bất biến, Bẫy đã biết (link `docs/fixes/...`), Ghi chú vận hành.
+3. Quy trình/thuật ngữ đổi → `docs/brain/processes/`, `docs/brain/glossary.md`.
+
+## Không được
+
+- Sửa tay khối AUTO hoặc `docs/brain/generated/` (sẽ bị ghi đè).
+- Chép nội dung STATE/DECISIONS/fixes vào brain — chỉ link.

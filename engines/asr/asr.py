@@ -22,6 +22,11 @@ Treo/crash: ghi asr.json dần; ASR_STALL_SEC (mặc định 900) không tiến 
 pending + giữ partial; resume cắt tiếp từ mốc giây cuối.
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[2])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import os as _os
 # FS không hỗ trợ symlink (ổ D:/exFAT/máy chưa bật Developer Mode) -> HF copy thay symlink,

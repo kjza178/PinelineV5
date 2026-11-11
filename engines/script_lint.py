@@ -10,6 +10,11 @@ autofix_rows: sửa chắc chắn đúng (không cần LLM)
 lint_rows: báo cáo phần còn lại (tên/thuật ngữ sai hẳn → agent_name_pass sửa bằng LLM)
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[1])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import json
 import re

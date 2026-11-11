@@ -40,22 +40,6 @@ def _load_cfg(force: bool = False) -> None:
 
 _load_cfg(force=True)
 
-
-def save_config(updates: dict) -> dict:
-    """Cập nhật pineline.config.json an toàn + đồng bộ runtime."""
-    _load_cfg(force=True)
-    for k, v in updates.items():
-        if v is None:
-            _CFG.pop(k, None)
-            os.environ.pop(k, None)
-        else:
-            _CFG[k] = str(v) if not isinstance(v, (bool, int, float, dict, list)) else v
-            os.environ[k] = str(v)
-    _cfg_file.write_text(json.dumps(_CFG, ensure_ascii=False, indent=2), encoding="utf-8")
-    _load_cfg(force=True)
-    return _CFG
-
-
 IS_WIN = platform.system() == "Windows"
 
 # FS không hỗ trợ symlink -> HF copy thay vì symlink (tránh WinError 1 khi tải model).
@@ -71,6 +55,10 @@ LLM_FILE_FIRST_KEYS = frozenset({
     "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL", "TRANSLATE_MODEL", "REVIEW_MODEL",
     "NAME_MODEL", "PRONOUN_MODEL", "CHATGPT_BASE_URL", "CHATGPT_MODEL", "CHATGPT_API_KEY",
     "AURORA_BASE_URL", "CLOUD_LLM_BASE_URL", "CLOUD_LLM_API_KEY", "PRONOUN_ANALYZE", "PRONOUN_ANALYZE_MODEL", "PRONOUN_ANALYZE_CHUNK",
+    # Fan-out REVIEW Aurora: sửa file có hiệu lực ngay (không cần restart)
+    "REVIEW_PARALLEL", "REVIEW_PARALLEL_DEFAULT", "REVIEW_PARALLEL_MAX",
+    "REVIEW_BACKUP", "REVIEW_PASS1_MAX_UPLOAD_BYTES", "REVIEW_PASS1_CHUNK_CUES",
+    "REVIEW_PASS1_ALLOW_CHAT_FALLBACK",
 })
 # Agent (server chat, sidecar Telegram, feeder) cùng một nguồn: file trước env.
 AGENT_FILE_FIRST_KEYS = frozenset({"AGENT_BASE_URL", "AGENT_API_KEY", "AGENT_MODEL", "AGENT_FALLBACK_MODEL"})
@@ -163,7 +151,6 @@ def pass_llm_model(kind: str = "pronoun") -> str | None:
         return str(m).strip()
     cg = get("CHATGPT_MODEL")
     if cg and str(cg).strip():
-        # Tiền tố chatgpt/ → llm.chat route Aurora pool
         raw = str(cg).strip()
         return raw if raw.startswith(("chatgpt/", "aurora/")) else f"chatgpt/{raw}"
     return get("REVIEW_MODEL") or get("LLM_MODEL")

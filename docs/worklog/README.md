@@ -6,6 +6,8 @@ Các ngày từ 2026-09-25 đến 2026-10-06 được dựng lại ngày 6/10 t�
 
 | Ngày | Chủ đề |
 |---|---|
+| [2026-11-11](./2026-11-11.md) | Studio SOP 1job + Aurora∥ REVIEW production |
+| [2026-11-10](./2026-11-10.md) | Bench REVIEW parallel Aurora (8×100 vs sequential) |
 | [2026-11-09](./2026-11-09.md) | MT draft QT + slim gloss + REVIEW GPT mini |
 | [2026-11-08](./2026-11-08.md) | Hongguo2 design + skip split-part upload |
 | [2026-11-07](./2026-11-07.md) | Films UI jq onclick leftovers (sync từ V2) |

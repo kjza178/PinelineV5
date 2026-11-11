@@ -89,14 +89,21 @@ def find_pronoun_issues(rows: list[dict], plan: dict) -> list[dict]:
     return issues
 
 
-def _fix_batch(chunk: list[dict], plan_block: str, model: str | None) -> dict[int, str]:
-    sys = (
+def _fix_batch(
+    chunk: list[dict],
+    plan_block: str,
+    model: str | None,
+    *,
+    system: str | None = None,
+) -> dict[int, str]:
+    sys = system or (
         "Bạn là biên tập viên lồng tiếng Việt. Sửa ĐẠI TỪ XƯNG HÔ / danh xưng cho khớp "
         "ma trận who→to và thể loại (đô thị: tôi/cậu/mày — CẤM Ta/Ngươi). "
         "CHỈ đổi đại từ/danh xưng liên quan; giữ nguyên nghĩa, độ dài, tên riêng đã đúng. "
-        "CHỈ trả JSON {\"fixes\":[{\"i\":<int>,\"vi\":\"...\"}]}."
+        'CHỈ trả JSON {"fixes":[{"i":<int>,"vi":"..."}]}.'
     )
     user = (
+
         plan_block
         + "\n\nCÁC CÂU NGHI LỆCH XƯNG HÔ:\n"
         + json.dumps(
@@ -145,15 +152,49 @@ def run_pronoun_pass(work_dir: str | Path, model: str | None = None) -> dict:
     n_det = apply_pronoun_postpass(rows, plan)
 
     issues = find_pronoun_issues(rows, plan)
+    # #3 policy: title bậc + «cậu» → formal 2nd (ngươi/ông theo register)
+    reg = None
+    preferred = "ngươi"
+    sys_override = None
+    n_title = 0
+    n_mech = 0
+    try:
+        from engines.pronoun_register_policy import (
+            build_register_plan,
+            scan_title_intimate_issues,
+            normalize_ong_nguoi_in_title_window,
+            enforce_remaining_cau,
+        )
+        from core.config import get as _cfg_get
+        pol_on = (_cfg_get("PRONOUN_TITLE_POLICY", "1") or "1").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        if pol_on:
+            reg = build_register_plan(plan)
+            preferred = reg.preferred_formal_2nd
+            seen = {x.get("i") for x in issues}
+            extra = scan_title_intimate_issues(rows, window=2, existing_ids=seen)
+            n_title = len(extra)
+            issues.extend(extra)
+            sys_override = reg.prompt_rules()
+            print(
+                f"[pronoun] title-policy mode={reg.mode} prefer={preferred} "
+                f"+{n_title} title_intimate",
+                flush=True,
+            )
+    except Exception as e:  # noqa: BLE001
+        print(f"[pronoun] title-policy skip: {e}", flush=True)
+
     rmodel = model or pass_llm_model("pronoun")
     pos = {r["i"]: k for k, r in enumerate(rows) if isinstance(r, dict) and "i" in r}
     plan_block = _plan_block_for_qa(plan)
     m = Manifest(work_dir)
     fixed, sample = 0, []
+    touched: set[int] = set()
     for k in range(0, len(issues), BATCH):
         chunk = issues[k : k + BATCH]
         try:
-            fixes = _fix_batch(chunk, plan_block, rmodel)
+            fixes = _fix_batch(chunk, plan_block, rmodel, system=sys_override)
         except Exception as e:  # noqa: BLE001
             print(f"[pronoun] lô {k // BATCH} lỗi, bỏ qua: {e}", flush=True)
             fixes = {}
@@ -164,8 +205,14 @@ def run_pronoun_pass(work_dir: str | Path, model: str | None = None) -> dict:
                 rows[pos[i]]["vi"] = vi
                 rows[pos[i]]["pr"] = 1
                 fixed += 1
+                touched.add(int(i))
         # post-pass lại sau LLM
         apply_pronoun_postpass(rows, plan)
+        if reg is not None and touched:
+            try:
+                normalize_ong_nguoi_in_title_window(rows, touched, preferred, window=2)
+            except Exception:  # noqa: BLE001
+                pass
         sp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
         try:
             st = m.data.setdefault("stages", {}).setdefault("translate", {})
@@ -176,6 +223,16 @@ def run_pronoun_pass(work_dir: str | Path, model: str | None = None) -> dict:
             m.save()
         except Exception:  # noqa: BLE001
             pass
+    if reg is not None:
+        try:
+            mech = enforce_remaining_cau(rows, preferred, window=2)
+            n_mech = len(mech)
+            if n_mech:
+                apply_pronoun_postpass(rows, plan)
+                sp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as e:  # noqa: BLE001
+            print(f"[pronoun] mech enforce skip: {e}", flush=True)
+
     try:
         (work_dir / "sub.vi.srt").write_text(to_srt(rows, key="vi"), encoding="utf-8")
     except Exception:  # noqa: BLE001
@@ -183,13 +240,17 @@ def run_pronoun_pass(work_dir: str | Path, model: str | None = None) -> dict:
     if is_local(rmodel):
         unload_local(rmodel)
     print(
-        f"[pronoun] det={n_det} · nghi={len(issues)} · LLM sửa={fixed}",
+        f"[pronoun] det={n_det} · nghi={len(issues)} · title={n_title} · "
+        f"LLM sửa={fixed} · mech={n_mech}",
         flush=True,
     )
     return {
         "ok": True,
         "n_det": n_det,
         "n_issues": len(issues),
+        "n_title": n_title,
         "n_fixed": fixed,
+        "n_mech": n_mech,
+        "register": {"mode": getattr(reg, "mode", None), "prefer": preferred} if reg else None,
         "sample": sample,
     }

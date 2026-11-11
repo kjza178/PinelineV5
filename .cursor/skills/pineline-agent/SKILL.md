@@ -32,9 +32,18 @@ python -m agent_v2 chat "mô tả mục tiêu"
 - Do not delete `work/` or re-run heavy ASR without explicit ask.
 - YT drafts are drafts — user edits before upload.
 
+## Second Brain (hybrid = rules + LLM tool-loop)
+
+Daemon `agent_brain` (+ `agent_quality` + `agent_brain_context`): rules deterministic + `llm_tick` gọi `agent_core` tools (`force_first_tool=pineline_status`).
+- Config: `AGENT_BRAIN=1`, `AGENT_BRAIN_MODE=hybrid`, `AGENT_MODEL`/:3377, TG `minimal`
+- Per-job: `work/<id>/qa_brain.json` · log `work/logs/agent_brain.log`
+- Manual tick: `POST /api/agent/brain/tick` · standalone `D:\PinelineV2_tmp\_run_brain_standalone.py` tới khi restart :8801
+- Không thay chat Telegram UX; Brain mutate silent (`require_confirm=False`).
+
 ## API cheat sheet
 
 - `GET /api/jobs`
 - `GET /api/jobs/{id}`
 - `GET|POST /api/queue/jobs` (+ `/stop`, `/clear`)
 - `POST /api/jobs/{id}/run-all`
+- `POST /api/agent/brain/tick`

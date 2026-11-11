@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 import requests
 
-ROOT = Path(__file__).resolve().parent.parent  # project root (file lives in agents/)
+ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 CONFIG_FILE = DATA_DIR / "canva_config.json"
 TOKEN_FILE = DATA_DIR / "canva_token.json"
@@ -37,23 +37,11 @@ def load_config() -> dict:
     return {
         "client_id": os.getenv("CANVA_CLIENT_ID", "").strip(),
         "client_secret": os.getenv("CANVA_CLIENT_SECRET", "").strip(),
-        "redirect_uri": os.getenv(
-            "CANVA_REDIRECT_URI",
-            f"http://127.0.0.1:{(os.getenv('PORT') or '8805').strip()}/canva/callback",
-        ).strip(),
+        "redirect_uri": os.getenv("CANVA_REDIRECT_URI", "http://127.0.0.1:8802/canva/callback").strip(),
     }
 
 
-def save_config(
-    client_id: str,
-    client_secret: str,
-    redirect_uri: str | None = None,
-) -> None:
-    if not redirect_uri:
-        redirect_uri = (
-            os.getenv("CANVA_REDIRECT_URI")
-            or f"http://127.0.0.1:{(os.getenv('PORT') or '8805').strip()}/canva/callback"
-        )
+def save_config(client_id: str, client_secret: str, redirect_uri: str = "http://127.0.0.1:8802/canva/callback") -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     cfg = {
         "client_id": client_id.strip(),

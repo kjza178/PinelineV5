@@ -10,9 +10,15 @@ Dùng:
   python agent_tool_loop.py --base http://127.0.0.1:8801 --job ID --stages translate --dry
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[1])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import argparse
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -440,7 +446,7 @@ def http_run_stage_wait(
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Pineline tool-loop CLI (HTTP)")
-    p.add_argument("--base", default="http://127.0.0.1:8801")
+    p.add_argument("--base", default=os.getenv("PINELINE_BASE") or "http://127.0.0.1:8801")
     p.add_argument("--job", required=True)
     p.add_argument("--stages", default="translate", help="csv: translate,tts,mux")
     p.add_argument("--force", action="store_true")

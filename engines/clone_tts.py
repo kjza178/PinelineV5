@@ -20,7 +20,7 @@ from core.manifest import Manifest
 from engines.vram import free_gpu_vram
 
 STAGE = "tts"
-_PROJ = Path(__file__).resolve().parents[1]  # project root (engines/ → ..)
+_PROJ = Path(__file__).resolve().parents[1]
 
 # Câu "rác" ASR/dịch (chỉ dấu câu/khoảng trắng) — VieNeu ra wav 0 byte → báo thiếu mãi.
 import re as _re
@@ -84,7 +84,7 @@ def resolve_engine_python(engine: str) -> str:
     raise RuntimeError(
         f"Khong tim thay Python cho '{engine}'. Da thu:\n  - " +
         "\n  - ".join(str(c) for c in candidates if c) +
-        "\nChay: python scripts/install/install.py --gpu   (tao vieneu_env canh thu muc Pineline)"
+        "\nChay: python install.py --gpu   (tao vieneu_env canh thu muc Pineline)"
     )
 
 

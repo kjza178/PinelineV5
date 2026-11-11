@@ -97,6 +97,15 @@ def _precheck() -> str:
     return ""
 
 
+def _job_parked(job_id: str) -> bool:
+    try:
+        m = json.loads((ROOT / "work" / str(job_id) / "manifest.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return False
+    ag = m.get("agent") or {}
+    return bool(ag.get("held_at") or ag.get("hold_after_translate") or ag.get("qa_blocked"))
+
+
 def _requeue(order: list[str], opts: dict) -> list[str]:
     q2 = mw.api_retry("GET", mw.BASE + "/api/queue/jobs")
     have = set(([q2["current"]] if q2.get("current") else []) + [str(x) for x in (q2.get("queue") or [])])
@@ -191,6 +200,10 @@ def main() -> None:
         while True:
             q = mw.api_retry("GET", mw.BASE + "/api/queue/jobs", tries=40)
             if not q.get("current") and not q.get("worker") and not mw.running_stages() and not (q.get("queue") or []):
+                break
+            # fix 2026-11-11 B8: job đang PARK (HOLD/soát dở) giữ ghế vô hạn → coi là rảnh (state đã bền trên đĩa)
+            if q.get("current") and _job_parked(q["current"]) and not mw.running_stages() and not (q.get("queue") or []):
+                mw.log(f"job {q['current']} đang park HOLD/soát — restart không chờ")
                 break
             time.sleep(20)
         mw.log(f"job {cur} xong")

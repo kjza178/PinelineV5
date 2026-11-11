@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 import requests
@@ -122,7 +123,22 @@ def is_model_ready(target_preset: str | None = None, ping_inference: bool = True
     return True
 
 
+# fix 2026-11-11 B3: nhiều thread REVIEW∥ + Brain cùng gọi → chỉ 1 lần restart llama-server tại một thời điểm
+_SWITCH_LOCK = threading.Lock()
+
+
 def switch_preset(preset_id: str, max_wait_sec: int = 180) -> bool:
+    """Bản có khoá của _switch_preset_unlocked (xem docstring bên dưới)."""
+    if not _SWITCH_LOCK.acquire(timeout=max(30, int(max_wait_sec) + 60)):
+        print(f"[preset_switcher] ⏳ Đang có lượt switch khác quá lâu — bỏ qua '{preset_id}'", flush=True)
+        return False
+    try:
+        return _switch_preset_unlocked(preset_id, max_wait_sec)
+    finally:
+        _SWITCH_LOCK.release()
+
+
+def _switch_preset_unlocked(preset_id: str, max_wait_sec: int = 180) -> bool:
     """Chuyển đổi llama-server sang preset mong muốn và CHỜ ĐỢI cho đến khi AI mở lại hoàn toàn.
     
     Args:

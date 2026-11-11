@@ -1,5 +1,5 @@
 """
-agent_core.py — AI Agent nhúng trong Pineline V4.
+agent_core.py — AI Agent nhúng trong Pineline V2.
 
 Không gọi HTTP self. Tools gọi runtime đã bind từ server.py
 (list jobs, queue, manifest, draft YT).
@@ -347,7 +347,7 @@ TOOLS = [
         "function": {
             "name": "pineline_pipeline_loop",
             "description": (
-                "TOOL LOOP: chạy tuần tự nhiều stage; mỗi bước chờ xong mới bước sau. "
+                "TOOL LOOP: chạy tuần tự nhiều stage (vd translate,tts,mux); mỗi bước chờ xong mới bước sau. "
                 "force=false → skip stage đã done. Cần allow_mutate."
             ),
             "parameters": {
@@ -357,6 +357,7 @@ TOOLS = [
                     "stages": {
                         "type": "array",
                         "items": {"type": "string"},
+                        "description": "vd [\"translate\",\"tts\",\"mux\"]",
                     },
                     "voice": {"type": "string"},
                     "force": {"type": "boolean"},
@@ -1730,17 +1731,23 @@ def _llm_cfg() -> tuple[str, str, str]:
     return c["base"], c["key"], c["model"]
 
 
-def _chat_turn(messages: list[dict], use_tools: bool = True) -> dict:
+def _chat_turn(
+    messages: list[dict],
+    use_tools: bool = True,
+    tool_choice: Any = "auto",
+) -> dict:
     """Một turn OpenAI chat/completions. Trả message dict (content + tool_calls).
 
-    AGENT_FALLBACK_MODEL: thử model này khi model chính lỗi (timeout, 429, 5xx, quota)."""
+    AGENT_FALLBACK_MODEL: thử model này khi model chính lỗi (timeout, 429, 5xx, quota).
+    tool_choice: "auto" | "required" | {"type":"function","function":{"name":...}}
+    """
     import core.config as _cfg
     c = _cfg.agent_llm()
     models = [c["model"]] + ([c["fallback"]] if c["fallback"] else [])
     last: Exception | None = None
     for i, m in enumerate(models):
         try:
-            return _chat_turn_model(messages, use_tools, m)
+            return _chat_turn_model(messages, use_tools, m, tool_choice=tool_choice)
         except Exception as e:  # noqa: BLE001
             last = e
             if i + 1 < len(models):
@@ -1748,7 +1755,12 @@ def _chat_turn(messages: list[dict], use_tools: bool = True) -> dict:
     raise last  # type: ignore[misc]
 
 
-def _chat_turn_model(messages: list[dict], use_tools: bool, model: str) -> dict:
+def _chat_turn_model(
+    messages: list[dict],
+    use_tools: bool,
+    model: str,
+    tool_choice: Any = "auto",
+) -> dict:
     base, key, _ = _llm_cfg()
     url = f"{base}/chat/completions"
     enable_think = (os.getenv("LLM_ENABLE_THINKING") or "").strip() in ("1", "true", "yes")
@@ -1764,7 +1776,7 @@ def _chat_turn_model(messages: list[dict], use_tools: bool, model: str) -> dict:
         payload["chat_template_kwargs"] = {"enable_thinking": enable_think}
     if use_tools:
         payload["tools"] = TOOLS
-        payload["tool_choice"] = "auto"
+        payload["tool_choice"] = tool_choice if tool_choice is not None else "auto"
     r = requests.post(
         url,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
@@ -1964,10 +1976,14 @@ def run_agent(
     allow_mutate: bool = False,
     max_steps: int = 8,
     require_confirm: bool = False,
+    force_first_tool: str | None = None,
+    force_first_args: dict | None = None,
 ) -> AgentResult:
     """Chạy agent. history = [{role, content}, ...] (user/assistant only).
 
     require_confirm: tool tier "confirm" không chạy ngay mà đỗ lại (confirms) chờ user bấm ✅.
+    force_first_tool: tên tool ép gọi ở lượt 1 (Brain / silent daemon — tránh model chỉ viết text).
+    force_first_args: args JSON cho tool ép (vd {"job_id":"..."}).
     """
     _, _, model = _llm_cfg()
     messages: list[dict] = [{"role": "system", "content": SYSTEM}]
@@ -1980,13 +1996,31 @@ def run_agent(
 
     steps: list[dict] = []
     confirms: list[dict] = []
-    for _ in range(max_steps):
-        msg = _chat_turn(messages, use_tools=True)
+    first_tool = (force_first_tool or "").strip() or None
+    if first_tool and first_tool not in _TOOL_NAMES:
+        first_tool = None
+    first_args = dict(force_first_args or {}) if isinstance(force_first_args, dict) else {}
+    for step_i in range(max_steps):
+        choice: Any = "auto"
+        if step_i == 0 and first_tool:
+            choice = {"type": "function", "function": {"name": first_tool}}
+        msg = _chat_turn(messages, use_tools=True, tool_choice=choice)
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls and not steps:
             tool_calls = _parse_text_tool_calls(msg.get("content") or "")
             if tool_calls:
                 msg = {"role": "assistant", "content": None, "tool_calls": tool_calls}
+        # Brain: nếu ép tool mà model vẫn text → synthesize 1 call (proxy đôi khi bỏ tool_choice)
+        if not tool_calls and step_i == 0 and first_tool:
+            tool_calls = [{
+                "id": "forcefirst1",
+                "type": "function",
+                "function": {
+                    "name": first_tool,
+                    "arguments": json.dumps(first_args, ensure_ascii=False),
+                },
+            }]
+            msg = {"role": "assistant", "content": None, "tool_calls": tool_calls}
         if not tool_calls:
             reply = (msg.get("content") or "").strip() or "(không có nội dung)"
             return AgentResult(reply=reply, steps=steps, model=model, confirms=confirms)

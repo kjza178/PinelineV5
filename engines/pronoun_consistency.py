@@ -14,7 +14,7 @@ import re
 import time
 from pathlib import Path
 
-from llm import chat, parse_json, is_local, unload_local
+from engines.llm import chat, parse_json, is_local, unload_local
 
 STAGE_KEY = "pronoun_analyze"
 DEFAULT_CHUNK = 220          # lô lớn hơn → ít round-trip Aurora
@@ -29,7 +29,7 @@ _CALL_FORMS = ("anh", "em", "cậu", "mày", "ngươi", "chị", "bạn", "ông"
 
 def _cfg(key: str, default: str | None = None) -> str | None:
     try:
-        from config import get as _g
+        from core.config import get as _g
         return _g(key, default)
     except Exception:
         return os.getenv(key) or default
@@ -45,7 +45,7 @@ def analyze_model() -> str:
     if m:
         return m
     try:
-        from config import pass_llm_model
+        from core.config import pass_llm_model
         return pass_llm_model("pronoun") or "chatgpt/gpt-5-6-mini"
     except Exception:
         return "chatgpt/gpt-5-6-mini"
@@ -215,7 +215,7 @@ def analyze_via_srt_file(
     model: str | None = None,
 ) -> dict:
     """Upload sub.zh.srt → GPT đọc 1 lần → glossary pronouns (Aurora file QA)."""
-    from llm import aurora_upload_file, chatgpt_chat_with_file, parse_json
+    from engines.llm import aurora_upload_file, chatgpt_chat_with_file, parse_json
 
     srt_path = write_zh_srt(work_dir, lines, segments=segments)
     print(f"[pronoun-analyze] upload SRT {srt_path.name} ({len(lines)} câu)…", flush=True)
@@ -511,7 +511,7 @@ def analyze_full_zh(
     )
     conflicts: list[str] = []
     try:
-        from manifest import Manifest
+        from core.manifest import Manifest
         m = Manifest(work_dir)
     except Exception:
         m = None
@@ -813,7 +813,7 @@ def run_post_translate_consistency(
     fix_with_gpt: bool = True,
 ) -> dict:
     """C+D sau dịch/polish: post-pass + QA jumps + GPT vá đỏ."""
-    from translate import apply_pronoun_postpass
+    from engines.translate import apply_pronoun_postpass
 
     work_dir = Path(work_dir)
     plan = plan or {}
@@ -823,8 +823,8 @@ def run_post_translate_consistency(
     sample = []
     if fix_with_gpt and jumps:
         try:
-            from agent_pronoun_pass import _fix_batch
-            from translate import _plan_block_for_qa, ensure_hard_terms
+            from agents.agent_pronoun_pass import _fix_batch
+            from engines.translate import _plan_block_for_qa, ensure_hard_terms
             plan2 = ensure_hard_terms(plan)
             # lock_banner already inside _plan_block_for_qa — do not append twice
             block = _plan_block_for_qa(plan2)

@@ -181,7 +181,7 @@ def library_action(payload: Dict[str, Any] = Body(...), req: Request = None):
     name = str(payload.get("name") or "").strip()
     names = list(payload.get("names") or ([] if not name else [name]))
     cores = list(payload.get("cores") or ([] if not name else [name]))
-    base = _get_base_url(req) if req else "http://127.0.0.1:8804"
+    base = _get_base_url(req) if req else f"http://127.0.0.1:{os.getenv('PINELINE_PORT') or '8805'}"
 
     if action == "enqueue":
         # alias UI cũ → add job từ thư viện

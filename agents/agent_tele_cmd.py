@@ -28,6 +28,11 @@ HTTP local (UI):
   GET  http://127.0.0.1:8802/hg/preview?sid=<id|tên|số BXH>&ep=1
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[1])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import sys
 if hasattr(sys.stdout, "reconfigure"):
@@ -46,10 +51,10 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agent_autopilot import (  # noqa: E402
+from agents.agent_autopilot import (  # noqa: E402
     agent_chat,
     agent_confirm,
     format_status,
@@ -60,11 +65,11 @@ from agent_autopilot import (  # noqa: E402
     sync_pending_to_batch,
     tick_once,
 )
-from agent_watch import telegram_config, telegram_send  # noqa: E402
-import agent_feeder as feeder  # noqa: E402
-import batch_config  # noqa: E402
-import film_db  # noqa: E402
-import agent_hongguo as hg_agent  # noqa: E402
+from agents.agent_watch import telegram_config, telegram_send  # noqa: E402
+import agents.agent_feeder as feeder  # noqa: E402
+import core.batch_config as batch_config  # noqa: E402
+import core.film_db as film_db  # noqa: E402
+import agents.agent_hongguo as hg_agent  # noqa: E402
 
 BASE = (os.getenv("PINELINE_BASE") or "http://127.0.0.1:8801").strip().rstrip("/")
 CTRL_HOST = os.getenv("AUTOPILOT_HOST") or "127.0.0.1"
@@ -209,7 +214,7 @@ def send_preview(uid: str, ref: str, ep: int = 1) -> None:
     free, total = int(info.get("free") or 1), info.get("episode_cnt") or "?"
     title = info.get("title") or sid
     try:
-        import title_mt
+        import engines.title_mt as title_mt
         tv = (title_mt.translate_titles([{"series_id": sid, "title": title}], workers=1).get("items") or [{}])[0]
         if tv.get("title_vi") and tv["title_vi"] != title:
             title = f"{tv['title_vi']} ({title})"
@@ -871,7 +876,7 @@ def _fetch_poster_bytes(name: str) -> bytes | None:
     import urllib.parse
     # 1. Thử gọi /api/hg/poster của server Pineline 8801
     try:
-        url = f"http://127.0.0.1:8801/api/hg/poster?name={urllib.parse.quote(name)}"
+        url = f"{BASE}/api/hg/poster?name={urllib.parse.quote(name)}"
         req = urllib.request.Request(url, headers={"User-Agent": "Pineline"})
         with urllib.request.urlopen(req, timeout=5) as r:
             data = r.read()
@@ -881,7 +886,7 @@ def _fetch_poster_bytes(name: str) -> bytes | None:
         pass
     # 2. Thử gọi Hongguo Downloader 8000
     try:
-        import hongguo_bridge as hg
+        import agents.hongguo_bridge as hg
         data, _ = hg.fetch_poster(name, "http://127.0.0.1:8000")
         if data and len(data) > 100:
             return data
@@ -889,7 +894,7 @@ def _fetch_poster_bytes(name: str) -> bytes | None:
         pass
     # 3. Thử resolve file local
     try:
-        import hongguo_bridge as hg
+        import agents.hongguo_bridge as hg
         p = hg.resolve_poster_path(name)
         if p and p.is_file():
             return p.read_bytes()
@@ -996,7 +1001,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
             return
         # Mergeable / merge-parts trước catch-all /films/{id}
         try:
-            import films_merge_api as _fma
+            import agents.films_merge_api as _fma
             hit = _fma.dispatch("GET", path)
             if hit is not None:
                 code, payload = hit
@@ -1013,8 +1018,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
         if path == "/library":
             try:
                 import importlib
-                import hongguo_bridge
-                importlib.reload(hongguo_bridge)
+                # Không reload hongguo_bridge — reload làm orphan MainKt (stdio handle mất).
                 global feeder
                 feeder = importlib.reload(feeder)
                 self._json(200, feeder.library_view(BASE))
@@ -1023,13 +1027,13 @@ class CtrlHandler(BaseHTTPRequestHandler):
             return
         if path == "/library/accounts":
             try:
-                import lib_check
+                import tools.lib_check as lib_check
                 self._json(200, {"ok": True, "accounts": lib_check.list_yt_accounts()})
             except Exception as e:  # noqa: BLE001
                 self._json(500, {"ok": False, "error": str(e), "accounts": []})
             return
         if path in ("/test-channel/status", "/test-channel/recheck-health", "/test-channel/reset-quota"):
-            import test_channel
+            import agents.test_channel as test_channel
             import importlib
             test_channel = importlib.reload(test_channel)
             if path == "/test-channel/reset-quota":
@@ -1043,7 +1047,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
             self._json(200, test_channel.get_status())
             return
         if path == "/test-channel/auth-url":
-            import test_channel
+            import agents.test_channel as test_channel
             import importlib
             test_channel = importlib.reload(test_channel)
             from urllib.parse import parse_qs, urlsplit
@@ -1058,7 +1062,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
                 self._json(500, {"ok": False, "error": str(e)})
             return
         if path == "/test-channel/callback":
-            import test_channel
+            import agents.test_channel as test_channel
             import importlib
             test_channel = importlib.reload(test_channel)
             from urllib.parse import parse_qs, urlsplit
@@ -1099,7 +1103,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if path in ("/api/models", "/api/llm/models"):
-            import llm
+            import engines.llm as llm
             self._json(200, llm.list_available_models())
             return
         if path == "/api/hg/poster":
@@ -1124,7 +1128,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if path == "/test-channel/batch-progress":
-            import test_channel
+            import agents.test_channel as test_channel
             self._json(200, test_channel.get_batch_progress())
             return
         if path in ("/hg/watch", "/hg/preview"):
@@ -1179,11 +1183,11 @@ class CtrlHandler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "error": "thiếu tên phim"})
                 return
             try:
-                import hongguo_bridge as hg
+                import agents.hongguo_bridge as hg
                 info = hg.baike_deep(title=q)
                 intro_vi = ""
                 try:
-                    import title_mt as tmt
+                    import engines.title_mt as tmt
                     if info.get("intro"):
                         tr = tmt.translate_titles([{"series_id": "intro", "title": info["intro"][:300]}])
                         if tr.get("items"):
@@ -1203,7 +1207,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
                 self._json(500, {"ok": False, "error": str(e)})
             return
         if path in ("/canva/status", "/api/canva/status"):
-            import canva_client
+            import agents.canva_client as canva_client
             cfg = canva_client.load_config()
             self._json(200, {
                 "ok": True,
@@ -1213,7 +1217,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
             })
             return
         if path in ("/canva/auth-url", "/api/canva/auth-url"):
-            import canva_client
+            import agents.canva_client as canva_client
             import importlib
             canva_client = importlib.reload(canva_client)
             try:
@@ -1234,7 +1238,7 @@ class CtrlHandler(BaseHTTPRequestHandler):
                 msg = "Thiếu authorization code từ Canva"
             else:
                 try:
-                    import canva_client
+                    import agents.canva_client as canva_client
                     canva_client.exchange_code(code, state)
                     msg = "SUCCESS"
                 except Exception as e:
@@ -1271,7 +1275,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(404, {"error": "not found"})
             return
         if path in ("/meta/series-info", "/api/meta/series-info"):
-            import meta_studio
+            import agents.meta_studio as meta_studio
             from urllib.parse import parse_qs, urlsplit
             qs = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
             job_id = qs.get("job_id") or ""
@@ -1288,11 +1292,11 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             })
             return
         if path in ("/api/auto-publish/config", "/auto-publish/config"):
-            import auto_publisher
+            import agents.auto_publisher as auto_publisher
             self._json(200, auto_publisher.load_config())
             return
         if path in ("/api/auto-publish/state", "/auto-publish/state"):
-            import auto_publisher
+            import agents.auto_publisher as auto_publisher
             self._json(200, auto_publisher.get_auto_state())
             return
         if path == "/api/hg/library/watchlist":
@@ -1313,7 +1317,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             return
         # Settings + Uploader API (Films UI)
         try:
-            import uploader_settings_api as _usa
+            import agents.uploader_settings_api as _usa
             hit = _usa.dispatch("GET", path)
             if hit is not None:
                 code, payload = hit
@@ -1386,7 +1390,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
         if path == "/api/hg/library/seasons/discover":
             try:
                 import importlib
-                import hongguo_bridge as hg
+                import agents.hongguo_bridge as hg
                 hg = importlib.reload(hg)
                 try:
                     max_cores = int(body.get("max_cores") or 16)
@@ -1401,7 +1405,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             # Dịch thô Trung→Việt cho Films UI Mùa mới (local title_mt, cùng :8801)
             try:
                 import importlib
-                import title_mt as tmt
+                import engines.title_mt as tmt
                 tmt = importlib.reload(tmt)
                 items = list(body.get("items") or [])
                 self._json(200, tmt.translate_titles(items))
@@ -1421,7 +1425,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 self._json(500, {"ok": False, "error": str(e)})
             return
         if path == "/library/cut-sample":
-            import lib_check
+            import tools.lib_check as lib_check
             import importlib
             lib_check = importlib.reload(lib_check)
             name = str(body.get("name") or "").strip()
@@ -1432,7 +1436,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200 if r.get("ok") else 400, r)
             return
         if path == "/library/enqueue-test":
-            import lib_check
+            import tools.lib_check as lib_check
             import importlib
             lib_check = importlib.reload(lib_check)
             name = str(body.get("name") or "").strip()
@@ -1443,7 +1447,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200 if r.get("ok") else 400, r)
             return
         if path == "/library/test-url":
-            import lib_check
+            import tools.lib_check as lib_check
             import importlib
             lib_check = importlib.reload(lib_check)
             name = str(body.get("name") or "").strip()
@@ -1452,7 +1456,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200 if r.get("ok") else 400, r)
             return
         if path == "/library/clear-samples":
-            import lib_check
+            import tools.lib_check as lib_check
             import importlib
             lib_check = importlib.reload(lib_check)
             older = float(body.get("older_than_hours") or 0)
@@ -1460,7 +1464,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200, r)
             return
         if path == "/library/scan-queue":
-            import lib_check
+            import tools.lib_check as lib_check
             import importlib
             lib_check = importlib.reload(lib_check)
             check_live = bool(body.get("check_live", True))
@@ -1475,7 +1479,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200, {"ok": True, "record": rec})
             return
         if path == "/library/batch-test":
-            import lib_check
+            import tools.lib_check as lib_check
             import importlib
             lib_check = importlib.reload(lib_check)
             names = body.get("names")
@@ -1486,7 +1490,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200 if r.get("ok") else 400, r)
             return
         if path == "/test-channel/finish-auth":
-            import test_channel
+            import agents.test_channel as test_channel
             code = str(body.get("code") or "").strip()
             host = self.headers.get("Host") or "127.0.0.1:8802"
             redirect_uri = str(body.get("redirect_uri") or f"http://{host}/test-channel/callback")
@@ -1497,13 +1501,13 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 self._json(500, {"ok": False, "error": str(e)})
             return
         if path == "/test-channel/disconnect":
-            import test_channel
+            import agents.test_channel as test_channel
             ok = test_channel.disconnect()
             self._json(200, {"ok": ok})
             return
         if path == "/test-channel/test-one":
-            import lib_check
-            import test_channel
+            import tools.lib_check as lib_check
+            import agents.test_channel as test_channel
             import importlib
             lib_check = importlib.reload(lib_check)
             test_channel = importlib.reload(test_channel)
@@ -1520,8 +1524,8 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 self._json(500, {"ok": False, "error": str(e)})
             return
         if path == "/test-channel/batch-start":
-            import lib_check
-            import test_channel
+            import tools.lib_check as lib_check
+            import agents.test_channel as test_channel
             import importlib
             lib_check = importlib.reload(lib_check)
             test_channel = importlib.reload(test_channel)
@@ -1534,7 +1538,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             return
         if path == "/test-channel/batch-stop":
             # Không reload — giữ cùng BATCH_STATE với worker đang chạy
-            import test_channel
+            import agents.test_channel as test_channel
             if not hasattr(test_channel, "stop_batch_test"):
                 # process chưa nạp code mới → đánh dấu cancel trực tiếp nếu có
                 st = getattr(test_channel, "BATCH_STATE", None)
@@ -1547,8 +1551,8 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200, test_channel.stop_batch_test())
             return
         if path == "/test-channel/recheck-one":
-            import lib_check
-            import test_channel
+            import tools.lib_check as lib_check
+            import agents.test_channel as test_channel
             import importlib
             lib_check = importlib.reload(lib_check)
             test_channel = importlib.reload(test_channel)
@@ -1557,7 +1561,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200 if res.get("ok") else 400, res)
             return
         if path == "/test-channel/recheck-pending":
-            import test_channel
+            import agents.test_channel as test_channel
             import importlib
             test_channel = importlib.reload(test_channel)
             force = bool(body.get("force", False))
@@ -1598,6 +1602,11 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 job_ids = body.get("job_ids") or []
                 custom_title_vi = body.get("title_vi")
                 auto_publish = bool(body.get("auto_publish", False))
+                allow_oversized = bool(
+                    body.get("allow_oversized")
+                    or body.get("allow_huge")
+                    or body.get("confirm_huge")
+                )
                 r = feeder_mod.combine_rendered_jobs(
                     BASE,
                     job_ids=job_ids,
@@ -1609,13 +1618,14 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                         or body.get("explicit_order")
                         or False
                     ),
+                    allow_oversized=allow_oversized,
                 )
             except Exception as e:  # noqa: BLE001
                 r = {"ok": False, "error": str(e)}
             self._json(200 if r.get("ok") else 400, r)
             return
         if path == "/films/check-block":
-            import check_block
+            import engines.check_block as check_block
             import importlib
             check_block = importlib.reload(check_block)
             job_ids = body.get("job_ids")
@@ -1631,7 +1641,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200, {"ok": True, "results": results, "stats": film_db.stats()})
             return
         if path == "/films/check-block-all":
-            import check_block
+            import engines.check_block as check_block
             import importlib
             check_block = importlib.reload(check_block)
             rows = film_db.query(status="uploaded", limit=200)
@@ -1643,7 +1653,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200, {"ok": True, "count": len(results), "results": results, "stats": film_db.stats()})
             return
         if path in ("/meta/generate", "/api/meta/generate"):
-            import meta_studio
+            import agents.meta_studio as meta_studio
             import importlib
             meta_studio = importlib.reload(meta_studio)
             r = meta_studio.generate_metadata(
@@ -1657,7 +1667,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200 if r.get("ok") else 500, r)
             return
         if path in ("/meta/generate-title", "/api/meta/generate-title"):
-            import meta_studio
+            import agents.meta_studio as meta_studio
             import importlib
             meta_studio = importlib.reload(meta_studio)
             job_id = str(body.get("job_id") or "").strip()
@@ -1681,7 +1691,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200 if r.get("ok") else 500, r)
             return
         if path in ("/meta/thumbnail", "/api/meta/thumbnail"):
-            import meta_studio
+            import agents.meta_studio as meta_studio
             import importlib
             meta_studio = importlib.reload(meta_studio)
             try:
@@ -1714,7 +1724,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 self._json(500, {"ok": False, "error": str(e)})
                 return
         if path in ("/canva/config", "/api/canva/config"):
-            import canva_client
+            import agents.canva_client as canva_client
             cid = str(body.get("client_id") or "").strip()
             csec = str(body.get("client_secret") or "").strip()
             if not cid or not csec:
@@ -1724,8 +1734,8 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(200, {"ok": True, "configured": True})
             return
         if path in ("/canva/create", "/api/canva/create"):
-            import canva_client
-            import meta_studio
+            import agents.canva_client as canva_client
+            import agents.meta_studio as meta_studio
             import importlib
             canva_client = importlib.reload(canva_client)
             meta_studio = importlib.reload(meta_studio)
@@ -1781,12 +1791,12 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 self._json(500, {"ok": False, "error": str(e)})
             return
         if path in ("/api/auto-publish/config", "/auto-publish/config"):
-            import auto_publisher
+            import agents.auto_publisher as auto_publisher
             cfg = auto_publisher.save_config(body)
             self._json(200, {"ok": True, "config": cfg})
             return
         if path in ("/api/auto-publish/trigger", "/auto-publish/trigger"):
-            import auto_publisher
+            import agents.auto_publisher as auto_publisher
             job_id = body.get("job_id")
             if not job_id:
                 self._json(400, {"ok": False, "error": "Thiếu job_id"})
@@ -1813,7 +1823,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             self._json(code, res)
             return
         if path in ("/api/auto-publish/scan", "/auto-publish/scan"):
-            import auto_publisher
+            import agents.auto_publisher as auto_publisher
             res = auto_publisher.scan_and_publish_completed_jobs()
             if isinstance(res, dict):
                 self._json(200, res)
@@ -1821,7 +1831,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 self._json(200, {"ok": True, "scanned": res})
             return
         if path in ("/meta/ai-image", "/api/meta/ai-image"):
-            import meta_studio
+            import agents.meta_studio as meta_studio
             import importlib
             meta_studio = importlib.reload(meta_studio)
             prompt = str(body.get("prompt") or "").strip()
@@ -1838,12 +1848,12 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 return
             img_bytes = meta_studio.generate_ai_image(
                 prompt,
-                timeout=150,
+                timeout=300,
                 job_id=job_id,
                 poster_name=poster_name,
             )
             if not img_bytes:
-                self._json(500, {"ok": False, "error": "Aurora không sinh được ảnh (timeout hoặc lỗi)"})
+                self._json(500, {"ok": False, "error": "Không sinh được ảnh (timeout/lỗi GPT local :3377 hoặc Aurora)"})
                 return
 
             # 1. Lưu bản Raw AI chất lượng gốc
@@ -1884,7 +1894,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             return
         # Merge parts (job đã làm / split)
         try:
-            import films_merge_api as _fma
+            import agents.films_merge_api as _fma
             hit = _fma.dispatch("POST", path, body if isinstance(body, dict) else {})
             if hit is not None:
                 code, payload = hit
@@ -1895,7 +1905,7 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             return
         # Settings + Uploader API (Films UI)
         try:
-            import uploader_settings_api as _usa
+            import agents.uploader_settings_api as _usa
             hit = _usa.dispatch("POST", path, body if isinstance(body, dict) else {})
             if hit is not None:
                 code, payload = hit
@@ -2267,7 +2277,7 @@ def _single_instance_lock():
         import msvcrt
     except ImportError:
         return True
-    fh = open(Path(__file__).resolve().parent / f".sidecar_{CTRL_PORT}.lock", "a+")
+    fh = open(Path(__file__).resolve().parents[1] / f".sidecar_{CTRL_PORT}.lock", "a+")
     fh.seek(0)
     try:
         msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
@@ -2301,7 +2311,7 @@ def main() -> None:
     threading.Thread(target=feeder_loop, args=(stop,), name="feeder", daemon=True).start()
     threading.Thread(target=filmdb_loop, args=(stop,), name="film-db", daemon=True).start()
     try:
-        import auto_publisher
+        import agents.auto_publisher as auto_publisher
         auto_publisher.start_worker()
     except Exception as e_start_pub:
         print(f"[auto-publish] Không khởi động được worker: {e_start_pub}", flush=True)

@@ -15,6 +15,11 @@ Chạy ở tiến trình con (render gọi) để nhả VRAM/RAM khi xong:
     python sfx_lib.py work/<job> --video work/<job>/source.mp4 [--force]
 """
 from __future__ import annotations
+import sys as _sync_sys  # sync_from_v2: bootstrap — chạy trực tiếp vẫn import được core.*/engines.*
+from pathlib import Path as _SyncP
+_SYNC_ROOT = str(_SyncP(__file__).resolve().parents[1])
+if _SYNC_ROOT not in _sync_sys.path:
+    _sync_sys.path.insert(0, _SYNC_ROOT)
 
 import argparse
 import json
@@ -28,7 +33,7 @@ import numpy as np
 
 from core.config import get as cfg
 
-ROOT = Path(__file__).resolve().parents[1]  # project root (engines/ → ..)
+ROOT = Path(__file__).resolve().parents[1]
 SR = 44100
 EFFECT = "sfx_effect.flac"
 MUSIC = "sfx_music.flac"
@@ -408,7 +413,7 @@ def prepare(work_dir: Path, video: Path, total: float | None = None, force: bool
 
 def run_subprocess(work_dir: Path, video: Path, total: float, on_line=None) -> None:
     """Gọi prepare ở tiến trình con (nhả VRAM/RAM khi xong); on_line(dòng log) để cập nhật tiến độ."""
-    cmd = [sys.executable, "-u", str(Path(__file__).resolve()), str(work_dir), "--video", str(video),
+    cmd = [sys.executable, "-u", str(ROOT / "sfx_lib.py"), str(work_dir), "--video", str(video),
            "--total", f"{total:.3f}"]
     proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             encoding="utf-8", errors="replace", bufsize=1)

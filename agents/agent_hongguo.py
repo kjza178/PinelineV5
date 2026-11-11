@@ -409,7 +409,7 @@ def page_covers(page: int = 1, per_page: int = 10) -> list[tuple[str, str]]:
 
 
 WATCH_BASE = f"http://127.0.0.1:{os.getenv('AUTOPILOT_PORT') or '8802'}"
-PINELINE_BASE = f"http://127.0.0.1:{os.getenv('PORT') or '8805'}"
+PINELINE_BASE = f"http://127.0.0.1:{os.getenv('PORT') or '8801'}"
 
 # Mã lỗi gốc của Hongguo /dl/preview
 _PV_ERRORS = {
@@ -670,9 +670,9 @@ def tool_hg_merge(folder_name: str) -> str:
         return json.dumps({"error": "thiếu folder_name của bộ phim trong thư viện"}, ensure_ascii=False)
 
     try:
-        # Hàng đợi merge sống trong server :8804 (UI thấy được); chỉ chạy cục bộ khi server không phản hồi.
+        # Hàng đợi merge sống trong server :8801 (UI thấy được); chỉ chạy cục bộ khi server không phản hồi.
         import requests
-        port = os.environ.get("PORT", "8804")
+        port = os.environ.get("PORT", "8801")
         try:
             res = requests.post(f"http://127.0.0.1:{port}/api/hg/merge",
                                 json={"names": [fn], "force": True}, timeout=30).json()
@@ -750,7 +750,7 @@ def _get_existing_pineline_titles(rt: Any = None) -> set[str]:
         if rt and hasattr(rt, "list_jobs"):
             jobs = rt.list_jobs() or []
         else:
-            server_port = os.environ.get("PORT", "8804")
+            server_port = os.environ.get("PORT", "8801")
             import requests
             r = requests.get(f"http://127.0.0.1:{server_port}/api/jobs", timeout=5)
             jobs = r.json() if r.status_code == 200 else []
@@ -900,7 +900,7 @@ def tool_hg_auto_flow(
     2. Tự tải nếu chưa có (chờ tải hoàn tất 100%)
     3. Gộp video chuẩn 1080p (chờ gộp xong file (merged).mp4)
     4. Tự động XÓA TẬP MẢNH LẺ để giải phóng ổ đĩa
-    5. Thêm Job vào Pineline V4
+    5. Thêm Job vào Pineline V2
     6. Xếp vào hàng chờ chạy tự động đến video xuất xưởng (ASR -> Dịch -> TTS -> Render).
     """
     target = (query_or_id or "").strip()
@@ -1108,7 +1108,7 @@ def tool_hg_auto_flow(
     # 3. Gộp video chuẩn 1080p nếu chưa có (merged).mp4 -> Chờ gộp hoàn tất
     info = hg.inspect_series_folder(folder_path)
     merged_file = info.get("merged_file")
-    server_port = os.environ.get("PORT", "8804")
+    server_port = os.environ.get("PORT", "8801")
     import requests
 
     if not merged_file or not (folder_path / merged_file).exists():
@@ -1160,7 +1160,7 @@ def tool_hg_auto_flow(
     elif notify_cb and not clean_res.get("ok"):
         notify_cb(f"⚠️ Giữ nguyên tập lẻ của '{folder_name}': {clean_res.get('error')}")
 
-    # 5. Kiểm tra và Tạo Job mới trong Pineline V4
+    # 5. Kiểm tra và Tạo Job mới trong Pineline V2
     job_id = None
     if folder_name.lower() in existing_titles:
         try:
@@ -1210,7 +1210,7 @@ def tool_hg_auto_flow(
             raw_w = config.get("WORK_ROOT", "work") or "work"
             w_root = Path(raw_w)
             if not w_root.is_absolute():
-                w_root = Path(__file__).resolve().parent.parent / w_root
+                w_root = Path(__file__).resolve().parents[1] / w_root
             j_tts = w_root / job_id / "tts_config.json"
             if j_tts.parent.exists():
                 cur_d = {}
