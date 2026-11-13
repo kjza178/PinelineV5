@@ -6,6 +6,7 @@
 
 ## Đọc trước (theo thứ tự, dừng khi đủ)
 
+0. **`Z:\PinelineV2\docs\HANDOFF.md`** — tóm tắt phiên 12–14/11: luật làm việc với chủ dự án, trạng thái, việc còn dở.
 1. `docs/brain/README.md` — bản đồ Second Brain (module, quy trình, workflow, thuật ngữ).
 2. `docs/STATE.md` — đang chạy gì, job nào, **chờ restart** gì.
 3. Thẻ module `docs/brain/modules/<module>.md` **trước khi** mở file code lớn (`server.py` ~6,6k dòng, `translate.py` ~4k, `render.py` ~3k, `hongguo_bridge.py` ~4k).
