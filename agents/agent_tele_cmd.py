@@ -571,7 +571,10 @@ def _send_confirm_buttons(uid: str, confirms: list[dict]) -> None:
 def _agent_ask(msg: str, uid: str = "") -> dict:
     """Chat agent; có uid (Telegram) thì tool phá huỷ đỗ lại và gửi nút ✅/❌."""
     hist = get_user_history(uid) if uid else []
-    d = agent_chat(BASE, msg, history=hist, allow_mutate=True, require_confirm=bool(uid))
+    # fix 2026-11-12 agentI2: tin người gõ trên Telegram (uid đã qua allowed_uids) → header user → tool
+    # run_stage/dịch/tts/mux tính là CHẠY TAY (gỡ HOLD + 1 tin). Không uid (gọi nội bộ) → không gắn.
+    d = agent_chat(BASE, msg, history=hist, allow_mutate=True, require_confirm=bool(uid),
+                   caller="user" if uid else None, source="telegram" if uid else None)
     if uid and d.get("reply"):
         add_user_history(uid, "user", msg)
         add_user_history(uid, "assistant", d["reply"])
@@ -582,7 +585,7 @@ def _agent_ask(msg: str, uid: str = "") -> dict:
 
 def _confirm_callback(uid: str, cq: dict, data: str) -> None:
     _, cid, yn = (data.split(":") + ["", ""])[:3]
-    d = agent_confirm(BASE, cid, yn == "y")
+    d = agent_confirm(BASE, cid, yn == "y", caller="user", source="telegram")   # agentI2: người bấm ✅
     if not d.get("ok"):
         text = f"❌ {d.get('error') or 'Xác nhận lỗi'}"
     elif d.get("cancelled"):
@@ -887,7 +890,7 @@ def _fetch_poster_bytes(name: str) -> bytes | None:
     # 2. Thử gọi Hongguo Downloader 8000
     try:
         import agents.hongguo_bridge as hg
-        data, _ = hg.fetch_poster(name, "http://127.0.0.1:8000")
+        data, _ = hg.fetch_poster(name, hg.DEFAULT_BASE)
         if data and len(data) > 100:
             return data
     except Exception:

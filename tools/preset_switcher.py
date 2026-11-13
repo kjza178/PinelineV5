@@ -1,9 +1,14 @@
 """
-preset_switcher.py — Tự động chuyển đổi Preset Model trên llama-server (:8083)
-Quản lý bộ presets tại E:\\models\\presets (chạy script start-model.ps1).
+preset_switcher.py — Tự động chuyển đổi Preset Model trên llama-server.
+Mặc định (máy gốc): llama :8083, presets tại E:\\models\\presets, script start-model.ps1 (PowerShell).
+
+2026-11-11 machine-config: host/cổng/thư mục/lệnh lấy từ `machine` (config):
+  LLAMA_BASE_URL (trống = LLM_BASE_URL nếu localhost, không thì :8083), MODEL_PRESETS_DIR,
+  MODEL_START_SCRIPT, MODEL_START_CMD, AUTO_SWITCH_PRESETS.
+  Máy không có presets / AUTO_SWITCH_PRESETS=0 → KHÔNG đổi preset, KHÔNG lỗi: dùng model đang chạy.
 
 Chức năng:
-- Xác định model đang chạy thực tế trên cổng 8083 (qua /v1/models hoặc active.json).
+- Xác định model đang chạy thực tế trên llama-server (qua /v1/models hoặc active.json).
 - Tự động chuyển đổi model trước Lượt 1 (Dịch tốc độ cao) và Lượt 2 (Rà soát chuẩn xác).
 - ĐẶC BIỆT: Chờ đợi kiên nhẫn (tối đa 180s) cho đến khi AI local nạp VRAM xong,
   vượt qua trạng thái "loading model", và test ping inference 1 token thành công 100%
@@ -19,20 +24,29 @@ import time
 from pathlib import Path
 import requests
 
-PRESET_DIR = Path(os.getenv("MODEL_PRESETS_DIR") or r"E:\models\presets")
-ACTIVE_JSON = PRESET_DIR / "active.json"
-MODELS_JSON = PRESET_DIR / "models.json"
-START_SCRIPT = PRESET_DIR / "start-model.ps1"
-LLAMA_PORT = 8083
-LLAMA_HOST = "127.0.0.1"
-BASE_URL = f"http://{LLAMA_HOST}:{LLAMA_PORT}"
+try:  # V5/V6 package; V4 phẳng
+    from core import machine as _m
+except ImportError:  # pragma: no cover
+    import machine as _m  # type: ignore
+
+# Giữ tên cũ (giá trị lúc import) cho code/test cũ; hàm bên dưới đọc LẠI lúc gọi qua _m.
+PRESET_DIR = _m.presets_dir()
+ACTIVE_JSON = _m.presets_active_json()
+MODELS_JSON = _m.presets_models_json()
+START_SCRIPT = _m.model_start_script()
+LLAMA_HOST, LLAMA_PORT = _m.llama_host_port()
+BASE_URL = _m.llama_root_url()
+
+
+def _base() -> str:
+    return _m.llama_root_url()
 
 
 def get_active_preset() -> str | None:
-    """Trả về ID hoặc alias của model đang thực sự hoạt động trên llama-server (:8083)."""
+    """Trả về ID hoặc alias của model đang thực sự hoạt động trên llama-server."""
     # 1. Ưu tiên kiểm tra trực tiếp từ server đang chạy trong RAM
     try:
-        r = requests.get(f"{BASE_URL}/v1/models", headers={"Authorization": "Bearer sk-local"}, timeout=1.5)
+        r = requests.get(f"{_base()}/v1/models", headers={"Authorization": "Bearer sk-local"}, timeout=1.5)
         if r.status_code == 200:
             d = r.json()
             data_list = d.get("data") or d.get("models") or []
@@ -44,9 +58,10 @@ def get_active_preset() -> str | None:
         pass
 
     # 2. Đọc từ file active.json
-    if ACTIVE_JSON.is_file():
+    active_json = _m.presets_active_json()
+    if active_json.is_file():
         try:
-            data = json.loads(ACTIVE_JSON.read_text(encoding="utf-8"))
+            data = json.loads(active_json.read_text(encoding="utf-8"))
             return str(data.get("id") or data.get("alias") or "").strip() or None
         except Exception:
             pass
@@ -55,10 +70,11 @@ def get_active_preset() -> str | None:
 
 def list_available_presets() -> list[dict]:
     """Trả về danh sách tất cả các preset có trong models.json."""
-    if not MODELS_JSON.is_file():
+    models_json = _m.presets_models_json()
+    if not models_json.is_file():
         return []
     try:
-        data = json.loads(MODELS_JSON.read_text(encoding="utf-8"))
+        data = json.loads(models_json.read_text(encoding="utf-8"))
         models = data.get("models") or []
         out = []
         for m in models:
@@ -74,7 +90,7 @@ def list_available_presets() -> list[dict]:
 
 
 def is_model_ready(target_preset: str | None = None, ping_inference: bool = True) -> bool:
-    """Kiểm tra toàn diện xem llama-server :8083 đã khởi động xong và sẵn sàng nhận prompt chưa.
+    """Kiểm tra toàn diện xem llama-server đã khởi động xong và sẵn sàng nhận prompt chưa.
     
     Các tiêu chí:
     1. /health trả về HTTP 200 và status == 'ok' (nếu là 'loading model' -> chưa xong).
@@ -83,7 +99,7 @@ def is_model_ready(target_preset: str | None = None, ping_inference: bool = True
     """
     # 1. Kiểm tra /health
     try:
-        r = requests.get(f"{BASE_URL}/health", timeout=2.0)
+        r = requests.get(f"{_base()}/health", timeout=2.0)
         if r.status_code != 200:
             return False
         hdata = r.json()
@@ -110,7 +126,7 @@ def is_model_ready(target_preset: str | None = None, ping_inference: bool = True
                 "stream": False,
             }
             r = requests.post(
-                f"{BASE_URL}/v1/chat/completions",
+                f"{_base()}/v1/chat/completions",
                 headers={"Authorization": "Bearer sk-local", "Content-Type": "application/json"},
                 json=payload,
                 timeout=5.0,
@@ -138,6 +154,16 @@ def switch_preset(preset_id: str, max_wait_sec: int = 180) -> bool:
         _SWITCH_LOCK.release()
 
 
+def _use_running_model(preset_id: str, why: str) -> bool:
+    """Không đổi preset được (KHÔNG coi là lỗi): True nếu llama-server đang chạy sẵn sàng."""
+    if is_model_ready(target_preset=None, ping_inference=True):
+        print(f"[preset_switcher] ⏭ Bỏ qua đổi preset '{preset_id}' ({why}) — dùng model đang chạy trên {_base()}", flush=True)
+        return True
+    print(f"[preset_switcher] ❌ Không đổi preset '{preset_id}' ({why}) và llama-server {_base()} chưa sẵn sàng. "
+          "Bật llama-server / sửa LLAMA_BASE_URL, hoặc đổi model sang LLM khác.", flush=True)
+    return False
+
+
 def _switch_preset_unlocked(preset_id: str, max_wait_sec: int = 180) -> bool:
     """Chuyển đổi llama-server sang preset mong muốn và CHỜ ĐỢI cho đến khi AI mở lại hoàn toàn.
     
@@ -153,30 +179,28 @@ def _switch_preset_unlocked(preset_id: str, max_wait_sec: int = 180) -> bool:
     if not preset_id:
         return False
 
+    # machine-config: máy không có presets / AUTO_SWITCH_PRESETS=0 → bỏ qua, dùng model đang chạy
+    why = _m.preset_switch_unavailable_reason()
+    if why:
+        return _use_running_model(preset_id, why)
+
     # Kiểm tra nếu preset mong muốn đã đang chạy sẵn và hoạt động trơn tru
     if is_model_ready(target_preset=preset_id, ping_inference=True):
-        print(f"[preset_switcher] ✅ Model '{preset_id}' đã đang mở sẵn sàng trên port {LLAMA_PORT}.", flush=True)
+        print(f"[preset_switcher] ✅ Model '{preset_id}' đã đang mở sẵn sàng trên {_base()}.", flush=True)
         return True
 
-    if not START_SCRIPT.is_file():
-        print(f"[preset_switcher] ❌ Không tìm thấy script khởi động: {START_SCRIPT}", flush=True)
-        return False
 
     current = get_active_preset() or "chưa rõ"
     print(f"\n[preset_switcher] 🔄 Đang kích hoạt chuyển AI Local: '{current}' ➔ '{preset_id}'...", flush=True)
 
-    cmd = [
-        "powershell",
-        "-ExecutionPolicy", "Bypass",
-        "-File", str(START_SCRIPT),
-        preset_id,
-    ]
+    cmd = _m.model_start_cmd(preset_id)
+    pdir = _m.presets_dir()
 
     try:
-        # Chạy script PowerShell chuyển model (chạy async không chặn để Python chủ động loop thăm dò)
+        # Chạy lệnh đổi preset (mặc định script PowerShell) (chạy async không chặn để Python chủ động loop thăm dò)
         subprocess.Popen(
             cmd,
-            cwd=str(PRESET_DIR),
+            cwd=str(pdir) if pdir.is_dir() else None,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -208,7 +232,7 @@ def _switch_preset_unlocked(preset_id: str, max_wait_sec: int = 180) -> bool:
             # Xem server đã phản hồi ở mức nào
             state_desc = "đang khởi tạo tiến trình"
             try:
-                r = requests.get(f"{BASE_URL}/health", timeout=1.0)
+                r = requests.get(f"{_base()}/health", timeout=1.0)
                 if r.status_code == 200:
                     status_text = r.json().get("status", "")
                     if status_text == "ok":

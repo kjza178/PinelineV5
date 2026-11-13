@@ -10,6 +10,10 @@ Chức năng:
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 import os
 import sys
@@ -53,7 +57,7 @@ def _safe_resolve_title_vi(name: str, title_vi: str = "") -> str:
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "test_channel"
-CLIENT_SECRET_FILE = DATA_DIR / "client_secret.json" if (DATA_DIR / "client_secret.json").is_file() else Path(os.getenv("TEST_YT_SECRET") or r"Z:\yt_uploader\client_secret.json")
+CLIENT_SECRET_FILE = DATA_DIR / "client_secret.json" if (DATA_DIR / "client_secret.json").is_file() else Path(os.getenv("TEST_YT_SECRET") or (_machine.yt_uploader_dir() / "client_secret.json"))
 TOKEN_FILE = DATA_DIR / "token.json"
 CHANNEL_FILE = DATA_DIR / "channel.json"
 PROJECTS_FILE = DATA_DIR / "projects.json"

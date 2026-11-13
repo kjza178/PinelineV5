@@ -4,6 +4,10 @@ Trả về (http_status: int, body: dict). Không phụ thuộc FastAPI.
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 import os
 import subprocess
@@ -13,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-YT_DIR = Path(os.getenv("YT_UPLOADER_DIR") or r"Z:\yt_uploader")
+YT_DIR = _machine.yt_uploader_dir()
 YT_QUEUE = YT_DIR / "queue_state.json"
 YT_HISTORY = YT_DIR / "upload_history.jsonl"
 YT_SETTINGS = YT_DIR / "settings.json"

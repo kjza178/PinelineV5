@@ -13,6 +13,10 @@ Run-watch — job đang chạy không có dấu hiệu sống (tiến độ, fil
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 import os
 import re
@@ -200,7 +204,7 @@ def lib_root(spec: dict | None = None) -> Path | None:
         op = (m.get("request") or {}).get("orig_path")
         if op and Path(op).parent.parent.is_dir():
             return Path(op).parent.parent
-    return Path(r"D:\Lib") if Path(r"D:\Lib").is_dir() else None
+    return _machine.library_dir() if _machine.library_dir().is_dir() else None
 
 
 def _match(spec: dict, *texts: str) -> bool:

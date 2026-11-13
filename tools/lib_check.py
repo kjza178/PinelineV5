@@ -10,6 +10,10 @@ Bao gồm:
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 import os
 import re
@@ -21,9 +25,9 @@ import engines.check_block as check_block
 import core.film_db as film_db
 
 ROOT = Path(__file__).resolve().parents[1]
-LIB_ROOT = Path(os.getenv("LIB_ROOT") or r"D:\Lib")
-SAMPLE_DIR = Path(r"Z:\PinelineV2\data\samples")
-YT_DIR = Path(os.getenv("YT_UPLOADER_DIR") or r"Z:\yt_uploader")
+LIB_ROOT = Path(os.getenv("LIB_ROOT") or _machine.library_dir())
+SAMPLE_DIR = Path(_machine.setting("LIB_SAMPLE_DIR", "") or r"Z:\PinelineV2\data\samples")
+YT_DIR = _machine.yt_uploader_dir()
 YT_QUEUE = YT_DIR / "queue_state.json"
 
 
@@ -280,7 +284,7 @@ def scan_all_lib_from_yt_queue(check_live: bool = True) -> dict[str, Any]:
     for item in items:
         p = item.get("path") or ""
         u = item.get("url") or ""
-        if not p or not ("D:\\Lib" in p or "D:/Lib" in p) or not u:
+        if not p or not _machine.in_library(p) or not u:
             continue
         name = Path(p).parent.name
         vid = check_block.extract_video_id(u)

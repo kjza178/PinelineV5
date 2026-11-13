@@ -73,7 +73,26 @@ def _ensure_firered_importable(root: Path) -> None:
 
 
 def _parse_firered_result(result: dict) -> list[dict]:
-    """FireRedAsr2System.process → [{start,end,text}]."""
+    """FireRedAsr2System.process → [{start,end,text}] — đã bỏ câu rác (text_junk.is_junk_text).
+
+    fix 2026-11-13 agentM: sự cố 60892cc63cb7_p01 i=1039 text="None." (AED giải mã đoạn ồn 0.48 s
+    thành token «none», FireRedPunc viết hoa + thêm «.») → dịch simple không soát được → park mãi.
+    Câu rác (None/null/nan ± dấu, hoặc không có CJK/chữ/số) bị bỏ ở đây; số câu bỏ in ra log.
+    """
+    rows = _parse_firered_result_raw(result)
+    try:
+        from engines.text_junk import is_junk_text
+    except Exception:  # noqa: BLE001
+        return rows
+    keep = [r for r in rows if not is_junk_text(r.get("text"))]
+    if len(keep) != len(rows):
+        dropped = [r.get("text") for r in rows if is_junk_text(r.get("text"))]
+        print(f"[{ENGINE}] bỏ {len(rows) - len(keep)} câu rác (None/không chữ): {dropped[:8]}", flush=True)
+    return keep
+
+
+def _parse_firered_result_raw(result: dict) -> list[dict]:
+    """FireRedAsr2System.process → [{start,end,text}] (chưa lọc rác)."""
     rows: list[dict] = []
     sents = result.get("sentences") or []
     if isinstance(sents, list) and sents:
@@ -116,6 +135,228 @@ def _parse_firered_result(result: dict) -> list[dict]:
     if text:
         dur = float(result.get("dur_s") or 1.0)
         rows.append({"start": 0.0, "end": round(dur, 3), "text": text})
+    return rows
+
+
+# ─────────────── Chia slice tại KHOẢNG LẶNG + đệm chồng lấn (fix 2026-11-13) ───────────────
+# Trước: cắt cứng tại k×FIRERED_SLICE_SEC bằng ffmpeg -ss/-to -> câu vắt biên bị cắt đôi/lặp/mất.
+# Nay: điểm cắt = khoảng lặng gần mốc nhất (RMS khung 20 ms, chỉ đọc cửa sổ ±search quanh mốc),
+# mỗi slice thêm đệm 2 đầu, sau ASR chỉ giữ câu có TÂM nằm trong lõi slice. Cắt theo số mẫu
+# (chép byte PCM, không re-encode) -> offset = start_frame / rate, chính xác tuyệt đối.
+
+_SIL_FRAME_SEC = 0.02
+
+
+def _num_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        try:
+            raw = cfg(name, None)
+        except Exception:  # noqa: BLE001
+            raw = None
+    if raw is None or str(raw).strip() == "":
+        return float(default)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def slice_cfg() -> dict:
+    """FIRERED_SLICE_SEC=0 -> không chia (một lượt cả file)."""
+    return {
+        "slice_sec": max(0.0, _num_env("FIRERED_SLICE_SEC", 1200.0)),        # 20 phút (OOM)
+        "search_sec": max(0.0, _num_env("FIRERED_CUT_SEARCH_SEC", 60.0)),    # ±quanh mốc
+        "pad_sec": max(0.0, _num_env("FIRERED_SLICE_PAD_SEC", 2.0)),         # đệm biên có lặng
+        "pad_nosil_sec": max(0.0, _num_env("FIRERED_SLICE_PAD_NOSIL_SEC", 10.0)),  # biên không lặng
+        "min_sil_sec": max(0.02, _num_env("FIRERED_MIN_SILENCE_SEC", 0.3)),
+        "sil_db": _num_env("FIRERED_SILENCE_DB", -40.0),
+    }
+
+
+def _is_pcm16_mono16k(info) -> bool:
+    fmt = info.fmt_raw
+    tag = int.from_bytes(fmt[0:2], "little") if len(fmt) >= 2 else 0
+    bits = int.from_bytes(fmt[14:16], "little") if len(fmt) >= 16 else 0
+    if tag == 0xFFFE and len(fmt) >= 26:
+        tag = int.from_bytes(fmt[24:26], "little")
+    return tag == 1 and bits == 16 and info.channels == 1 and info.rate == 16000
+
+
+def _read_i16(info, f, start: int, count: int):
+    import numpy as np
+    start = max(0, int(start))
+    count = max(0, min(int(count), info.n_frames - start))
+    f.seek(info.data_offset + start * info.block_align)
+    buf = f.read(count * info.block_align)
+    return np.frombuffer(buf[: (len(buf) // 2) * 2], dtype="<i2")
+
+
+def find_cut_frame(info, f, target_sec: float, lo_sec: float, hi_sec: float,
+                   min_sil_sec: float = 0.3, sil_db: float = -40.0) -> tuple[int, float]:
+    """Điểm cắt (frame) trong [lo_sec, hi_sec] gần target_sec.
+
+    Trả (cut_frame, sil_len_sec). sil_len_sec > 0: cắt ở GIỮA khoảng lặng (ưu tiên dài + gần);
+    = 0: không có khoảng lặng ≥ min_sil -> điểm năng lượng thấp nhất (caller bật đệm chồng lấn lớn).
+    Chỉ đọc đúng cửa sổ [lo, hi] (không nạp cả file).
+    """
+    import numpy as np
+    rate = info.rate
+    a = max(0, int(round(lo_sec * rate)))
+    b = min(info.n_frames, int(round(hi_sec * rate)))
+    tgt = int(round(target_sec * rate))
+    hop = max(1, int(round(_SIL_FRAME_SEC * rate)))
+    if b - a < 4 * hop:
+        return min(max(tgt, a), max(a, b)), 0.0
+    x = _read_i16(info, f, a, b - a).astype(np.float32) / 32768.0
+    nfr = len(x) // hop
+    if nfr < 4:
+        return min(max(tgt, a), max(a, b)), 0.0
+    fr = x[: nfr * hop].reshape(nfr, hop)
+    db = 20.0 * np.log10(np.sqrt(np.mean(fr * fr, axis=1)) + 1e-10)
+    # Ngưỡng: tuyệt đối sil_db; nền ồn cao (vocals còn bleed) -> nền+6 dB, nhưng luôn
+    # thấp hơn trung vị cửa sổ ≥10 dB và ≤ -25 dBFS (audio nói liên tục => không "lặng").
+    thr = max(sil_db, float(np.percentile(db, 5)) + 6.0)
+    thr = min(thr, float(np.median(db)) - 10.0, -25.0)
+    quiet = db < thr
+    min_fr = max(1, int(round(min_sil_sec / _SIL_FRAME_SEC)))
+    radius = max(hop, max(tgt - a, b - tgt))
+    best = None
+    i = 0
+    while i < nfr:
+        if not quiet[i]:
+            i += 1
+            continue
+        j = i
+        while j < nfr and quiet[j]:
+            j += 1
+        if j - i >= min_fr:
+            mid = a + ((i + j) * hop) // 2
+            ln = (j - i) * _SIL_FRAME_SEC
+            score = abs(mid - tgt) / radius - 0.25 * min(ln, 2.0)   # gần + dài (≤2 s)
+            if best is None or score < best[0]:
+                best = (score, mid, ln)
+        i = j
+    if best is not None:
+        return int(best[1]), round(float(best[2]), 3)
+    # Không có khoảng lặng: năng lượng thấp nhất (trung bình trượt 0.2 s), hơi ưu tiên gần mốc
+    k = max(1, int(round(0.2 / _SIL_FRAME_SEC)))
+    sm = np.convolve(db, np.ones(k) / k, mode="same")
+    dist = np.abs((np.arange(nfr) * hop + hop // 2 + a) - tgt) / radius
+    idx = int(np.argmin(sm + 3.0 * dist))
+    return int(a + idx * hop + hop // 2), 0.0
+
+
+def plan_slices(wav_path: str | Path, conf: dict | None = None) -> list[dict]:
+    """[{start,end,core0,core1,sil_left,sil_right}] theo FRAME. Lõi phủ kín [0,n) không chồng."""
+    from engines.separate import wav_info
+    conf = dict(slice_cfg() if conf is None else conf)
+    info = wav_info(wav_path)
+    n, rate = info.n_frames, info.rate
+    total = n / float(rate or 1)
+    slice_sec = float(conf.get("slice_sec") or 0.0)
+    if n <= 0 or slice_sec <= 0 or total <= slice_sec:
+        return [{"start": 0, "end": n, "core0": 0, "core1": n, "sil_left": None, "sil_right": None}]
+    import math
+    search = min(float(conf.get("search_sec", 60.0)), 0.4 * slice_sec)
+    n_slice = max(1, int(math.ceil(total / slice_sec)))
+    if n_slice > 1 and total - (n_slice - 1) * slice_sec < max(search, 1.0):
+        n_slice -= 1   # đuôi quá ngắn -> gộp vào slice cuối
+    cuts: list[tuple[int, float]] = []
+    prev = 0.0
+    with open(info.path, "rb") as f:
+        for k in range(1, n_slice):
+            target = k * slice_sec
+            lo = max(target - search, prev + 1.0)
+            hi = min(target + search, total - 1.0)
+            if hi <= lo:
+                c, sil = int(round(target * rate)), 0.0
+            else:
+                c, sil = find_cut_frame(info, f, target, lo, hi,
+                                        float(conf.get("min_sil_sec", 0.3)),
+                                        float(conf.get("sil_db", -40.0)))
+            cuts.append((c, sil))
+            prev = c / float(rate)
+    bounds = [0, *[c for c, _ in cuts], n]
+    sils = [None, *[s for _, s in cuts], None]
+    pad = int(round(float(conf.get("pad_sec", 2.0)) * rate))
+    pad_ns = int(round(max(float(conf.get("pad_nosil_sec", 10.0)),
+                           float(conf.get("pad_sec", 2.0))) * rate))
+    out = []
+    for i in range(len(bounds) - 1):
+        sl, sr = sils[i], sils[i + 1]
+        pl = 0 if sl is None else (pad if sl > 0 else pad_ns)
+        pr = 0 if sr is None else (pad if sr > 0 else pad_ns)
+        out.append({"start": max(0, bounds[i] - pl), "end": min(n, bounds[i + 1] + pr),
+                    "core0": bounds[i], "core1": bounds[i + 1],
+                    "sil_left": sl, "sil_right": sr})
+    return out
+
+
+def describe_plan(plan: list[dict], rate: int) -> str:
+    if len(plan) <= 1:
+        return "[firered] 1 slice (cả file một lượt)"
+    parts = []
+    for p in plan[1:]:
+        t = p["core0"] / float(rate)
+        sil = p["sil_left"] or 0.0
+        parts.append(f"{t:.2f}s (lặng {sil:.2f}s)" if sil > 0
+                     else f"{t:.2f}s (KHÔNG lặng -> chồng lấn đệm lớn)")
+    return f"[firered] {len(plan)} slice, cắt tại khoảng lặng: " + ", ".join(parts)
+
+
+def transcribe_sliced(process_fn, wav: str | Path, tmp_dir: str | Path,
+                      conf: dict | None = None, on_slice=None) -> list[dict]:
+    """Chạy process_fn(path, uttid) -> dict FireRed trên từng slice; trả rows tuyệt đối.
+
+    Câu giữ lại khi TÂM (start+end)/2 thuộc lõi [core0, core1) của slice -> không trùng,
+    không mất câu vắt biên (câu đó nằm trọn trong phần đệm của ít nhất một slice).
+    """
+    from engines.separate import wav_info, write_wav_slice
+    wav = Path(wav)
+    tmp_dir = Path(tmp_dir)
+    info = wav_info(wav)
+    src = wav
+    if not _is_pcm16_mono16k(info):
+        import subprocess
+        src = tmp_dir / "asr16k.wav"
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(wav),
+                        "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(src)], check=True)
+        info = wav_info(src)
+    rate = info.rate
+    plan = plan_slices(src, conf)
+    print(describe_plan(plan, rate), flush=True)
+    rows: list[dict] = []
+    last = len(plan) - 1
+    for si, p in enumerate(plan):
+        if len(plan) == 1:
+            clip = src
+        else:
+            clip = tmp_dir / f"slice_{si:03d}.wav"
+            write_wav_slice(src, clip, p["start"], p["end"] - p["start"])
+        result = process_fn(str(clip), f"slice{si}")
+        if not isinstance(result, dict):
+            result = result[0] if result else {}
+        off = p["start"] / float(rate)
+        c0 = p["core0"] / float(rate)
+        c1 = p["core1"] / float(rate)
+        for r in _parse_firered_result(result or {}):
+            st = float(r["start"]) + off
+            en = float(r["end"]) + off
+            mid = (st + en) / 2.0
+            if si > 0 and mid < c0:
+                continue
+            if si < last and mid >= c1:
+                continue
+            rows.append({"start": round(st, 3), "end": round(en, 3), "text": r["text"]})
+        if clip != src:
+            try:
+                clip.unlink()
+            except OSError:
+                pass
+        if on_slice:
+            on_slice(si, len(plan), rows, c1)
+    rows.sort(key=lambda r: (r["start"], r["end"]))
     return rows
 
 
@@ -256,49 +497,33 @@ def run_asr_firered(
         m.save()
         print(f"[{ENGINE}] process · audio {total:.0f}s...")
 
-        # Video rất dài: cắt theo giờ để tránh OOM (FireRed system tự VAD trong clip)
-        import subprocess
+        # Video rất dài: chia slice tránh OOM — cắt tại KHOẢNG LẶNG gần mốc k×FIRERED_SLICE_SEC,
+        # đệm chồng lấn + lọc theo tâm câu (fix 2026-11-13). FIRERED_SLICE_SEC=0 -> cả file.
+        import shutil
         import tempfile
-        import math
-        slice_sec = float(os.getenv("FIRERED_SLICE_SEC", "1200") or 1200)  # 20 phút
-        n_slice = max(1, int(math.ceil(total / slice_sec)))
         tmp_dir = Path(tempfile.mkdtemp(prefix="firered_"))
+
+        def _on_slice(si, n_slice, cur_rows, en0):
+            pct = 20 + int(70 * (si + 1) / n_slice)
+            st.update({
+                "progress": min(pct, 95),
+                "cur_text": f"ASR slice {si+1}/{n_slice} · {len(cur_rows)} câu",
+                "n_segments": len(cur_rows),
+                "done_sec": float(en0),
+                "total_sec": total,
+                "updated_at": time.time(),
+                "status": "running",
+                "engine": ENGINE, "asr_engine": ENGINE, "model": MODEL_ID,
+            })
+            m.data["stages"][STAGE] = st
+            m.save()
+            rows[:] = list(cur_rows)   # _salvage_asr giữ được phần đã xong nếu lỗi giữa chừng
+            print(f"[{ENGINE}] slice {si+1}/{n_slice} · {len(cur_rows)} câu · @{en0:.0f}s",
+                  flush=True)
+
         try:
-            for si in range(n_slice):
-                st0 = si * slice_sec
-                en0 = min(total, (si + 1) * slice_sec)
-                clip = tmp_dir / f"slice_{si:03d}.wav"
-                subprocess.run(
-                    ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                     "-ss", f"{st0:.3f}", "-to", f"{en0:.3f}", "-i", str(wav),
-                     "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(clip)],
-                    check=True,
-                )
-                result = asr_system.process(str(clip), f"slice{si}")
-                if not isinstance(result, dict):
-                    result = result[0] if result else {}
-                part = _parse_firered_result(result or {})
-                for r in part:
-                    r["start"] = round(float(r["start"]) + st0, 3)
-                    r["end"] = round(float(r["end"]) + st0, 3)
-                rows.extend(part)
-                pct = 20 + int(70 * (si + 1) / n_slice)
-                st.update({
-                    "progress": min(pct, 95),
-                    "cur_text": f"ASR slice {si+1}/{n_slice} · {len(rows)} câu",
-                    "n_segments": len(rows),
-                    "done_sec": float(en0),
-                    "total_sec": total,
-                    "updated_at": time.time(),
-                    "status": "running",
-                    "engine": ENGINE, "asr_engine": ENGINE, "model": MODEL_ID,
-                })
-                m.data["stages"][STAGE] = st
-                m.save()
-                print(f"[{ENGINE}] slice {si+1}/{n_slice} · {len(rows)} câu · @{en0:.0f}s",
-                      flush=True)
+            rows = transcribe_sliced(asr_system.process, wav, tmp_dir, on_slice=_on_slice)
         finally:
-            import shutil
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
         rows = [{"i": i, "start": r["start"], "end": r["end"], "text": r["text"]}

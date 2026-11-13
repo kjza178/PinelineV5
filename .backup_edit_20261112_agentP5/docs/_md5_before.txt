@@ -1,0 +1,4 @@
+199bf15ea2cc362688229213403d07a6  docs/CHANGELOG.md
+0390b93f6cc2ca0b7f3c4935ef3c62b2  docs/STATE.md
+cf7df04080c768ee59c73b1cf4a3bd62  docs/fixes/README.md
+2c609d2705ed20d73a78ab5cd6b2bf94  docs/worklog/2026-11-12.md

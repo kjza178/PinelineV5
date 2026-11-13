@@ -84,12 +84,24 @@ def _get(base: str, path: str, timeout: float = 30) -> dict:
     return r.json() if r.content else {}
 
 
-def _post(base: str, path: str, body: dict | None = None, timeout: float = 120) -> dict:
+def caller_headers(caller: str | None = None, source: str | None = None) -> dict:
+    """fix 2026-11-12 agentI2: header nguồn lệnh. caller="user" CHỈ khi người gõ/bấm (Telegram);
+    tick Auto-pilot / brain không gắn (hoặc gắn "brain") → server không coi là chạy tay."""
+    h: dict = {}
+    if caller:
+        h["X-Pineline-Caller"] = str(caller)
+    if source:
+        h["X-Pineline-Source"] = str(source)
+    return h
+
+
+def _post(base: str, path: str, body: dict | None = None, timeout: float = 120,
+          headers: dict | None = None) -> dict:
     r = requests.post(
         base.rstrip("/") + path,
         json=body or {},
         timeout=timeout,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **(headers or {})},
     )
     try:
         data = r.json()
@@ -262,7 +274,10 @@ def agent_chat(
     history: list[dict] | None = None,
     allow_mutate: bool = True,
     require_confirm: bool = False,
+    caller: str | None = None,
+    source: str | None = None,
 ) -> dict:
+    """caller="user" (+ source="telegram"): tin do NGƯỜI gõ → tool chạy stage/dịch/tts/mux tính là chạy tay."""
     return _post(
         base,
         "/api/agent/chat",
@@ -274,11 +289,14 @@ def agent_chat(
             "require_confirm": require_confirm,
         },
         timeout=180,
+        headers=caller_headers(caller, source),
     )
 
 
-def agent_confirm(base: str, cid: str, approve: bool) -> dict:
-    return _post(base, "/api/agent/confirm", {"id": cid, "approve": approve}, timeout=120)
+def agent_confirm(base: str, cid: str, approve: bool, caller: str | None = None,
+                  source: str | None = None) -> dict:
+    return _post(base, "/api/agent/confirm", {"id": cid, "approve": approve}, timeout=120,
+                 headers=caller_headers(caller, source))
 
 
 def hard_stop(base: str = DEFAULT_BASE) -> dict:

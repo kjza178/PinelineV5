@@ -1,6 +1,10 @@
 """System snapshot cho Second Brain LLM — toàn hệ, không chỉ 1 job."""
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 import shutil
 import urllib.error
@@ -131,12 +135,31 @@ def _job_brief(work_root: Path, d: Path) -> dict[str, Any] | None:
             "qa_blocked": agent.get("qa_blocked"),
             "held_at": agent.get("held_at"),
             "hold_reason": (agent.get("hold_reason") or "")[:120],
+            # fix 2026-11-13 agentN: park/split_wait = TỰ thử lại (KHÔNG phải HOLD cần người)
+            "hold_class": _hold_cls(agent),
         },
+        "finished": _finished(d),
         "qa_brain": qa,
         "stop": (d / ".stop").exists(),
         "has_script": (d / "script.json").is_file(),
         "has_output": (d / "output.mp4").is_file(),
     }
+
+
+def _hold_cls(agent: dict) -> str | None:
+    try:
+        from agents.agent_hold import hold_class
+        return hold_class(agent)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _finished(d: Path) -> bool:
+    try:
+        from agents.agent_hold import job_finished
+        return bool(job_finished(d))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def build_system_snapshot(work_root: Path, *, max_jobs: int = 25) -> dict[str, Any]:
@@ -194,15 +217,15 @@ def build_system_snapshot(work_root: Path, *, max_jobs: int = 25) -> dict[str, A
     infra = {
         "server_8801": _ping(_self_base() + "/api/agent/status"),
         "sidecar_8802": _ping("http://127.0.0.1:8802/api/agent/status"),
-        "llama_8083": _ping("http://127.0.0.1:8083/v1/models"),
-        "chatgpt_3377": _ping("http://127.0.0.1:3377/v1/models"),
-        "hongguo_8000": _ping("http://127.0.0.1:8000/"),
+        "llama_8083": _ping(_machine.llama_base_url() + "/models"),
+        "chatgpt_3377": _ping(_machine.aurora_base_url() + "/models"),
+        "hongguo_8000": _ping(_machine.hongguo_base_url() + "/"),
     }
 
     # active llama preset
     active = {}
     try:
-        ap = Path(r"E:\models\presets\active.json")
+        ap = _machine.presets_active_json()
         if ap.is_file():
             active = json.loads(ap.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
@@ -258,6 +281,8 @@ Luật cứng:
 - post_tts (tts/mux done|running) → CẤM HOLD.
 - pre_tts + high QA → được HOLD sau khi đã pineline_job và nêu phương án.
 - .stop=true → bỏ qua. Không force ASR/download trừ evidence rõ.
+- finished=true (có output / đã đăng / đã ghép Full) → BỎ QUA hẳn: không heal, không DECISION.
+- agent.hold_class=park|split_wait = tạm dừng TỰ thử lại (không phải HOLD cần người) → không heal/HOLD, chỉ đợi.
 
 Kết thúc ≤10 dòng, format:
 DECISION <job_id>: stage=… | ok=yes/no | issue=… | plan=… | tools=…

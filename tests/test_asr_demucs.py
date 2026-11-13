@@ -41,8 +41,7 @@ def test_resolve_asr_source_triggers_separate_when_video_present(tmp_path):
         m_inner = Manifest(work_dir)
         m_inner.mark_done("separate", no_vocals_path=str(Path(work_dir) / "no_vocals.wav"), vocals_path=str(Path(work_dir) / "vocals.wav"))
 
-    with mock.patch.dict(os.environ, {"ASR_USE_DEMUCS": "1"}), \
-         mock.patch("engines.separate.run_separate", side_effect=fake_run_separate) as mock_sep:
+    with mock.patch("engines.separate.run_separate", side_effect=fake_run_separate) as mock_sep:
         res = resolve_asr_source(tmp_path)
         assert mock_sep.called
         assert res == tmp_path / "vocals.wav"

@@ -301,3 +301,8 @@ Bug s?a sau 2026-09-26 (ch?a c? file ri?ng) ???c ghi trong `docs/CHANGELOG.md` +
 
 - 2026-11-10-firered-root-path.md — FIRERED_ROOT path + _check_stopped
 - 2026-11-10-firered-bf16-align.md — BF16 torchaudio forced_align
+
+- 2026-11-12-port-simple-demucs.md — [V5] port translate_simple (mặc định) + Demucs trước ASR từ V2
+- 2026-11-12-port-brain-hold-pipeline.md — [V5] port Second Brain (Telegram events, gỡ HOLD chạy tay kể cả lệnh Telegram I2, heal delay) + đóng dấu luồng dịch theo job từ V2
+- 2026-11-13-port-preflight-slice-junk.md — [V5] port preflight/chuẩn hoá video nguồn + extract_pcm bền + FireRed slice khoảng lặng + câu rác «None.»/parent chờ part từ V2
+- 2026-11-13-port-brain-finished-hold.md — [V5] port brain: job đã xong không heal + park tự động (⏸) tách HOLD cần người (⛔) từ V2 (agent N)

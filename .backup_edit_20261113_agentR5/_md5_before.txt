@@ -1,0 +1,12 @@
+a4a290227b65a651ff23e62e0c7dccb1  agents/agent_hold.py
+51471418630106d58c179153a983faa4  agents/agent_heal.py
+254f54527190ad8188d91dbe6d0abb82  agents/agent_brain.py
+ee10944f6dfa2ccd6e46a1fd09ecdac6  agents/agent_brain_notify.py
+b7ca7f3456fcf3a3b195353a65bd5c55  agents/agent_brain_context.py
+0dd64087f68f470e456da7de0d5ff0aa  http_routes/routes_agent.py
+f0ac2472183cd985012d5d0b4e430038  tests/test_agent_brain_notify.py
+af06aaa8a8ea1f2fde01486bfd6a9a2a  docs/CHANGELOG.md
+d6085b75710bdc31f20f3da834472523  docs/STATE.md
+7bf360cb90cd87e4cb76cfd8fa25fe27  docs/fixes/README.md
+1114a9339e131f624af6b8869a8d217e  docs/worklog/2026-11-13.md
+bb59bc8a07b91fed21c6571b6d2a6c99  scripts/test_v5_simple_demucs.bat

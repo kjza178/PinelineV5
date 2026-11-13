@@ -125,6 +125,8 @@ def diagnose_av_sync(work_root: Path, job_id: str) -> dict:
               .get("download") or {}).get("video_path")
         if vp and Path(vp).is_file():
             source = Path(vp)
+        from engines.source_preflight import resolve_source_video   # agentK 2026-11-12: nguồn chuẩn hoá nếu có
+        source = resolve_source_video(work) or source
     except Exception:  # noqa: BLE001
         pass
     dub_fit = work / "dub_fit.wav"

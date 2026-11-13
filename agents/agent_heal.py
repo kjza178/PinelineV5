@@ -14,6 +14,64 @@ from typing import Any, Callable
 WIRED = ("download", "asr", "translate", "tts", "mux")
 
 
+# ---------------------------------------------------------------------------
+# fix 2026-11-12 agentH (C): race heal lúc khởi động
+# ---------------------------------------------------------------------------
+def start_delay_sec() -> int:
+    """Hoãn lượt heal đầu tiên của watcher/brain sau khi start (AGENT_HEAL_START_DELAY_SEC, mặc định 180)."""
+    raw = ""
+    try:
+        from core.config import get as _get
+        v = _get("AGENT_HEAL_START_DELAY_SEC")
+        raw = "" if v is None else str(v).strip()
+    except Exception:  # noqa: BLE001
+        raw = ""
+    if not raw:
+        import os
+        raw = (os.getenv("AGENT_HEAL_START_DELAY_SEC") or "180").strip()
+    try:
+        return max(0, int(float(raw)))
+    except ValueError:
+        return 180
+
+
+def job_active(job_id: str, hooks: dict | None = None) -> str | None:
+    """Lý do job đang chạy thật (không được heal): queue.current / claim stage / engine sống.
+    None = không thấy hoạt động. Không import server (tránh vòng) — dùng module đã nạp."""
+    import sys
+    jid = str(job_id or "")
+    if not jid:
+        return None
+    fn = (hooks or {}).get("job_active")
+    if callable(fn):
+        try:
+            r = fn(jid)
+            if r:
+                return str(r)
+        except Exception:  # noqa: BLE001
+            pass
+    jq = sys.modules.get("core.job_queue") or sys.modules.get("job_queue")   # V5: core/job_queue
+    if jq is not None:
+        try:
+            cur = getattr(jq, "_current", None)
+            if cur and (cur == jid or jid.startswith(str(cur) + "_p")):
+                return "queue.current"
+        except Exception:  # noqa: BLE001
+            pass
+    srv = sys.modules.get("server")
+    if srv is not None:
+        for name, why in (("_job_proc_alive", "engine"), ("_job_lineage_busy", "stage")):
+            f = getattr(srv, name, None)
+            if callable(f):
+                try:
+                    r = f(jid)
+                    if r:
+                        return why if r is True else f"{why}:{r}"
+                except Exception:  # noqa: BLE001
+                    pass
+    return None
+
+
 def _mf(work: Path) -> dict:
     p = work / "manifest.json"
     if not p.is_file():
@@ -59,12 +117,38 @@ def _tts_missing(work: Path, st: dict) -> int:
     return sum(1 for r in rows if isinstance(r, dict) and not (r.get("audio") or r.get("path")))
 
 
+def _finished(work: Path, data: dict) -> bool:
+    try:
+        from agents.agent_hold import job_finished
+        return bool(job_finished(work, data))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def diagnose_job(work_root: Path, job_id: str) -> dict:
     work = work_root / job_id
     if not (work / "manifest.json").is_file():
         return {"ok": False, "error": f"job {job_id} không tồn tại"}
 
     data = _mf(work)
+    # fix 2026-11-13 agentN: job ĐÃ XONG (mux+output / đã đăng / parent đã ghép Full / part của parent đó)
+    # → không chẩn đoán lỗi. Trước: job xong đã dọn script/tts/asr.json bị bắt «asr_bad» + «tts_not_started»
+    # → heal tts_run → «chưa dịch xong (thiếu script.json)» → Telegram «heal thất bại» (2493d3/ae9956/ec10e4).
+    if _finished(work, data):
+        return {
+            "ok": True,
+            "job_id": job_id,
+            "finished": True,
+            "failed_stages": [],
+            "running_stages": [],
+            "issues": [{"code": "finished", "stage": "job",
+                        "detail": "job đã xong (có output / đã đăng / đã ghép Full) — không heal"}],
+            "classifications": [],
+            "class_notes": [],
+            "actions_safe": [],
+            "actions_aggressive": [],
+            "note": "job đã xong — heal/watch/brain bỏ qua.",
+        }
     stages = {s: _stage(data, s) for s in WIRED}
     issues: list[dict] = []
     actions_safe: list[dict] = []
@@ -131,9 +215,11 @@ def diagnose_job(work_root: Path, job_id: str) -> dict:
 
     # ASR
     asr_ok = (work / "asr.json").is_file()
-    if stages["asr"].get("status") == "failed" or (
-        stages["translate"].get("status") in ("done", "failed", "running") and not asr_ok
-    ):
+    # fix 2026-11-13 agentN: asr done + đã dịch xong mà asr.json đã dọn ≠ ASR hỏng
+    tr_s = stages["translate"].get("status")
+    if stages["asr"].get("status") == "failed" or (not asr_ok and (
+        tr_s in ("failed", "running") or (tr_s == "done" and stages["asr"].get("status") != "done")
+    )):
         issues.append({"code": "asr_bad", "stage": "asr", "detail": "asr.json thiếu hoặc ASR failed"})
         actions_aggressive.append({"action": "asr_run_force", "why": "nhận diện lại — nặng GPU"})
 
@@ -160,10 +246,12 @@ def diagnose_job(work_root: Path, job_id: str) -> dict:
     has_dub = has_tts or bool(data.get("dub"))
     if tts_st.get("status") == "failed":
         actions_safe.append({"action": "tts_run", "why": "TTS failed — chạy lại (không force full trừ khi cần)"})
-    elif tts_miss and tts_miss > 0:
+    elif tts_miss and tts_miss > 0 and stages["translate"].get("status") == "done":
+        # agentN: n_missing cũ của TTS khi dịch CHƯA xong (job đang chạy lại ASR/dịch) ≠ thiếu clip
         issues.append({"code": "tts_missing_clips", "stage": "tts", "detail": f"{tts_miss} câu thiếu audio"})
         actions_safe.append({"action": "tts_run", "why": "đọc bù câu thiếu"})
-    elif stages["translate"].get("status") == "done" and not has_tts and tts_st.get("status") != "running":
+    elif (stages["translate"].get("status") == "done" and not has_tts
+          and tts_st.get("status") not in ("running", "done")):   # agentN: tts done (tts.json dọn) ≠ chưa TTS
         issues.append({"code": "tts_not_started", "stage": "tts", "detail": "đã dịch nhưng chưa TTS"})
         actions_safe.append({"action": "tts_run", "why": "chạy TTS"})
 
@@ -248,6 +336,10 @@ def heal_job(
     diag = diagnose_job(work_root, job_id)
     if not diag.get("ok"):
         return diag
+    if diag.get("finished"):   # fix 2026-11-13 agentN: job đã xong → không plan, không heal
+        return {"ok": True, "applied": False, "job_id": job_id, "finished": True, "skipped": "job đã xong",
+                "plan": [], "results": [],
+                "note": "KHÔNG heal: job đã xong (có output / đã đăng / đã ghép Full) — không có việc gì."}
 
     plan = list(diag.get("actions_safe") or [])
     if (level or "safe").lower() == "aggressive":
@@ -263,11 +355,21 @@ def heal_job(
     }
     if blocked_classes and apply:
         auto_plan = [a for a in auto_plan if a["action"] == "heal_stale_running"]
+    # fix 2026-11-12 agentG: plan rỗng → nói rõ (trước LLM đọc results=[] thành «chưa thực thi»)
+    empty_note = ""
+    if not auto_plan:
+        aggr = [a.get("action") for a in (diag.get("actions_aggressive") or [])]
+        empty_note = (
+            "KHÔNG có action safe cho job này — heal safe không làm gì (đây không phải lỗi tool). "
+            + (f"Chỉ có action aggressive: {', '.join(map(str, aggr))} — cần level=aggressive "
+               "hoặc user quyết (ASR/dịch lại nặng)." if aggr else "Không có action nào — báo user.")
+        )
     if not apply:
         return {
             "ok": True,
             "applied": False,
             "job_id": job_id,
+            "note": empty_note or "plan dưới đây sẽ chạy khi apply=true",
             "plan": auto_plan,
             "skipped_optional": [a for a in plan if a["action"] == "script_review_optional"],
             "blocked_classes": sorted(blocked_classes),
@@ -276,6 +378,17 @@ def heal_job(
         }
 
     hooks = hooks or {}
+    # fix 2026-11-12 agentH (C): job đang chạy thật (queue.current / engine sống) → không heal
+    why_active = job_active(job_id, hooks)
+    if why_active:
+        return {
+            "ok": True,
+            "applied": False,
+            "job_id": job_id,
+            "skipped": f"job đang chạy ({why_active})",
+            "results": [],
+            "note": f"KHÔNG heal: job đang chạy ({why_active}) — tránh giết engine đang chạy",
+        }
     results = []
     work = work_root / job_id
     # Action nền (GPU queue) — chỉ 1 cái/lần, tránh 409 chồng
@@ -337,12 +450,13 @@ def heal_job(
         "blocked_classes": sorted(blocked_classes),
         "class_notes": diag.get("class_notes") or [],
         "diagnose": diag,
-        "next": "poll stage_peek_all sau vài giây — TTS/mux chạy nền",
+        "next": (empty_note or "poll stage_peek_all sau vài giây — TTS/mux chạy nền"),
+        "note": empty_note or f"đã chạy {len(results)} action",
     }
 
 
 def _job_needs_attention(diag: dict) -> bool:
-    if not diag.get("ok"):
+    if not diag.get("ok") or diag.get("finished"):
         return False
     if diag.get("failed_stages") or diag.get("running_stages"):
         return True

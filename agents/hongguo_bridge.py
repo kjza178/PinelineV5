@@ -7,6 +7,10 @@ sẽ đổi resolution giữa chừng. Pineline chuẩn hoá canvas khi phát hi
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 import os
 import re
@@ -21,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-DEFAULT_BASE = "http://127.0.0.1:8000"
+DEFAULT_BASE = _machine.hongguo_base_url()  # machine-config: HONGGUO_BASE_URL (mặc định :8000)
 _TIMEOUT = 30
 _DEFAULT_QUALITIES = [
     {"quality": q, "plays": True, "uses": q, "bytesPerSecond": 0}
@@ -2176,7 +2180,7 @@ def library(base: str = DEFAULT_BASE) -> dict:
         try:
             root = Path((_rpc_mod().settings_get() or {}).get("saveFolder") or "") or None
         except Exception:  # noqa: BLE001
-            root = Path(r"D:\Lib") if Path(r"D:\Lib").is_dir() else None
+            root = _machine.library_dir() if _machine.library_dir().is_dir() else None
     else:
         data = _req("GET", base, "/dl/library")
         root = _output_dir(base)

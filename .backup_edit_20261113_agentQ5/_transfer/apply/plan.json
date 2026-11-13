@@ -1,0 +1,167 @@
+[
+ {
+  "rel": "agents/agent_av_sync.py",
+  "before": "2865dd613f17283774bd01d8b4fc7e1c",
+  "after": "9735f913bcde29cca719998c4733f939"
+ },
+ {
+  "rel": "docs/CHANGELOG.md",
+  "before": "f0446def4524b8258809172dac780d92",
+  "after": "af06aaa8a8ea1f2fde01486bfd6a9a2a"
+ },
+ {
+  "rel": "docs/STATE.md",
+  "before": "fbf2ecd3e4e505603330eb07c55e327b",
+  "after": "d6085b75710bdc31f20f3da834472523"
+ },
+ {
+  "rel": "docs/fixes/2026-11-13-port-preflight-slice-junk.md",
+  "before": null,
+  "after": "d686ecdb10156a310f62b317022bb888"
+ },
+ {
+  "rel": "docs/fixes/README.md",
+  "before": "7c8be102c2dbcac488cfea7604eb4eb1",
+  "after": "7bf360cb90cd87e4cb76cfd8fa25fe27"
+ },
+ {
+  "rel": "docs/worklog/2026-11-13.md",
+  "before": null,
+  "after": "1114a9339e131f624af6b8869a8d217e"
+ },
+ {
+  "rel": "engines/asr/asr.py",
+  "before": "154b20318753099253da1a98a48a9f5c",
+  "after": "67d126596b568e8e5655202611c48825"
+ },
+ {
+  "rel": "engines/asr/firered_asr.py",
+  "before": "26fe91f06454c570d3d5ac1361a7e213",
+  "after": "59d39f3b1b036c81b2070de37c717b35"
+ },
+ {
+  "rel": "engines/asr/hardsub_asr.py",
+  "before": "c4eb714f69dc7755cfd3967d2f85007d",
+  "after": "70c874e27ef174ee29afb25828dc100e"
+ },
+ {
+  "rel": "engines/download.py",
+  "before": "b8c8e159f2e8944f1491f49c8b3c4114",
+  "after": "dd40355d33094e9c9862f742c104c7ea"
+ },
+ {
+  "rel": "engines/media_ts.py",
+  "before": "6629ebfd38cb35f362d7308e62e43781",
+  "after": "7c2eb8672343d0f8a5f6bb7e67377ebe"
+ },
+ {
+  "rel": "engines/mux.py",
+  "before": "9b804922a63795862f0b9113d897f5e0",
+  "after": "24b5b3ec85aa80a74357f94e9db6b530"
+ },
+ {
+  "rel": "engines/ocr.py",
+  "before": "39d1ef72f048862e9469c62f103bcdce",
+  "after": "a95f5d2716bfe440bb11dbe311c159c3"
+ },
+ {
+  "rel": "engines/render.py",
+  "before": "1390ef84882ce84d1580e4be09d930f7",
+  "after": "485f5cbb130581343af2ba4357f04772"
+ },
+ {
+  "rel": "engines/separate.py",
+  "before": "2cbe05499bcb01dacd4a93cf9ad90ed2",
+  "after": "0f2764ea8bb9bb88b548bf4d57fa5f43"
+ },
+ {
+  "rel": "engines/source_preflight.py",
+  "before": null,
+  "after": "48c5901649655eedcf318b8942559983"
+ },
+ {
+  "rel": "engines/split_parts.py",
+  "before": "8bd1eef58c931d2c25e7a997d31a3adf",
+  "after": "a394550ea6e9ab0b2c14bf7b9c70956d"
+ },
+ {
+  "rel": "engines/text_junk.py",
+  "before": null,
+  "after": "9cdf25aae101bda430bc41f3d1100a8c"
+ },
+ {
+  "rel": "engines/translate_simple/cfg.py",
+  "before": "93d94d253aaacd909c897cb16c54d582",
+  "after": "cb3d834b39c48e210de21ea07dfc1d38"
+ },
+ {
+  "rel": "engines/translate_simple/pipeline.py",
+  "before": "c492d1ed305a8b1916fcdb10a99097a6",
+  "after": "0a5ccbabaa0219b2d59201ed53af632b"
+ },
+ {
+  "rel": "engines/translate_simple/stage_review.py",
+  "before": "48ac1ffb23edba8f51ec472cfb3ea25f",
+  "after": "4309391b6bbf93300b269305f6b85b70"
+ },
+ {
+  "rel": "engines/translate_simple/validate.py",
+  "before": "1d89c2f21f46afdda11e64df8ba449d4",
+  "after": "13bea4b79d0e76d6bfb90ee121fa4abb"
+ },
+ {
+  "rel": "server.py",
+  "before": "1492086bd24822cf67578aedca03f846",
+  "after": "9738cf627941d108255dca5700975d78"
+ },
+ {
+  "rel": "tests/test_extract_pcm_robust.py",
+  "before": null,
+  "after": "98b86cb6826e4d4c6075eff206e37732"
+ },
+ {
+  "rel": "tests/test_extract_pcm_timing.py",
+  "before": null,
+  "after": "46ab9ca22cc86e878b2e3bc601ee5353"
+ },
+ {
+  "rel": "tests/test_firered_slice_silence.py",
+  "before": null,
+  "after": "30963bb7f6ae13bcbbe40af495f68b32"
+ },
+ {
+  "rel": "tests/test_simple_junk_park.py",
+  "before": null,
+  "after": "630c3c6023b432ae12ce6f0db3e1ba68"
+ },
+ {
+  "rel": "tests/test_translate_simple.py",
+  "before": "36d97ba945898ef894200bb8a5c4ea99",
+  "after": "4a60c6bb991328d94d41b6a423d0f299"
+ },
+ {
+  "rel": "tests/test_translate_simple_scenarios.py",
+  "before": "30b099cc0b05c368bea74eafa5113afc",
+  "after": "cbd9749237d632aec92e88fb0c258c2c"
+ },
+ {
+  "rel": "tests/test_video_preflight.py",
+  "before": null,
+  "after": "2c70912514f547bb90b82bef3a67b15a"
+ },
+ {
+  "rel": "tools/asr_boundary_scan.py",
+  "before": null,
+  "after": "0c75c1d8323b9d4142946d7037e1e8af"
+ },
+ {
+  "rel": "tools/preflight_scan.py",
+  "before": null,
+  "after": "786ecff8ac9251b44598a4b8e82d881c"
+ },
+ {
+  "rel": "V6:scripts/test_v5_simple_demucs.bat",
+  "before": "120f02ea89a9bfac60ced0bec7f5c95b",
+  "after": "bb59bc8a07b91fed21c6571b6d2a6c99"
+ }
+]

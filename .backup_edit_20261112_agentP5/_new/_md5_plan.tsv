@@ -1,0 +1,11 @@
+agents/agent_brain.py	cfe739460b6712a1800b27af8ca245ce	254f54527190ad8188d91dbe6d0abb82	crlf=1 bom=0
+agents/agent_brain_notify.py	NEW	ee10944f6dfa2ccd6e46a1fd09ecdac6	crlf=1 bom=0
+agents/agent_heal.py	d9a26a3a1cd328288870cdfe5597679f	51471418630106d58c179153a983faa4	crlf=1 bom=0
+agents/agent_hold.py	NEW	3fb22e8d635bc19d21edd54e19e6a1ea	crlf=1 bom=0
+agents/agent_watch.py	fa3257c23620597c05e855029a0bad86	17a668b480e49fcdc1c8ddc2398d61ba	crlf=0 bom=0
+engines/translate_simple/cfg.py	b3acfa2cc3c846d72e614ada6efdad44	93d94d253aaacd909c897cb16c54d582	crlf=0 bom=0
+http_routes/routes_agent.py	30b93777668e41999b58dbc14ea562a1	7a238c90657e5f5cbfdca18703a626f8	crlf=0 bom=0
+server.py	5315fe2b36a71fdb7fc667a7fa1ee65c	1492086bd24822cf67578aedca03f846	crlf=1 bom=0
+tests/test_agent_brain_events.py	NEW	dc80e18361a263a8c09ea0340e231878	crlf=1 bom=0
+tests/test_agent_brain_notify.py	NEW	f0ac2472183cd985012d5d0b4e430038	crlf=1 bom=0
+tests/test_translate_simple.py	c387e2dd0ecda0bd0b2879c7cd6f32bd	36d97ba945898ef894200bb8a5c4ea99	crlf=0 bom=0

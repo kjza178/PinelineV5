@@ -658,6 +658,20 @@ def download_video(
         f"     {meta.get('title')} | {meta.get('height')}p "
         f"| {meta.get('duration_sec')}s | {meta.get('vcodec')} | {platform}"
     )
+    # agentK 2026-11-12: preflight nguồn ngay sau tải (VIDEO_PREFLIGHT=1) — lỗi audio → chuẩn hoá;
+    # không cứu được → stage download failed với lý do rõ (không để ASR fail mã 1).
+    try:
+        from engines.source_preflight import PreflightError, after_download
+    except ImportError:
+        return result
+    try:
+        if after_download(work_dir, video_path) is not None:
+            result = Manifest(work_dir).stage(STAGE) or result
+    except PreflightError as e:
+        Manifest(work_dir).mark_failed(STAGE, e)
+        raise RuntimeError(str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        print(f"[preflight] lỗi bất ngờ ({type(e).__name__}: {e}) — bỏ qua, dùng nguồn gốc")
     return result
 
 

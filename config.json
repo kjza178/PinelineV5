@@ -23,7 +23,7 @@
   "PLAN_MODEL": "chatgpt/gpt-5-6-mini",
   "AGENT_BRAIN": "1",
   "AGENT_BRAIN_SEC": "60",
-  "AGENT_BRAIN_TELEGRAM": "report",
+  "AGENT_BRAIN_TELEGRAM": "events",
   "AGENT_BRAIN_CONFIRM": "0",
   "AGENT_BRAIN_LLM_SAMPLE": "0",
   "AGENT_BRAIN_MODE": "hybrid",
@@ -38,6 +38,6 @@
   "REVIEW_BACKUP": "aurora_parallel",
   "FIRERED_ROOT": "Z:/PinelineV2/vendor/FireRedASR2S",
   "FIRERED_MODELS": "D:/AI_CACHE/firered",
-  "AGENT_BRAIN_TG_SEC": "120",
+  "AGENT_BRAIN_TG_SEC": "600",
   "AURORA_REVIEW_MODEL": "chatgpt/gpt-6"
 }

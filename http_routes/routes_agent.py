@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from core.manifest import Manifest
 import core.batch_config as batch_config
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 import server as S
 
@@ -102,6 +102,17 @@ def _agent_set_hold(job_id: str, enabled: bool) -> dict:
     work_dir = S.WORK_ROOT / job_id
     if not (work_dir / "manifest.json").exists():
         return {"ok": False, "error": "job không tồn tại"}
+    if enabled:
+        # fix 2026-11-12 agentH (B): brain/auto không đặt lại HOLD cho job người dùng đã gỡ tay
+        # (agent.hold_override) — trừ khi QA có high mới sau lần chạy tay đó.
+        try:
+            import agents.agent_hold as agent_hold
+            if agent_hold.auto_caller() and agent_hold.hold_suppressed(work_dir):
+                return {"ok": False, "job_id": job_id, "hold_after_translate": False,
+                        "error": "job đã được người dùng gỡ HOLD (chạy tay) và không có high QA mới "
+                                 "— không đặt lại HOLD"}
+        except Exception:  # noqa: BLE001
+            pass
     m = Manifest(work_dir)
     agent = dict(m.data.get("agent") or {})
     agent["hold_after_translate"] = bool(enabled)
@@ -140,22 +151,52 @@ def _agent_run_stage(job_id: str, stage: str, opts: dict) -> dict:
     force = bool(opts.get("force"))
     engine = opts.get("engine")
     speed = opts.get("speed")
+    # fix 2026-11-12 agentI2: lệnh NGƯỜI (Telegram/UI chat Agent, user_context) → KHÔNG gỡ HOLD trước ở đây;
+    # S.run_stage gỡ sau khi claim thành công qua _manual_hold_override (hold_override + 1 tin «🔓»).
+    try:
+        import agents.agent_hold as agent_hold
+        manual = bool(agent_hold.manual_source(None))
+    except Exception:  # noqa: BLE001
+        manual = False
+    h: dict = {}
     # Nếu đang hold after translate và sắp chạy tts → clear hold trước
     if stage == "tts":
         h = _agent_get_hold(job_id)
-        if h.get("hold_after_translate") or h.get("held_at") == "after_translate":
-            _agent_set_hold(job_id, False)
-        # QA override khi user/agent chủ động chạy TTS
-        if h.get("qa_blocked") or h.get("held_at") == "qa_gate":
-            from agents.agent_qa_gate import set_qa_gate
-            set_qa_gate(S.WORK_ROOT / job_id, True, override_pass=True)
+        if not manual:
+            if h.get("hold_after_translate") or h.get("held_at") == "after_translate":
+                _agent_set_hold(job_id, False)
+            # QA override khi user/agent chủ động chạy TTS
+            if h.get("qa_blocked") or h.get("held_at") == "qa_gate":
+                from agents.agent_qa_gate import set_qa_gate
+                set_qa_gate(S.WORK_ROOT / job_id, True, override_pass=True)
     res = S.run_stage(job_id, stage, force=force, voice=voice, speed=speed, engine=engine)
+    if manual and stage == "tts" and not isinstance(res, JSONResponse) \
+            and (h.get("qa_blocked") or h.get("held_at") == "qa_gate"):
+        _agent_mark_qa_override(job_id)
     if isinstance(res, JSONResponse):
         try:
             return json.loads(res.body.decode("utf-8"))
         except Exception:
             return {"error": f"run_stage {stage} failed", "status_code": res.status_code}
     return res if isinstance(res, dict) else {"ok": True, "res": res}
+
+
+def _agent_mark_qa_override(job_id: str) -> None:
+    """agentI2: người chạy TTS qua Agent trên job QA-block → giữ ngữ nghĩa cũ agent.qa_override=True
+    (qua Manifest.update, sau khi run_stage đã claim + gỡ HOLD)."""
+    def _fn(dd: dict):
+        a = dict(dd.get("agent") or {})
+        if a.get("qa_override") and a.get("qa_gate"):
+            return False
+        a["qa_override"] = True
+        a["qa_gate"] = True
+        dd["agent"] = a
+        return None
+    try:
+        Manifest(S.WORK_ROOT / job_id).update(_fn)
+        S._job_cache.pop(str(S.WORK_ROOT / job_id), None)
+    except Exception as e:  # noqa: BLE001
+        print(f"[hold] qa_override {job_id} lỗi: {e}", flush=True)
 
 
 def _agent_stop_job(job_id: str):
@@ -279,7 +320,9 @@ def _agent_resume(job_id: str) -> dict:
     m = Manifest(work_dir)
     agent = dict(m.data.get("agent") or {})
     agent["hold_after_translate"] = False
-    for k in ("held_at", "hold_reason"):
+    # fix 2026-11-13 agentN: «Chạy tiếp» = người đã duyệt → gỡ cả dấu park + bộ đếm lượt thử lại
+    # (trước: review_retries còn > max → lần park kế tiếp nhảy thẳng review_failed, không tự thử lại).
+    for k in ("held_at", "hold_reason", "review_retries", "review_retry_at", "simple_park", "split_wait_parts"):
         agent.pop(k, None)
     if agent.get("qa_blocked"):
         agent["qa_override"] = True
@@ -398,12 +441,44 @@ _HEAL_HOOKS = {
     "stop_job": _agent_stop_job,
     "run_stage": lambda jid, st: _agent_run_stage(jid, st, {}),
     "reset_state": _agent_reset_state,
+    # fix 2026-11-12 agentH (C): heal bỏ qua job đang chạy thật (engine sống / claim stage)
+    "job_active": lambda jid: ("engine" if S._job_proc_alive(jid) else None) or S._job_lineage_busy(jid),
 }
 
 _AV_SYNC_HOOKS = {
     "assemble_fit": _agent_assemble_fit,
     "mux_force": _agent_mux_force_av,
 }
+
+
+def _as_auto(fn, who: str = "heal"):
+    """fix 2026-11-12 agentI2: hook heal/av-sync là logic TỰ ĐỘNG → chạy trong agent_hold.auto_context,
+    không bị tính «chạy tay» (không gỡ HOLD) kể cả khi người gọi heal qua chat Agent/Telegram."""
+    def _w(*a, **k):
+        import agents.agent_hold as agent_hold
+        with agent_hold.auto_context(who):
+            return fn(*a, **k)
+    _w.__name__ = getattr(fn, "__name__", "hook")
+    _w.__wrapped__ = fn
+    return _w
+
+
+_HEAL_HOOKS = {k: _as_auto(v, "heal") for k, v in _HEAL_HOOKS.items()}
+_AV_SYNC_HOOKS = {k: _as_auto(v, "av_sync") for k, v in _AV_SYNC_HOOKS.items()}
+
+
+def _agent_user_ctx(request, route: str):
+    """agentI2: route Agent nhận lệnh NGƯỜI (UI/WebView, hoặc header X-Pineline-Caller: user từ Telegram
+    agent_tele_cmd) → tool in-process chạy trong agent_hold.user_context → run_stage/tts/mux/translate
+    tính là chạy tay (gỡ HOLD + 1 tin). Brain gửi header `brain` / gọi run_agent in-process → không."""
+    import contextlib
+    try:
+        import agents.agent_hold as agent_hold
+        if request is not None and agent_hold.is_manual_request(request):
+            return agent_hold.user_context(f"{route}:{agent_hold.request_source(request)}")
+    except Exception:  # noqa: BLE001
+        pass
+    return contextlib.nullcontext()
 
 
 def _agent_notify(text: str) -> None:
@@ -447,20 +522,21 @@ def api_agent_status():
 
 
 @router.post("/api/agent/chat")
-def api_agent_chat(req: S.AgentChatReq):
+def api_agent_chat(req: S.AgentChatReq, request: Request = None):
     """Chat với AI Agent — tools gọi hàm nội bộ (queue/manifest), không HTTP self."""
     msg = (req.message or "").strip()
     if not msg:
         return JSONResponse({"error": "message rỗng"}, status_code=400)
     try:
-        result = _agent_core.run_agent(
-            msg,
-            history=req.history,
-            allow_mutate=bool(req.allow_mutate),
-            max_steps=max(1, min(int(req.max_steps or 8), 16)),
-            require_confirm=bool(req.require_confirm),
-            force_first_tool=(getattr(req, "force_first_tool", None) or None),
-        )
+        with _agent_user_ctx(request, "agent_chat"):
+            result = _agent_core.run_agent(
+                msg,
+                history=req.history,
+                allow_mutate=bool(req.allow_mutate),
+                max_steps=max(1, min(int(req.max_steps or 8), 16)),
+                require_confirm=bool(req.require_confirm),
+                force_first_tool=(getattr(req, "force_first_tool", None) or None),
+            )
         return {
             "ok": True,
             "reply": result.reply,
@@ -479,10 +555,11 @@ def api_agent_pending():
 
 
 @router.post("/api/agent/confirm")
-def api_agent_confirm(req: S.AgentConfirmReq):
+def api_agent_confirm(req: S.AgentConfirmReq, request: Request = None):
     """Chạy (approve) hoặc huỷ thao tác agent đã đỗ lại chờ xác nhận."""
     try:
-        res = _agent_core.confirm_action(req.id, bool(req.approve))
+        with _agent_user_ctx(request, "agent_confirm"):
+            res = _agent_core.confirm_action(req.id, bool(req.approve))
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     return res if res.get("ok") else JSONResponse(res, status_code=404)

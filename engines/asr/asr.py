@@ -2,7 +2,7 @@
 asr.py — STAGE 2 (phần đầu): tách audio + nhận diện lời (Whisper).
 
 Đầu vào : work/<job>/source.mp4  (từ stage download)
-Đầu ra  : work/<job>/audio.wav   (16kHz mono — dùng lại cho TTS/Demucs sau)
+Đầu ra  : work/<job>/audio.wav   (16kHz mono — mặc định trích từ vocals.wav (Demucs), xem resolve_asr_source)
           work/<job>/asr.json     (danh sách câu: {i, start, end, text})
 
 Engine: faster-whisper (nhanh hơn openai-whisper nhiều, chạy CUDA).
@@ -59,20 +59,13 @@ def _src_id(src: Path) -> dict:
 
 
 def extract_audio(src: str | Path, out_wav: str | Path) -> str:
-    """Tách audio về 16kHz mono PCM — chuẩn đầu vào Whisper. Ghi .partial rồi replace + marker nguồn."""
-    from engines.media_ts import AUDIO_TS_FIX
+    """Tách audio về 16kHz mono PCM — chuẩn đầu vào Whisper. Ghi .partial rồi replace + marker nguồn.
+
+    AAC hỏng giữa file (rematrix Nch→mono -22): media_ts.extract_pcm_from_video salvage + chunk.
+    """
+    from engines.media_ts import extract_pcm_from_video
     src_p, out_p = Path(src), Path(out_wav)
-    part = out_p.with_name(out_p.stem + ".partial" + out_p.suffix)
-    cmd = [
-        "ffmpeg", "-y", "-i", str(src_p),
-        "-vn", "-af", AUDIO_TS_FIX, "-ac", "1", "-ar", "16000",
-        "-c:a", "pcm_s16le", str(part),
-    ]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True)
-        _os.replace(part, out_p)
-    finally:
-        part.unlink(missing_ok=True)
+    extract_pcm_from_video(src_p, out_p, ac=1, ar=16000)
     try:
         atomic_write_json(_audio_marker(out_p), _src_id(src_p), fsync=False)
     except OSError:
@@ -146,46 +139,99 @@ def ensure_audio_wav(src: str | Path, wav: str | Path, force: bool = False,
     return True
 
 
+def asr_use_demucs() -> bool:
+    """ASR_USE_DEMUCS — mặc định BẬT (2026-11-12): ASR chạy trên vocals.wav (Demucs).
+    Tắt (rollback hành vi cũ): ASR_USE_DEMUCS=0 / false / no / off."""
+    v = (_os.getenv("ASR_USE_DEMUCS", "1") or "1").strip().lower()
+    return v not in ("0", "false", "no", "off")
+
+
+def _asr_ui_phase(work_dir: Path, phase: str, cur_text: str) -> None:
+    """Hiện pha của stage asr (vd 'separate' = đang tách giọng) — ghi qua Manifest.update.
+    ASR đã xong thì không đụng."""
+    def _fn(data: dict):
+        st = data.setdefault("stages", {}).setdefault(STAGE, {})
+        if st.get("status") == "done":
+            return False
+        if st.get("status") != "running":
+            st["status"] = "running"
+            st.setdefault("started_at", _t.strftime("%Y-%m-%dT%H:%M:%S"))
+        st["phase"] = phase
+        st["cur_text"] = cur_text
+        st["updated_at"] = _t.time()
+    try:
+        Manifest(work_dir).update(_fn)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _marker_src_name(wav: Path) -> str | None:
+    try:
+        return (json.loads(_audio_marker(wav).read_text(encoding="utf-8")) or {}).get("src")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def resolve_asr_source(
     work_dir: str | Path,
     video_src: str | Path | None = None,
     force_demucs: bool = False,
     device: str = "cuda",
 ) -> Path:
-    """Xác định nguồn audio sạch và chuẩn xác cho ASR.
-    MẶC ĐỊNH: Luôn trích xuất audio.wav (16k mono) TRỰC TIẾP TỪ VIDEO NGUỒN (không qua Demucs)
-    để tránh bị nuốt chữ, mất âm, méo tiếng hoặc lệch timing ở các ranh giới chunk trên video dài.
-    Chỉ chạy Demucs trước ASR khi người dùng cố ý cấu hình ASR_USE_DEMUCS=1.
+    """Xác định nguồn audio cho ASR (engine sẽ ensure_audio_wav(src, audio.wav) 16k mono).
+
+    MẶC ĐỊNH (2026-11-12, quyết định chủ dự án): chạy Demucs MỘT lần/job rồi ASR trên
+    vocals.wav (giọng sạch). separate.py mới chia khúc tại khoảng lặng + cắt/ghép theo mẫu
+    (tổng độ dài = đúng audio gốc) nên lý do cũ ("nuốt chữ, méo tiếng, lệch timing ở ranh
+    giới chunk" do segment FLAC cắt cứng 60') không còn.
+      • Demucs lỗi/OOM/thiếu gói -> log + FALLBACK audio gốc từ video (không fail job).
+      • Đã có vocals.wav hợp lệ -> dùng lại (run_separate tự kiểm số mẫu/độ dài).
+      • ASR đã xong (asr.json + manifest done) và không force -> không chạy Demucs, giữ
+        đúng nguồn audio.wav hiện có (theo marker).
+      • ASR_USE_DEMUCS=0 -> hành vi cũ: audio.wav trích thẳng từ video.
+    force_demucs (= force của ASR) KHÔNG ép tách lại Demucs — chỉ trích lại audio.wav.
     """
     work_dir = Path(work_dir)
     voc = work_dir / "vocals.wav"
     wav = work_dir / "audio.wav"
 
-    m = Manifest(work_dir)
-    src_video = None
+    from engines.source_preflight import stage_source_video
+    # agentK 2026-11-12: 1 hàm resolve nguồn (preflight chờ → chạy; nguồn chuẩn hoá > gốc)
+    src_video = stage_source_video(work_dir)
     if video_src and Path(video_src).exists() and Path(video_src).suffix.lower() not in {".wav", ".flac"}:
         src_video = Path(video_src)
-    else:
-        vp = (m.stage("download") or {}).get("video_path")
-        if vp and Path(vp).exists():
-            src_video = Path(vp)
-        else:
-            for c in sorted(work_dir.glob("source.*")):
-                if c.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov", ".flv", ".ts"}:
-                    src_video = c
-                    break
+    m = Manifest(work_dir)
 
-    # Chỉ dùng Demucs cho ASR khi có cờ ASR_USE_DEMUCS=1 rõ ràng
-    use_demucs = _os.getenv("ASR_USE_DEMUCS", "0").strip().lower() in ("1", "true", "yes")
-    if use_demucs and src_video and src_video.exists():
-        from engines.separate import run_separate
-        need_sep = force_demucs or not voc.exists() or voc.stat().st_size < 1000
-        if need_sep or not m.is_done("separate"):
-            run_separate(work_dir, device=device, force=force_demucs)
-        if voc.exists() and voc.stat().st_size > 1000:
+    asr_done = m.is_done(STAGE) and (work_dir / "asr.json").exists()
+    if asr_done and not force_demucs:
+        # Job đã ASR xong: không chạy Demucs, không đổi nguồn audio.wav (sidecar/repair dùng lại).
+        if _marker_src_name(wav) == voc.name and voc.exists() and voc.stat().st_size > 1000:
             return voc
+    elif asr_use_demucs() and src_video and src_video.exists():
+        try:
+            from engines.separate import outputs_valid
+            if not outputs_valid(work_dir, src_video, m.stage("separate") if m.is_done("separate") else None)[0]:
+                _asr_ui_phase(work_dir, "separate", "Tách giọng (Demucs) trước ASR…")
+            from engines.separate import run_separate
+            run_separate(work_dir, device=device, force=False)
+            if voc.exists() and voc.stat().st_size > 1000:
+                _asr_ui_phase(work_dir, "asr", "Tách giọng xong — nhận diện lời trên giọng sạch…")
+                print("[asr] Nguồn ASR = vocals.wav (Demucs)", flush=True)
+                return voc
+            print("[asr] Demucs xong nhưng thiếu vocals.wav -> FALLBACK audio gốc", flush=True)
+        except BaseException as e:  # noqa: BLE001
+            if not isinstance(e, Exception) or (work_dir / ".stop").exists():
+                raise   # Dừng theo yêu cầu / KeyboardInterrupt -> không nuốt
+            print(f"[asr] CẢNH BÁO: Demucs lỗi ({type(e).__name__}: {str(e)[:300]}) "
+                  f"-> FALLBACK ASR trên audio gốc (không tách giọng)", flush=True)
+            try:
+                Manifest(work_dir).update(lambda d: d.setdefault("stages", {}).setdefault(STAGE, {}).update(
+                    {"demucs_fallback": str(e)[:300]}) or None)
+            except Exception:  # noqa: BLE001
+                pass
+        _asr_ui_phase(work_dir, "asr", "Tách giọng lỗi — ASR trên audio gốc…")
 
-    # Mặc định an toàn & chuẩn xác cao nhất: Trích audio.wav 16k mono trực tiếp từ video nguồn
+    # Hành vi cũ / fallback: audio.wav 16k mono trích thẳng từ video nguồn
     if src_video and src_video.exists():
         ensure_audio_wav(src_video, wav, force=force_demucs)
         return src_video

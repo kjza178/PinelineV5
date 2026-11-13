@@ -13,6 +13,10 @@ Config:
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import os
 import threading
 from pathlib import Path
@@ -23,12 +27,12 @@ _REPO_BASE = "ngocdang83/HachimiMT-60-zh-vi"
 _REPO_QT = "ngocdang83/HachimiMT-60-QT"
 _DEFAULT_REPO = "auto"
 _LOCAL_HINTS_QT = [
-    Path(r"E:\models\mt\ngocdang83__HachimiMT-60-QT"),
+    _machine.mt_model_dir() / "ngocdang83__HachimiMT-60-QT",
 ]
 _LOCAL_HINTS_BASE = [
-    Path(r"E:\models\mt\ngocdang83__HachimiMT-60-zh-vi"),
-    Path(r"E:\models\mt\robebo116__60-zh-vi"),
-    Path(r"E:\models\mt\60-zh-vi"),
+    _machine.mt_model_dir() / "ngocdang83__HachimiMT-60-zh-vi",
+    _machine.mt_model_dir() / "robebo116__60-zh-vi",
+    _machine.mt_model_dir() / "60-zh-vi",
     ROOT / "models" / "mt" / "60-zh-vi",
 ]
 
@@ -137,7 +141,7 @@ def _resolve_model_dir(repo: str) -> Path:
     if custom and Path(custom).is_dir():
         return Path(custom)
     mid = repo.replace("/", "__")
-    hinted = Path(r"E:\models\mt") / mid
+    hinted = _machine.mt_model_dir() / mid
     if (hinted / "ct2-int8_float32").is_dir():
         return hinted
     hints = _LOCAL_HINTS_QT if "qt" in repo.lower() else _LOCAL_HINTS_BASE
@@ -153,7 +157,7 @@ def _resolve_model_dir(repo: str) -> Path:
             if not want_qt and "robebo" in name:
                 return p
     from huggingface_hub import snapshot_download
-    dest = Path(r"E:\models\mt") / mid
+    dest = _machine.mt_model_dir() / mid
     dest.parent.mkdir(parents=True, exist_ok=True)
     path = snapshot_download(
         repo,

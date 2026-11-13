@@ -34,12 +34,9 @@ _VIDEO_EXT = {".mp4", ".mkv", ".webm", ".mov"}
 
 
 def _find_video(work_dir: Path, m: Manifest) -> Path | None:
-    dl = m.stage("download") or {}
-    vp = dl.get("video_path")
-    if vp and Path(vp).exists():
-        return Path(vp)
-    cands = [c for c in sorted(work_dir.glob("source.*")) if c.suffix.lower() in _VIDEO_EXT]
-    return cands[0] if cands else None
+    # agentK 2026-11-12: 1 hàm resolve nguồn (preflight chờ → chạy; nguồn chuẩn hoá > gốc)
+    from engines.source_preflight import stage_source_video
+    return stage_source_video(work_dir)
 
 
 def _pick_dub(work_dir: Path, m: Manifest) -> Path:

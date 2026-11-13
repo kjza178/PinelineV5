@@ -20,7 +20,7 @@ def _setup(monkeypatch, tmp_path: Path, n: int = 12, fail_i: set[int] | None = N
     def fake_review_batch(chunk_exp, plan_block, prev_ctx, **kw):
         ids = {r["i"] for r in chunk_exp}
         if ids & fail_i:
-            raise ValueError("boom (không phải quota)")
+            raise ValueError("boom (lỗi thường, không phải hết hạn mức)")
         out = {r["i"]: r["vi"] + "*" for r in chunk_exp}
         out.update(extra_fix or {})
         return out

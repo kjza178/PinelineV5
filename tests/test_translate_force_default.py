@@ -3,7 +3,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import server
+
+
+@pytest.fixture(autouse=True)
+def _legacy_pipeline(monkeypatch):
+    """V5 port 2026-11-12: mặc định TRANSLATE_PIPELINE=simple — file này kiểm luồng CŨ (_translate_flow)."""
+    monkeypatch.setenv("TRANSLATE_PIPELINE", "legacy")
 
 
 def test_translate_req_force_defaults_false():

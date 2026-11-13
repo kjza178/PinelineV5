@@ -3,12 +3,29 @@ Second Brain — daemon nền full-silent.
 
 Sensors → incidents → policy → actuators.
 Bật: AGENT_BRAIN=1 (hoặc pineline.config.json).
-Telegram: AGENT_BRAIN_TELEGRAM=minimal|report|all|off (minimal=HOLD/L3; report/all=+digest định kỳ AGENT_BRAIN_TG_SEC).
+Telegram: AGENT_BRAIN_TELEGRAM=events|minimal|report|all|off
+  Nội dung tin do CODE dựng theo mẫu (agent_brain_notify.py, fix 2026-11-12 agentH): 1 khối/job =
+  tiêu đề (emoji + tên phim VI + P<n> + id rút gọn) + ≤ 3 dòng (chuyện gì / brain làm gì + kết quả /
+  cần bạn làm gì). Văn LLM (DECISION) chỉ vào log; tool mutate của LLM → tin mẫu kèm kết quả.
+  Cùng lỗi của cùng job: 1 lần + nhắc lại ≤ mỗi AGENT_BRAIN_REMIND_SEC (7200), ≤ AGENT_BRAIN_REMIND_MAX (3).
+  AGENT_HEAL_START_DELAY_SEC (180): hoãn heal + LLM tick sau khi brain khởi động.
+  events  (mặc định, fix 2026-11-12 agentG) = chỉ báo khi stage đổi trạng thái (bắt đầu/xong/lỗi),
+          job xong toàn bộ, hoặc brain hành động (HOLD/CLEAR/heal) + DECISION có ý nghĩa;
+          gộp mọi sự kiện của 1 tick thành 1 tin.
+  minimal = chỉ HOLD/L3/hành động.
+  report/all = events + digest «Brain báo cáo» (≥ AGENT_BRAIN_TG_SEC, mặc định 600 s,
+          chỉ gửi khi nội dung khác lần trước).
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
+import hashlib
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -65,7 +82,130 @@ def _interval_sec() -> int:
 
 
 def _tg_mode() -> str:
-    return (_cfg("AGENT_BRAIN_TELEGRAM", "minimal") or "minimal").lower()
+    return (_cfg("AGENT_BRAIN_TELEGRAM", "events") or "events").lower()
+
+
+# Level Telegram (fix 2026-11-12 agentG):
+#   event    = stage đổi trạng thái / job xong toàn bộ
+#   action   = brain HOLD/CLEAR/heal thật
+#   decision = DECISION LLM có ý nghĩa (đã lọc + khử trùng lặp)
+#   info     = ACT/NEED-LLM (chỉ report/all)   progress = digest (chỉ report/all)
+_TG_CORE_LEVELS = ("hold", "l3", "critical", "event", "action", "decision")
+_TG_REPORT_MODES = ("report", "digest", "progress", "all", "on")
+_tg_local = threading.local()
+
+
+def _tg_allowed(mode: str, level: str) -> bool:
+    mode = (mode or "").lower()
+    if mode in ("0", "off", "none", "false"):
+        return False
+    if mode == "minimal":
+        return level in ("hold", "l3", "critical", "action")
+    if mode == "events":
+        return level in _TG_CORE_LEVELS
+    if mode in _TG_REPORT_MODES:
+        return level in _TG_CORE_LEVELS + ("info", "progress")
+    return level in ("hold", "l3", "critical")
+
+
+def _tg_begin_tick(work_root: Path | None = None) -> None:
+    """Bắt đầu gom tin của 1 tick (thread-local) → _tg_flush_tick gửi 1 tin duy nhất.
+    fix 2026-11-12 agentH: sự kiện theo job (_emit) gom thành khối/job, render bằng agent_brain_notify."""
+    _tg_local.buf = []
+    _tg_local.jobs = {}
+    if work_root is not None:
+        _tg_local.root = Path(work_root)
+
+
+def _tz():
+    from agents.agent_brain_notify import tz_from_cfg
+    return tz_from_cfg(_cfg("AGENT_BRAIN_TZ", ""))
+
+
+def _render_job_block(jid: str, events: list[dict], root: Path | None) -> str:
+    from agents.agent_brain_notify import render_job, split_part
+    data = parent = None
+    if root is not None:
+        data = _read_mf(Path(root) / jid)
+        base, part = split_part(jid)
+        if part is not None:
+            parent = _read_mf(Path(root) / base)
+    if data is None:
+        data = next((e.get("_data") for e in events if isinstance(e.get("_data"), dict)), None)
+    return render_job(jid, data, events, parent=parent, tz=_tz())
+
+
+def _tg_flush_tick() -> str | None:
+    from agents.agent_brain_notify import render_tick
+    buf = getattr(_tg_local, "buf", None)
+    jobs = getattr(_tg_local, "jobs", None) or {}
+    root = getattr(_tg_local, "root", None)
+    _tg_local.buf = None
+    _tg_local.jobs = None
+    if not buf and not jobs:
+        return None
+    blocks = []
+    for jid, evs in jobs.items():
+        try:
+            blocks.append(_render_job_block(jid, evs, root))
+        except Exception as e:  # noqa: BLE001
+            print(f"[agent_brain] render {jid} lỗi: {e}", flush=True)
+    msg = render_tick(blocks, list(buf or []))
+    if not msg:
+        return None
+    _tg_send(msg, key="tick:" + hashlib.sha1(msg.encode("utf-8")).hexdigest()[:16])
+    return msg
+
+
+def _emit(jid: str, kind: str, *, level: str = "event", data: dict | None = None, **kw: Any) -> None:
+    """Sự kiện của 1 job → khối tin dựng bằng mẫu (agent_brain_notify). Ngoài tick: gửi ngay."""
+    if not jid or not _tg_allowed(_tg_mode(), level):
+        return
+    ev = {"kind": kind, **kw}
+    if data is not None:
+        ev["_data"] = data
+    jobs = getattr(_tg_local, "jobs", None)
+    if jobs is not None:
+        lst = jobs.setdefault(jid, [])
+        if not any(_ev_eq(ev, x) for x in lst):
+            lst.append(ev)
+        return
+    msg = _render_job_block(jid, [ev], getattr(_tg_local, "root", None))
+    if msg:
+        _tg_send(msg, key=f"{level}:{msg[:120]}")
+
+
+def _ev_eq(a: dict, b: dict) -> bool:
+    ka = {k: v for k, v in a.items() if k != "_data"}
+    kb = {k: v for k, v in b.items() if k != "_data"}
+    return ka == kb
+
+
+def _tg_send(msg: str, *, key: str) -> None:
+    try:
+        from agents.agent_watch import telegram_send
+        telegram_send(msg, force=True, dedupe_key=f"brain:{key}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[agent_brain] tg skip: {e}", flush=True)
+
+
+def _remind_sec() -> int:
+    """Cùng lỗi / cùng kết quả hành động của 1 job: nhắc lại tối đa mỗi N giây (mặc định 2 giờ)."""
+    try:
+        return max(600, int(_cfg("AGENT_BRAIN_REMIND_SEC", "7200") or "7200"))
+    except ValueError:
+        return 7200
+
+
+def _once(state: dict | None, key: str, sec: float | None = None) -> bool:
+    """True nếu key chưa báo trong `sec` giây (mặc định _remind_sec) — và đánh dấu đã báo."""
+    if state is None:
+        return True
+    sec = _remind_sec() if sec is None else sec
+    if not _cooldown_ok(state, "tg:" + key, sec):
+        return False
+    _mark_fp(state, "tg:" + key, "")
+    return True
 
 
 def _log_dir(root: Path) -> Path:
@@ -120,21 +260,15 @@ def _mark_fp(state: dict, fp: str, note: str = "") -> None:
 
 
 def _telegram(msg: str, *, level: str = "hold") -> None:
-    mode = _tg_mode()
-    if mode in ("0", "off", "none", "false"):
+    if not _tg_allowed(_tg_mode(), level):
         return
-    # minimal = chỉ HOLD/L3; report/all = thêm info/progress định kỳ
-    if mode == "minimal" and level not in ("hold", "l3", "critical"):
+    buf = getattr(_tg_local, "buf", None)
+    if buf is not None and level != "progress":
+        # Trong tick: gộp — 1 tin/tick (digest gửi riêng)
+        if msg not in buf:
+            buf.append(msg)
         return
-    if mode in ("report", "digest", "progress") and level not in (
-        "hold", "l3", "critical", "info", "progress",
-    ):
-        return
-    try:
-        from agents.agent_watch import telegram_send
-        telegram_send(msg, force=True, dedupe_key=f"brain:{level}:{msg[:120]}")
-    except Exception as e:  # noqa: BLE001
-        print(f"[agent_brain] tg skip: {e}", flush=True)
+    _tg_send(msg, key=f"{level}:{msg[:120]}")
 
 
 def _ping(url: str, timeout: float = 2.5) -> tuple[bool, str]:
@@ -154,8 +288,8 @@ def _ping(url: str, timeout: float = 2.5) -> tuple[bool, str]:
 def sense_infra() -> list[dict]:
     out: list[dict] = []
     checks = [
-        ("llama_8083", "http://127.0.0.1:8083/v1/models"),
-        ("chatgpt_3377", "http://127.0.0.1:3377/v1/models"),
+        ("llama_8083", _machine.llama_base_url() + "/models"),
+        ("chatgpt_3377", _machine.aurora_base_url() + "/models"),
         ("sidecar_8802", "http://127.0.0.1:8802/api/agent/status"),
     ]
     for name, url in checks:
@@ -191,6 +325,8 @@ def sense_jobs(work_root: Path, *, max_jobs: int = 40) -> list[dict]:
         try:
             mf = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
+            continue
+        if job_finished(d, mf):   # fix 2026-11-13 agentN: job đã xong → không incident
             continue
         stages = mf.get("stages") or {}
         agent = mf.get("agent") or {}
@@ -290,6 +426,323 @@ def _qa_pipeline_phase(work_dir: Path) -> dict:
         return out
 
 
+# ---------------------------------------------------------------------------
+# Sự kiện stage + gỡ HOLD cũ (fix 2026-11-12 agentG)
+# ---------------------------------------------------------------------------
+_WIRED_STAGES = ("download", "asr", "translate", "tts", "mux")
+_DONE_ST = ("done", "ok", "completed")
+_HOLD_KEYS = ("qa_blocked", "hold_after_translate", "held_at")
+
+
+def _norm_status(v: Any) -> str:
+    s = str(v or "").strip().lower()
+    return "done" if s in _DONE_ST else s
+
+
+def _job_dirs(work_root: Path, max_jobs: int = 60) -> list[Path]:
+    work_root = Path(work_root)
+    if not work_root.is_dir():
+        return []
+    try:
+        dirs = [d for d in work_root.iterdir() if d.is_dir() and (d / "manifest.json").is_file()]
+    except OSError:
+        return []
+
+    def _mt(p: Path) -> float:
+        try:
+            return (p / "manifest.json").stat().st_mtime
+        except OSError:
+            return 0.0
+
+    return sorted(dirs, key=_mt, reverse=True)[:max_jobs]
+
+
+def _read_mf(d: Path) -> dict | None:
+    try:
+        data = json.loads((Path(d) / "manifest.json").read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _has_output(d: Path) -> bool:
+    try:
+        p = Path(d) / "output.mp4"
+        return p.is_file() and p.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _job_title(data: dict, jid: str) -> str:
+    req = data.get("request") or {}
+    t = data.get("title_vi") or data.get("title") or req.get("title") or (
+        (data.get("stages") or {}).get("download") or {}
+    ).get("title") or ""
+    return str(t)[:40]
+
+
+def job_finished(d: Path, data: dict | None = None) -> bool:
+    """Job đã xong — MỘT định nghĩa dùng chung: agent_hold.job_finished (fix 2026-11-13 agentN:
+    + đã đăng, + parent đã ghép Full, + part của parent đó, + output_full.mp4)."""
+    from agents.agent_hold import job_finished as _jf
+    return bool(_jf(Path(d), data))
+
+
+def _is_held(ag: dict | None) -> bool:
+    ag = ag or {}
+    return any(ag.get(k) for k in _HOLD_KEYS)
+
+
+def _scan_job_states(work_root: Path, max_jobs: int = 60) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for d in _job_dirs(work_root, max_jobs):
+        data = _read_mf(d)
+        if data is None:
+            continue
+        st: dict[str, str] = {}
+        err: dict[str, str] = {}
+        at: dict[str, Any] = {}
+        for name, v in (data.get("stages") or {}).items():
+            if not isinstance(v, dict):
+                continue
+            st[name] = _norm_status(v.get("status"))
+            if st[name] == "failed":
+                err[name] = str(v.get("error") or v.get("cur_text") or "")[:120]
+                at[name] = v.get("finished_at") or v.get("updated_at") or v.get("started_at")
+        ag = data.get("agent") or {}
+        try:
+            from agents.agent_hold import hold_info
+            hi = hold_info(ag)
+        except Exception:  # noqa: BLE001
+            hi = {}
+        out[d.name] = {
+            "st": st,
+            "err": err,
+            "at": at,
+            "complete": bool(job_finished(d, data)),
+            "title": _job_title(data, d.name),
+            "held": _is_held(ag),
+            "hold_reason": str(ag.get("hold_reason") or ag.get("held_at") or "")[:120],
+            # fix 2026-11-13 agentN: loại tạm dừng (park tự thử lại ≠ HOLD cần người)
+            "hold_cls": hi.get("cls"),
+            "park_try": hi.get("try"),
+            "retry_at": hi.get("retry_at"),
+            "n_lines": hi.get("n_lines"),
+            "parts": hi.get("parts") or [],
+        }
+    return out
+
+
+def _remind_max() -> int:
+    try:
+        return max(0, int(_cfg("AGENT_BRAIN_REMIND_MAX", "3") or "3"))
+    except ValueError:
+        return 3
+
+
+def detect_stage_events(work_root: Path, state: dict, *, max_jobs: int = 60) -> list[dict]:
+    """So trạng thái stage hiện tại với lần trước (state['job_stages']) → list sự kiện (dict).
+
+    Sự kiện: stage_start / stage_done / stage_failed / job_done / hold_set / remind_failed
+    (mỗi dict có "jid" + "kind" — render bằng agent_brain_notify). Lần đầu (chưa có baseline)
+    → chỉ ghi baseline, không báo (tránh lũ tin sau deploy).
+    Cùng 1 lỗi của cùng job: báo 1 lần lúc chuyển sang failed, nhắc lại tối đa mỗi
+    AGENT_BRAIN_REMIND_SEC (7200 s), tối đa AGENT_BRAIN_REMIND_MAX (3) lần.
+    """
+    cur = _scan_job_states(work_root, max_jobs=max_jobs)
+    prev = state.get("job_stages")
+    evs: list[dict] = []
+    notes = state.setdefault("fail_notes", {})
+    now = time.time()
+    if isinstance(prev, dict):
+        for jid, info in cur.items():
+            p = prev.get(jid)
+            pst = (p or {}).get("st") or {}
+            names = [s for s in _WIRED_STAGES if s in info["st"]] + sorted(
+                s for s in info["st"] if s not in _WIRED_STAGES
+            )
+            for stg in names:
+                s_now = info["st"].get(stg)
+                if s_now == pst.get(stg) or s_now not in ("running", "done", "failed"):
+                    continue
+                if p is None and s_now == "done":
+                    continue  # job mới xuất hiện: không kể lại các bước đã xong
+                if s_now == "running":
+                    evs.append({"jid": jid, "kind": "stage_start", "stage": stg})
+                elif s_now == "done":
+                    evs.append({"jid": jid, "kind": "stage_done", "stage": stg})
+                else:
+                    err = (info.get("err") or {}).get(stg, "")
+                    evs.append({"jid": jid, "kind": "stage_failed", "stage": stg, "error": err,
+                                "at": (info.get("at") or {}).get(stg)})
+                    notes[f"{jid}:{stg}"] = {"sig": err[:60], "at": now, "n": 0}
+            if p is not None and info.get("complete") and not p.get("complete"):
+                evs.append({"jid": jid, "kind": "job_done"})
+            if p is not None and not info.get("complete"):
+                ev = _hold_event(jid, info, p)
+                if ev:
+                    evs.append(ev)
+    # nhắc lại lỗi chưa xử lý
+    rmax = _remind_max()
+    live: set[str] = set()
+    for jid, info in cur.items():
+        if info.get("complete"):   # agentN: job đã xong → không nhắc lỗi cũ
+            continue
+        for stg, err in (info.get("err") or {}).items():
+            k = f"{jid}:{stg}"
+            live.add(k)
+            n = notes.get(k)
+            if not isinstance(n, dict) or n.get("sig") != err[:60]:
+                notes[k] = {"sig": err[:60], "at": now, "n": 0}   # baseline / lỗi khác → không nhắc ngay
+                continue
+            if rmax and int(n.get("n") or 0) < rmax and now - float(n.get("at") or 0) >= _remind_sec():
+                evs.append({"jid": jid, "kind": "remind_failed", "stage": stg, "error": err,
+                            "at": (info.get("at") or {}).get(stg)})
+                n["at"] = now
+                n["n"] = int(n.get("n") or 0) + 1
+    for k in list(notes):
+        if k not in live and (Path(work_root) / k.split(":", 1)[0] / "manifest.json").is_file():
+            notes.pop(k, None)
+    if len(notes) > 400:
+        state["fail_notes"] = dict(list(notes.items())[-400:])
+    keep: dict[str, dict] = {}
+    if isinstance(prev, dict):
+        for k, v in prev.items():
+            if k not in cur and (Path(work_root) / k / "manifest.json").is_file():
+                keep[k] = v
+    keep.update(cur)
+    if len(keep) > 300:
+        keep = dict(list(keep.items())[-300:])
+    state["job_stages"] = keep
+    return evs
+
+
+def _hold_event(jid: str, info: dict, p: dict) -> dict | None:
+    """fix 2026-11-13 agentN — tin tạm dừng ĐÚNG loại, mỗi lần chuyển 1 tin:
+    * park tự động (waiting_review simple/B2) / split_parts → «park_set» (⏸ … tự thử lại lúc HH:MM (lần k/max)),
+      chỉ khi MỚI park hoặc lượt park mới (review_retries đổi) — không nhắc lại;
+    * HOLD cần người (review_failed / qa_* / simple_gate / hold_after_translate) → «hold_set» (⛔ … Cần bạn),
+      khi mới HOLD hoặc chuyển từ park/loại khác sang.
+    State cũ (chưa có hold_cls) → coi như không đổi (không lũ tin sau restart)."""
+    from agents.agent_hold import AUTO_PARK, NEED_BY_HOLD, HOLD_PARK
+    cls = info.get("hold_cls")
+    if not cls:
+        return None
+    p_held = bool(p.get("held"))
+    pcls = p.get("hold_cls") if "hold_cls" in p else (cls if p_held else None)
+    if cls in AUTO_PARK:
+        new_try = cls == HOLD_PARK and pcls == cls and "park_try" in p and p.get("park_try") != info.get("park_try")
+        if pcls != cls or new_try:
+            return {"jid": jid, "kind": "park_set", "cls": cls, "n_lines": info.get("n_lines"),
+                    "retry_at": info.get("retry_at"), "try": info.get("park_try"),
+                    "max": _review_retry_max(), "parts": info.get("parts") or [],
+                    "reason": info.get("hold_reason") or ""}
+        return None
+    if pcls != cls:
+        return {"jid": jid, "kind": "hold_set", "cls": cls, "reason": info.get("hold_reason") or "",
+                "need": NEED_BY_HOLD.get(cls)}
+    return None
+
+
+def _review_retry_max() -> int:
+    from agents.agent_hold import review_retry_max
+    return review_retry_max()
+
+
+def emit_events(evs: list[dict]) -> None:
+    """Đẩy sự kiện vào buffer tick (level theo loại)."""
+    for ev in evs or []:
+        ev = dict(ev)
+        jid = ev.pop("jid", "")
+        kind = ev.pop("kind", "")
+        level = "hold" if kind == "hold_set" else "event"
+        _emit(jid, kind, level=level, **ev)
+
+
+def clear_stale_holds(work_root: Path, state: dict | None = None, *, max_jobs: int = 80) -> list[str]:
+    """Gỡ HOLD cũ TẤT ĐỊNH (không cần LLM): job đã xong (mux done + output, hoặc mọi stage done)
+    mà manifest.agent còn qa_blocked / hold_after_translate / held_at → clear qua Manifest.update."""
+    work_root = Path(work_root)
+    cleared: list[str] = []
+    for d in _job_dirs(work_root, max_jobs):
+        data = _read_mf(d)
+        if not data:
+            continue
+        ag = data.get("agent") or {}
+        if not any(ag.get(k) for k in _HOLD_KEYS):
+            continue
+        if not job_finished(d, data):
+            continue
+        old = {k: ag.get(k) for k in _HOLD_KEYS + ("hold_reason",) if ag.get(k)}
+
+        def _fn(dd: dict, _d: Path = d) -> bool | None:
+            if not job_finished(_d, dd):
+                return False
+            a = dict(dd.get("agent") or {})
+            if not any(a.get(k) for k in _HOLD_KEYS):
+                return False
+            a["qa_blocked"] = False
+            a["hold_after_translate"] = False
+            a.pop("held_at", None)
+            a.pop("hold_reason", None)
+            from agents.agent_hold import PARK_KEYS
+            for k in PARK_KEYS:   # agentN: job xong → bỏ cả dấu park (review_retry_at / split_wait_parts…)
+                a.pop(k, None)
+            a["hold_cleared"] = {
+                "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "by": "brain:job_done",
+                "was": {k: v for k, v in old.items() if k != "hold_reason"},
+            }
+            dd["agent"] = a
+            tr = (dd.get("stages") or {}).get("translate")
+            if isinstance(tr, dict) and "HOLD" in str(tr.get("cur_text") or ""):
+                tr["cur_text"] = "HOLD cũ đã gỡ (job đã xong)"
+            return None
+
+        try:
+            from core.manifest import Manifest
+            ok = Manifest(d).update(_fn)
+        except Exception as e:  # noqa: BLE001
+            log_line(work_root, f"clear stale hold {d.name} lỗi: {e}")
+            continue
+        if not ok:
+            continue
+        cleared.append(d.name)
+        _drop_pending(work_root, d.name)
+        log_line(
+            work_root,
+            f"CLEAR HOLD {d.name} (job đã xong — mux done/output có) was={json.dumps(old, ensure_ascii=False)[:200]}",
+        )
+        # agentN: part «_pNN» của parent đã ghép Full → gỡ im lặng (không lũ tin cho từng part cũ)
+        try:
+            from agents.agent_brain_notify import split_part
+            base, part = split_part(d.name)
+            quiet = part is not None and job_finished(work_root / base)
+        except Exception:  # noqa: BLE001
+            quiet = False
+        if not quiet:
+            _emit(d.name, "job_done", level="action")
+            _emit(d.name, "hold_cleared", level="action", why="job_done")
+        if state is not None:
+            _mark_fp(state, f"clearhold:{d.name}", "job_done")
+    return cleared
+
+
+def _drop_pending(work_root: Path, jid: str) -> None:
+    try:
+        pend = _log_dir(Path(work_root)) / "brain_pending_decisions.json"
+        if not pend.is_file():
+            return
+        items = json.loads(pend.read_text(encoding="utf-8")) or []
+        if not isinstance(items, list):
+            return
+        new = [x for x in items if not (isinstance(x, dict) and x.get("job_id") == jid)]
+        if len(new) != len(items):
+            pend.write_text(json.dumps(new, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _gpu_or_queue_busy(work_root: Path) -> bool:
     try:
         import core.job_queue as _jq
@@ -375,7 +828,7 @@ def apply_actions(
                             note = f"switch {preset} ok={ok}"
                             log_line(work_root, note)
                             if ok:
-                                _telegram(f"Brain L3: nạp lại llama {preset}", level="l3")
+                                _telegram(f"🔧 Brain: nạp lại llama {preset} → thành công.", level="l3")
                         except Exception as e:  # noqa: BLE001
                             note = f"switch fail: {e}"
                             log_line(work_root, note)
@@ -390,7 +843,16 @@ def apply_actions(
                 jid = str(act.get("job_id") or "")
                 if not jid or (work_root / jid / ".stop").exists():
                     continue
-                from agents.agent_heal import heal_job
+                from agents.agent_heal import heal_job, job_active
+                if job_finished(work_root / jid):   # fix 2026-11-13 agentN
+                    results.append({"ok": True, "action": act, "skipped": "finished"})
+                    continue
+                # fix 2026-11-12 agentH (C): không heal job đang là queue.current / có engine sống
+                why_active = job_active(jid, hooks)
+                if why_active:
+                    log_line(work_root, f"heal {jid} bỏ qua — job đang chạy ({why_active})")
+                    results.append({"ok": True, "action": act, "skipped": f"active:{why_active}"})
+                    continue
                 level = act.get("level") or "safe"
                 r = heal_job(work_root, jid, apply=True, level=level, hooks=hooks)
                 # escalate một lần nếu safe không đủ và không stopped
@@ -405,9 +867,17 @@ def apply_actions(
                     )
                     r = {"safe": r, "aggressive": r2}
                     _mark_fp(state, f"l1agg:{jid}", "aggressive")
-                    _telegram(f"Brain L3: heal aggressive {jid}", level="l3")
+                    log_line(work_root, f"heal aggressive {jid}")
                 _mark_fp(state, act["fp"], "heal")
                 results.append({"ok": True, "action": act, "result": r})
+                try:
+                    from agents.agent_brain_notify import heal_summary
+                    hs = heal_summary(r)
+                    log_line(work_root, f"heal {jid} → {hs['outcome']} acts={hs['actions']} {hs['reason']}")
+                    if _once(state, f"heal:{jid}:{hs['outcome']}:{','.join(hs['actions'])}"):
+                        _emit(jid, "heal", level="action", by="brain", **hs)
+                except Exception:  # noqa: BLE001
+                    pass
 
             elif typ == "quality_job":
                 jid = str(act.get("job_id") or "")
@@ -463,24 +933,23 @@ def apply_actions(
                     try:
                         from core.manifest import Manifest
                         m = Manifest(wd)
-                        agent = dict(m.data.get("agent") or {})
+                        agent0 = dict(m.data.get("agent") or {})
                         was_held = bool(
-                            agent.get("held_at") == "qa_brain" or agent.get("qa_blocked")
+                            agent0.get("held_at") == "qa_brain" or agent0.get("qa_blocked")
                         )
                         if was_held or act.get("held"):
-                            agent["qa_blocked"] = False
-                            agent.pop("held_at", None)
-                            agent.pop("hold_reason", None)
-                            agent["hold_after_translate"] = False
-                            m.data["agent"] = agent
-                            m.save()
+                            def _clr(dd: dict) -> None:
+                                a = dict(dd.get("agent") or {})
+                                a["qa_blocked"] = False
+                                a.pop("held_at", None)
+                                a.pop("hold_reason", None)
+                                a["hold_after_translate"] = False
+                                dd["agent"] = a
+                            m.update(_clr)
                             if set_hold:
                                 set_hold(jid, False)
                             log_line(work_root, f"CLEAR HOLD {jid} (qa clean → pipeline)")
-                            _telegram(
-                                f"Brain CLEAR {jid}: high=0 sau ACT — mở TTS/mux",
-                                level="info",
-                            )
+                            _emit(jid, "hold_cleared", level="action", why="qa_clean")
                     except Exception as e:  # noqa: BLE001
                         log_line(work_root, f"clear hold fail: {e}")
                 elif high > 0:
@@ -559,7 +1028,8 @@ def _http_json(method: str, url: str, body: dict | None = None, timeout: float =
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"} if body is not None else {},
+        headers=({"Content-Type": "application/json"} if body is not None else {})
+        | {"X-Pineline-Caller": "brain"},   # fix agentH: không bị coi là «chạy tay» (gỡ HOLD)
         method=method,
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -656,18 +1126,28 @@ def _ensure_brain_runtime(work_root: Path) -> str:
         mf = work_root / job_id / "manifest.json"
         if not mf.is_file():
             return {"ok": False, "error": "job không tồn tại"}
-        data = json.loads(mf.read_text(encoding="utf-8"))
-        agent = dict(data.get("agent") or {})
-        agent["hold_after_translate"] = bool(enabled)
         if enabled:
-            agent.pop("held_at", None)
-            agent["hold_reason"] = "brain: dừng sau translate để duyệt"
-        else:
-            agent.pop("held_at", None)
-            agent.pop("hold_reason", None)
-        data["agent"] = agent
-        mf.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        return {"ok": True, "job_id": job_id, "hold_after_translate": bool(enabled)}
+            try:   # fix 2026-11-12 agentH (B): job đã gỡ HOLD tay → không HOLD lại khi không có high mới
+                import agents.agent_hold as agent_hold
+                if agent_hold.hold_suppressed(work_root / job_id):
+                    return {"ok": False, "job_id": job_id, "error": "người dùng đã gỡ HOLD (chạy tay), "
+                            "không có high QA mới — không đặt lại HOLD"}
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _fn(data: dict) -> None:   # fix agentH: Manifest.update thay write_text thô (không khoá)
+            agent = dict(data.get("agent") or {})
+            agent["hold_after_translate"] = bool(enabled)
+            if enabled:
+                agent.pop("held_at", None)
+                agent["hold_reason"] = "brain: dừng sau translate để duyệt"
+            else:
+                agent.pop("held_at", None)
+                agent.pop("hold_reason", None)
+            data["agent"] = agent
+        from core.manifest import Manifest
+        ok = Manifest(work_root / job_id).update(_fn)
+        return {"ok": bool(ok), "job_id": job_id, "hold_after_translate": bool(enabled)}
 
     def edit_line(job_id: str, i: int, vi: str | None, zh: str | None) -> dict:
         body = {"i": i}
@@ -755,6 +1235,25 @@ def _run_agent_llm(
     force_first_args: dict | None = None,
 ) -> dict:
     """Gọi agent_core tool-loop in-process (bind FS/HTTP nếu cần) hoặc fallback HTTP chat."""
+    try:
+        import agents.agent_hold as agent_hold
+        ctx = agent_hold.auto_context("brain")
+    except Exception:  # noqa: BLE001
+        import contextlib
+        ctx = contextlib.nullcontext()
+    with ctx:
+        return _run_agent_llm_inner(message, work_root=work_root, max_steps=max_steps,
+                                    force_first_tool=force_first_tool, force_first_args=force_first_args)
+
+
+def _run_agent_llm_inner(
+    message: str,
+    *,
+    work_root: Path,
+    max_steps: int = 10,
+    force_first_tool: str = "pineline_status",
+    force_first_args: dict | None = None,
+) -> dict:
     inproc_err = "skip"
     try:
         import agents.agent_core as agent_core
@@ -804,7 +1303,7 @@ def _run_agent_llm(
         req = urllib.request.Request(
             _self_base() + "/api/agent/chat",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "X-Pineline-Caller": "brain"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=300) as resp:
@@ -819,7 +1318,184 @@ def _run_agent_llm(
         }
 
 
-def llm_tick(work_root: Path) -> dict:
+_READ_TOOLS = (
+    "pineline_status", "pineline_job", "queue_status", "running_check",
+    "config_get", "films", "library", "diagnose_job", "scan_failed",
+    "review_diff", "stage_peek", "stage_peek_all", "style_pack_peek",
+    "script_get", "av_sync_check", "av_sync_scan", "hg_status",
+    "hg_library", "feed", "pineline_diagnose_job", "pineline_running_check",
+    "pineline_queue_status", "pineline_config_get",
+)
+
+
+def _mutating_steps(steps: list) -> list[dict]:
+    """Step thật sự đổi trạng thái (theo agent_core.tool_tier; fallback danh sách read)."""
+    out = []
+    try:
+        from agents.agent_core import tool_tier as _tier
+    except Exception:  # noqa: BLE001
+        _tier = None
+    for st in steps or []:
+        if not isinstance(st, dict) or not st.get("tool"):
+            continue
+        name = str(st["tool"])
+        if _tier is not None:
+            try:
+                if _tier(name, st.get("args") or {}) == "read":
+                    continue
+            except Exception:  # noqa: BLE001
+                if name in _READ_TOOLS:
+                    continue
+        elif name in _READ_TOOLS:
+            continue
+        prev = str(st.get("result_preview") or "")
+        if '"mutate_blocked"' in prev or '"awaiting_user_confirm"' in prev:
+            continue
+        out.append(st)
+    return out
+
+
+def _deep_focus(snap: dict, work_root: Path) -> tuple[list[str], dict[str, dict]]:
+    """Job cần LLM deep tick: failed / held / high_open (chưa qua TTS) / pending / pre_tts có high.
+    BỎ QUA job running khoẻ và job đã xong (fix 2026-11-12 agentG)."""
+    focus: list[str] = []
+    meta_all: dict[str, dict] = {}
+    for j in snap.get("jobs_focus") or []:
+        if not isinstance(j, dict) or j.get("stop"):
+            continue
+        jid = str(j.get("job_id") or "")
+        if not jid:
+            continue
+        ag = j.get("agent") or {}
+        qb = j.get("qa_brain") or {}
+        st = j.get("stages") or {}
+        phase = (j.get("phase") or {}).get("name") or ""
+        failed = [s for s in st if str((st.get(s) or {}).get("status") or "") == "failed"]
+        running = any(str((st.get(s) or {}).get("status") or "") == "running" for s in st)
+        # fix 2026-11-13 agentN: chỉ HOLD CẦN NGƯỜI mới đáng deep tick — park tự động (waiting_review /
+        # split_parts) tự thử lại, không DECISION; job đã xong → bỏ hẳn (kể cả stage failed cũ).
+        try:
+            from agents.agent_hold import AUTO_PARK, hold_class
+            hcls = hold_class({"hold_after_translate": ag.get("hold"), "qa_blocked": ag.get("qa_blocked"),
+                               "held_at": ag.get("held_at")})
+        except Exception:  # noqa: BLE001
+            hcls, AUTO_PARK = ("other" if (ag.get("qa_blocked") or ag.get("hold") or ag.get("held_at")) else None), ()
+        held = bool(hcls) and hcls not in AUTO_PARK
+        try:
+            high = int(qb.get("high_open") or 0)
+        except (TypeError, ValueError):
+            high = 0
+        finished = job_finished(Path(work_root) / jid)
+        if finished:
+            continue
+        want = bool(failed) or held or (high > 0 and phase not in ("post_tts",))
+        if want:
+            focus.append(jid)
+            meta_all[jid] = {
+                "phase": phase, "high": high, "failed": failed,
+                "running": running, "held": held,
+                "err": {s: str((st.get(s) or {}).get("error") or "")[:80] for s in failed},
+            }
+    return focus, meta_all
+
+
+def _deep_sig(meta: dict) -> str:
+    core = {
+        "failed": sorted(meta.get("failed") or []),
+        "err": meta.get("err") or {},
+        "high": meta.get("high"),
+        "held": meta.get("held"),
+        "phase": meta.get("phase"),
+        "pending": bool(meta.get("pending")),
+    }
+    return hashlib.sha1(json.dumps(core, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+
+def _deep_cooldown_sec() -> int:
+    try:
+        return max(300, int(_cfg("AGENT_BRAIN_DEEP_SEC", "1800") or "1800"))
+    except ValueError:
+        return 1800
+
+
+def _decision_dedupe_sec() -> int:
+    try:
+        return max(60, int(_cfg("AGENT_BRAIN_DECISION_DEDUP_SEC", "1800") or "1800"))
+    except ValueError:
+        return 1800
+
+
+def _job_evidence(jid: str, work_root: Path | None = None) -> str:
+    """Chạy sẵn tool đọc (pineline_job + diagnose + heal plan) → nhét vào prompt.
+    Lý do (fix agentG): model qua proxy :3377 nhiều lần trả lời «tool chưa thực thi / chưa có kết quả»
+    dù step có chạy — nên đưa bằng chứng thẳng vào message, không phụ thuộc role=tool."""
+    parts: list[str] = []
+    try:
+        import agents.agent_core as agent_core
+        if work_root is not None:
+            _ensure_brain_runtime(Path(work_root))
+        for name, args, lim in (
+            ("pineline_job", {"job_id": jid}, 2200),
+            ("pineline_diagnose_job", {"job_id": jid}, 1600),
+            ("pineline_heal_job", {"job_id": jid, "apply": False, "level": "safe"}, 900),
+        ):
+            try:
+                r = agent_core._dispatch(name, args, allow_mutate=False)
+            except Exception as e:  # noqa: BLE001
+                r = json.dumps({"error": str(e)[:200]}, ensure_ascii=False)
+            if name == "pineline_heal_job":
+                try:
+                    o = json.loads(r)
+                    r = json.dumps({k: o.get(k) for k in ("plan", "blocked_classes", "class_notes", "note")},
+                                   ensure_ascii=False)
+                except Exception:  # noqa: BLE001
+                    pass
+            parts.append(f"[{name}({json.dumps(args, ensure_ascii=False)}) → ĐÃ CHẠY]\n{str(r)[:lim]}")
+    except Exception as e:  # noqa: BLE001
+        parts.append(f"(không lấy được bằng chứng: {e})")
+    return "\n".join(parts)
+
+
+def _log_tool_issues(work_root: Path, jid: str, steps: list) -> None:
+    for st in steps or []:
+        if not isinstance(st, dict):
+            continue
+        prev = str(st.get("result_preview") or "")
+        if '"error"' in prev or "mutate_blocked" in prev or '"plan": []' in prev or '"results": []' in prev:
+            log_line(work_root, f"LLM tool {st.get('tool')} job={jid} result: {prev[:240].replace(chr(10), ' ')}")
+
+
+def _report_llm_actions(state: dict | None, jid: str, steps: list) -> int:
+    """Tool MUTATE thật của LLM → tin mẫu «Brain: <việc> → <kết quả>» (fix 2026-11-12 agentH).
+    Văn LLM KHÔNG lên Telegram. Cùng (job, tool, kết quả) chỉ báo lại sau AGENT_BRAIN_REMIND_SEC."""
+    from agents.agent_brain_notify import tool_outcome
+    n = 0
+    for st in _mutating_steps(steps):
+        tool = str(st.get("tool") or "")
+        args = st.get("args") or {}
+        j = str((args.get("job_id") if isinstance(args, dict) else "") or jid or "")
+        if not j:
+            continue
+        out, det = tool_outcome(tool, st.get("result_preview"))
+        if tool == "pineline_hold_after_translate" and isinstance(args, dict):
+            det = det or ("bật HOLD" if args.get("enabled") else "gỡ HOLD")
+        if tool in ("pineline_run_stage", "pineline_run_stage_wait") and isinstance(args, dict):
+            from agents.agent_brain_notify import stage_vi
+            det = det or stage_vi(str(args.get("stage") or ""))
+        if not _once(state, f"llm:{j}:{tool}:{out}:{det}"):
+            continue
+        _emit(j, "llm_action", level="action", tool=tool, outcome=out, detail=det)
+        n += 1
+    return n
+
+
+def _maybe_decision_tg(state: dict, jid: str, meta: dict, steps: list, reply: str) -> bool:
+    """DECISION của LLM: CHỈ log (không gửi văn LLM lên Telegram). Có tool mutate → tin mẫu kết quả.
+    (fix 2026-11-12 agentH — trước: «Brain DECISION …» + 350 ký tự văn LLM, markdown/bảng/<badge>.)"""
+    return _report_llm_actions(state, jid, steps) > 0
+
+
+def llm_tick(work_root: Path, state: dict | None = None) -> dict:
     """LLM Second Brain: đọc snapshot toàn hệ → tool-loop quyết định."""
     from agents.agent_brain_context import (
         BRAIN_LLM_INSTRUCTION,
@@ -837,48 +1513,18 @@ def llm_tick(work_root: Path) -> dict:
         pass
     # Snapshot ngắn: ưu tiên — LLM phải tool-verify rồi mới HOLD/heal
     msg = BRAIN_LLM_INSTRUCTION + snapshot_to_prompt(snap, max_chars=4500)
-    focus: list[str] = []
-    focus_meta: dict[str, dict] = {}
-    for j in snap.get("jobs_focus") or []:
-        if not isinstance(j, dict) or j.get("stop"):
-            continue
-        jid = str(j.get("job_id") or "")
-        if not jid:
-            continue
-        ag = j.get("agent") or {}
-        qb = j.get("qa_brain") or {}
-        st = j.get("stages") or {}
-        phase = (j.get("phase") or {}).get("name") or ""
-        failed = any(
-            str((st.get(s) or {}).get("status") or "") == "failed"
-            for s in st
-        )
-        running = any(
-            str((st.get(s) or {}).get("status") or "") == "running"
-            for s in st
-        )
-        if (
-            ag.get("qa_blocked")
-            or ag.get("hold")
-            or qb.get("high_open")
-            or failed
-            or running
-            or phase == "pre_tts"
-        ):
-            focus.append(jid)
-            focus_meta[jid] = {
-                "phase": phase,
-                "high": qb.get("high_open"),
-                "failed": failed,
-                "running": running,
-            }
-    # phiếu rule path để lại
+    if state is None:
+        state = {}
+    focus, focus_meta = _deep_focus(snap, work_root)
+    # phiếu rule path để lại (bỏ job đã xong)
     try:
         pend = _log_dir(work_root) / "brain_pending_decisions.json"
         if pend.is_file():
             for it in json.loads(pend.read_text(encoding="utf-8")) or []:
                 if isinstance(it, dict) and it.get("job_id"):
                     jid = str(it["job_id"])
+                    if job_finished(work_root / jid):
+                        continue
                     if jid not in focus:
                         focus.append(jid)
                     focus_meta.setdefault(jid, {})["pending"] = it
@@ -906,29 +1552,34 @@ def llm_tick(work_root: Path) -> dict:
     )
     # Ép deep tick: mỗi job ưu tiên phải được agent đọc + quyết
     steps0 = list(out.get("steps") or []) if out.get("ok") else []
+    first_steps = list(steps0)
     tools0 = [s.get("tool") for s in steps0 if isinstance(s, dict)]
-    deep_jobs = list(focus[:3])
+    deep_sigs = state.setdefault("deep_sig", {})
+    deep_jobs = []
+    for jid0 in focus:
+        meta = focus_meta.get(str(jid0)) or {}
+        sig = _deep_sig(meta)
+        prev = deep_sigs.get(jid0) or {}
+        if prev.get("sig") == sig and time.time() - float(prev.get("at") or 0) < _deep_cooldown_sec():
+            continue  # cùng tình trạng đã quyết gần đây → không đốt LLM lại
+        deep_jobs.append(jid0)
+        if len(deep_jobs) >= 3:
+            break
     for jid0 in deep_jobs:
         meta = focus_meta.get(str(jid0)) or {}
-        already = any(
-            isinstance(s, dict)
-            and s.get("tool") in ("pineline_job", "pineline_diagnose_job", "diagnose_job")
-            and str((s.get("args") or {}).get("job_id") or "") == str(jid0)
-            for s in steps0
-        )
-        if already and len(tools0) > 2 and jid0 == focus[0]:
-            # đã đụng job đầu trong tick chính — vẫn deep nếu failed/high
-            if not (meta.get("failed") or meta.get("high") or meta.get("pending")):
-                continue
+        deep_sigs[jid0] = {"sig": _deep_sig(meta), "at": time.time()}
+        evidence = _job_evidence(str(jid0), work_root)
         follow = (
             f"SECOND BRAIN — quyết định THẬT cho job {jid0}. allow_mutate=ON.\n"
-            f"Meta gợi ý (phải xác minh bằng tool): {json.dumps(meta, ensure_ascii=False)}\n"
-            f"1) Gọi pineline_job job_id={jid0}.\n"
-            f"2) Nếu failed/treo: pineline_diagnose_job rồi heal_job apply=true level=safe.\n"
-            f"3) Trả lời đủ: đang làm gì / ổn? / lỗi đâu / plan / tool đã gọi.\n"
-            f"4) Chỉ hold_after_translate enabled=true nếu phase=pre_tts và còn high "
-            f"SAU khi đã đọc job. mid_review → CẤM HOLD.\n"
-            f"5) Nếu high=0 mà đang HOLD qa_brain → hold enabled=false (CLEAR).\n"
+            f"Meta: {json.dumps(meta, ensure_ascii=False)}\n"
+            f"BẰNG CHỨNG — các tool đọc dưới đây ĐÃ CHẠY THẬT, kết quả nằm ngay đây "
+            f"(không được nói «chưa thực thi / chưa có kết quả»):\n{evidence}\n\n"
+            f"Tên tool CHÍNH XÁC: pineline_job, pineline_diagnose_job, pineline_heal_job, "
+            f"pineline_hold_after_translate.\n"
+            f"1) Nếu failed/treo: pineline_heal_job apply=true level=safe CHỈ khi plan safe ở trên KHÔNG rỗng. "
+            f"Plan safe rỗng (vd ASR failed chỉ có asr_run_force = aggressive) → KHÔNG heal, ghi plan=báo user.\n"
+            f"2) Chỉ pineline_hold_after_translate enabled=true nếu phase=pre_tts và còn high. mid_review → CẤM HOLD.\n"
+            f"3) Nếu high=0 mà đang HOLD qa_brain → enabled=false (CLEAR).\n"
             f"Kết thúc 1 khối: DECISION {jid0}: stage=… | ok=… | issue=… | plan=… | tools=…"
         )
         log_line(work_root, f"LLM deep tick job={jid0} phase={meta.get('phase')}")
@@ -949,11 +1600,11 @@ def llm_tick(work_root: Path) -> dict:
             }
             tools0 = [s.get("tool") for s in steps0 if isinstance(s, dict)]
             reply2 = (out2.get("reply") or "").strip()
+            steps2 = list(out2.get("steps") or [])
+            _log_tool_issues(work_root, str(jid0), steps2)
             if reply2:
-                _telegram(
-                    f"Brain DECISION {jid0}: {reply2[:400].replace(chr(10), ' | ')}",
-                    level="info",
-                )
+                log_line(work_root, "LLM DECISION " + str(jid0) + ": " + " ".join(reply2.split())[:400])
+            _maybe_decision_tg(state, str(jid0), meta, steps2, reply2)
             # xóa pending đã xử lý
             try:
                 pend = _log_dir(work_root) / "brain_pending_decisions.json"
@@ -981,26 +1632,8 @@ def llm_tick(work_root: Path) -> dict:
         reply = (out.get("reply") or "")[:500]
         if reply:
             log_line(work_root, f"LLM reply: {reply.replace(chr(10), ' | ')}")
-        mutate = [
-            s for s in steps
-            if isinstance(s, dict)
-            and s.get("tool")
-            and s["tool"] not in (
-                "pineline_status", "pineline_job", "queue_status", "running_check",
-                "config_get", "films", "library", "diagnose_job", "scan_failed",
-                "review_diff", "stage_peek", "stage_peek_all", "style_pack_peek",
-                "script_get", "av_sync_check", "av_sync_scan", "hg_status",
-                "hg_library", "feed", "pineline_diagnose_job", "pineline_running_check",
-                "pineline_queue_status", "pineline_config_get",
-            )
-        ]
-        if mutate:
-            _telegram(
-                "Brain LLM: " + ", ".join(
-                    f"{s.get('tool')}" for s in mutate[:6]
-                ),
-                level="l3",
-            )
+        # tool mutate của lượt chính (deep tick đã báo riêng ở trên)
+        _report_llm_actions(state, "", first_steps)
     else:
         log_line(work_root, f"LLM tick fail: {out.get('error')}")
     return out
@@ -1008,10 +1641,23 @@ def llm_tick(work_root: Path) -> dict:
 
 
 def _tg_report_sec() -> int:
+    """Chu kỳ digest — tối thiểu 600 s (fix 2026-11-12 agentG: trước 120 s = spam)."""
     try:
-        return max(60, int(_cfg("AGENT_BRAIN_TG_SEC", "120") or "120"))
+        return max(600, int(_cfg("AGENT_BRAIN_TG_SEC", "600") or "600"))
     except ValueError:
-        return 120
+        return 600
+
+
+def _digest_sig(msg: str) -> str:
+    """Chữ ký nội dung digest bỏ % / số / cur_text đổi liên tục → chỉ đổi khi tập job/stage đổi."""
+    lines = []
+    for ln in (msg or "").splitlines():
+        m = re.match(r"\s*•\s*(\S+)\s*(\[[^\]]*\]|fail:\S+|HOLD)?", ln)
+        if m:
+            lines.append(f"{m.group(1)} {m.group(2) or ''}")
+        elif not ln.startswith("queue"):
+            lines.append(re.sub(r"\d+", "#", ln))
+    return hashlib.sha1("\n".join(lines).encode("utf-8")).hexdigest()[:16]
 
 
 def _progress_digest(work_root: Path) -> str:
@@ -1096,8 +1742,13 @@ def _maybe_tg_progress(work_root: Path, state: dict) -> None:
     if time.time() - last < _tg_report_sec():
         return
     msg = _progress_digest(work_root)
-    _telegram(msg, level="info")
     state["last_tg_report"] = time.time()
+    sig = _digest_sig(msg)
+    if sig == state.get("last_tg_report_sig"):
+        log_line(work_root, "tg progress report skip (không đổi)")
+        return
+    state["last_tg_report_sig"] = sig
+    _telegram(msg, level="progress")
     log_line(work_root, "tg progress report sent")
 
 
@@ -1109,6 +1760,34 @@ def tick(
 ) -> dict:
     work_root = Path(work_root)
     state = _load_state(work_root)
+    _tg_begin_tick(work_root)
+    try:
+        return _tick_inner(work_root, state, hooks=hooks, list_jobs=list_jobs)
+    finally:
+        try:
+            _tg_flush_tick()
+        except Exception as e:  # noqa: BLE001
+            log_line(work_root, f"tg flush lỗi: {e}")
+
+
+def _tick_inner(
+    work_root: Path,
+    state: dict,
+    *,
+    hooks: dict[str, Callable[..., Any]] | None = None,
+    list_jobs: Callable[[], list] | None = None,
+) -> dict:
+    # 0) Gỡ HOLD cũ của job đã xong + sự kiện stage (bắt đầu/xong/lỗi) — tất định, không LLM
+    try:
+        clear_stale_holds(work_root, state)
+    except Exception as e:  # noqa: BLE001
+        log_line(work_root, f"clear stale holds lỗi: {e}")
+    try:
+        emit_events(detect_stage_events(work_root, state))
+    except Exception as e:  # noqa: BLE001
+        log_line(work_root, f"detect events lỗi: {e}")
+    # fix 2026-11-12 agentH (C): hoãn heal + LLM ≥ AGENT_HEAL_START_DELAY_SEC sau khi brain khởi động
+    grace = _start_grace_left()
     incidents: list[dict] = []
     incidents.extend(sense_infra())
     # Nhường GPU khi queue bận — vẫn chạy quality nhẹ? Plan: giống watch skip heal nặng
@@ -1140,16 +1819,24 @@ def tick(
         incidents.extend(sense_jobs(work_root, max_jobs=40))
         actions = decide(incidents, state)
 
+    if grace > 0:
+        n0 = len(actions)
+        actions = [a for a in actions if a.get("type") != "heal_job"]
+        if n0 != len(actions):
+            log_line(work_root, f"hoãn heal — vừa khởi động (còn {int(grace)} s)")
     results = []
     if run_rules:
         results = apply_actions(work_root, actions, state, hooks=hooks)
+    # Gửi ngay sự kiện + hành động rule path (LLM tick có thể mất vài phút)
+    _tg_flush_tick()
+    _tg_begin_tick(work_root)
 
     llm_out = None
-    if _llm_enabled():
+    if _llm_enabled() and grace <= 0:
         last = float(state.get("last_llm_tick") or 0)
         if time.time() - last >= _llm_interval_sec():
             try:
-                llm_out = llm_tick(work_root)
+                llm_out = llm_tick(work_root, state)
                 state["last_llm_tick"] = time.time()
             except Exception as e:  # noqa: BLE001
                 log_line(work_root, f"llm_tick exception: {e}")
@@ -1176,8 +1863,26 @@ def tick(
     }
 
 
+_started_at: float | None = None
+
+
+def _start_grace_left(now: float | None = None) -> float:
+    """Số giây còn phải hoãn heal/LLM sau khi brain loop khởi động (0 = hết hoãn / brain_once)."""
+    if _started_at is None:
+        return 0.0
+    try:
+        from agents.agent_heal import start_delay_sec
+        delay = start_delay_sec()
+    except Exception:  # noqa: BLE001
+        delay = 180
+    return max(0.0, _started_at + delay - (now if now is not None else time.time()))
+
+
 def _loop(work_root: Path, hooks, list_jobs, interval: int) -> None:
-    log_line(work_root, f"brain start interval={interval}s policy=full_silent tg={_tg_mode()}")
+    global _started_at
+    _started_at = time.time()
+    log_line(work_root, f"brain start interval={interval}s policy=full_silent tg={_tg_mode()} "
+                        f"heal_delay={int(_start_grace_left())}s")
     while not _stop.is_set():
         pause = Path(work_root) / "logs" / "brain_pause"
         if pause.exists() or not brain_enabled():

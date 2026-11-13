@@ -1,0 +1,5 @@
+agents/agent_hold.py	3fb22e8d635bc19d21edd54e19e6a1ea	a4a290227b65a651ff23e62e0c7dccb1	crlf=1 bom=0
+http_routes/routes_agent.py	7a238c90657e5f5cbfdca18703a626f8	0dd64087f68f470e456da7de0d5ff0aa	crlf=0 bom=0
+agents/agent_autopilot.py	c007904b4ee88f42ca253745d7ea4e48	16e88f391081c12165757583b4f89486	crlf=1 bom=0
+agents/agent_tele_cmd.py	7890bb40880b371606930519454bf3f8	a8e188e86bd82ce615342afc1a895f5a	crlf=0 bom=0
+tests/test_agent_hold_telegram.py	NEW	1dc6d0a8c53b8555f95d11aff1f7ae0a	crlf=0 bom=0

@@ -4,6 +4,10 @@ và dựng Thumbnail 16:9 chuẩn YouTube từ poster dọc + text giật gân.
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import io
 import json
 import os
@@ -1019,7 +1023,7 @@ def _chatgpt_candidate_bases() -> list[str]:
         v = _cfg(k).rstrip("/")
         if v and v not in bases:
             bases.append(v)
-    for u in ("http://127.0.0.1:3377/v1", "http://192.168.31.247:5005/v1", "http://192.168.31.244:5005/v1"):
+    for u in _machine.aurora_base_urls():  # machine-config: :3377 + AURORA_FALLBACK_URLS
         if u not in bases:
             bases.append(u)
     return bases

@@ -558,6 +558,11 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
             "duration_sec": item["duration"],
             "finished_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
+        try:   # agentK 2026-11-12: part cắt từ nguồn đã kiểm/chuẩn hoá → kế thừa; không thì chờ kiểm
+            from engines.source_preflight import inherit_payload
+            stages["download"].update(inherit_payload(m_parent.stage("download") or {}, job_id))
+        except Exception:  # noqa: BLE001
+            pass
         if voice or speed_f or eng:
             stages["tts"] = tts_seed
             try:

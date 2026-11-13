@@ -9,6 +9,10 @@ sync() quét work/*/manifest.json → upsert; job đã xoá thư mục vẫn gi�
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import csv
 import io
 import json
@@ -107,7 +111,7 @@ def derive_hg_name(job_id: str, req: dict | None, title_clean: str = "") -> str:
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / "work"
 DB_PATH = Path(os.getenv("FILM_DB") or ROOT / "data" / "films.db")
-YT_DIR = Path(os.getenv("YT_UPLOADER_DIR") or r"Z:\yt_uploader")
+YT_DIR = _machine.yt_uploader_dir()
 YT_HISTORY = YT_DIR / "upload_history.jsonl"
 QUEUE_STATE = YT_DIR / "queue_state.json"
 CORE_STAGES = ("download", "asr", "translate", "tts", "mux")
@@ -1042,7 +1046,7 @@ def watchlist_cores(limit: int = 40) -> list[str]:
 
 def sync_library_blocks_from_yt_queue(check_live: bool = False) -> list[dict[str, Any]]:
     """Đồng bộ trạng thái bản quyền từ Z:\\yt_uploader\\queue_state.json cho các video D:\\Lib."""
-    q_path = Path(r"Z:\yt_uploader\queue_state.json")
+    q_path = YT_DIR / "queue_state.json"
     if not q_path.is_file():
         return []
     try:
@@ -1058,7 +1062,7 @@ def sync_library_blocks_from_yt_queue(check_live: bool = False) -> list[dict[str
     for item in data:
         p = item.get("path") or ""
         u = item.get("url") or ""
-        if not p or not ("D:\\Lib" in p or "D:/Lib" in p) or not u:
+        if not p or not _machine.in_library(p) or not u:
             continue
         # Tên mùa là tên thư mục cha trực tiếp của file merged/video trong D:\Lib
         path_obj = Path(p)

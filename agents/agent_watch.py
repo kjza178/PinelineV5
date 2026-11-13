@@ -9,6 +9,7 @@ Env:
   AGENT_WATCH_SKIP_PREFIX=agenttest   bỏ job test (csv)
   AGENT_TELEGRAM=1
   AGENT_TELEGRAM_STARTUP=0    không spam "watcher ON" mỗi lần restart
+  AGENT_HEAL_START_DELAY_SEC=180  hoãn lượt heal đầu sau khi start (fix 2026-11-12 agentH)
 """
 from __future__ import annotations
 
@@ -216,6 +217,14 @@ def _mark_healed(work_root: Path, problems: list[dict]) -> None:
     _save_state(work_root, state)
 
 
+def _read_manifest(d: Path) -> dict | None:
+    try:
+        data = json.loads((Path(d) / "manifest.json").read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def watch_once(
     work_root: Path,
     *,
@@ -234,6 +243,13 @@ def watch_once(
                 continue
             if _should_skip_job(d.name):
                 continue
+            try:
+                # fix 2026-11-12 agentH (C): job đang là queue.current / có engine sống → không đụng
+                from agents.agent_heal import job_active
+                if job_active(d.name, hooks):
+                    continue
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 data = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
                 if any(
@@ -284,31 +300,36 @@ def watch_once(
 
     _mark_healed(work_root, todo)
 
-    # Chỉ Telegram nếu có action thật (không toàn skipped/409 rỗng)
+    # Chỉ Telegram nếu có action thật (không toàn skipped/409 rỗng).
+    # fix 2026-11-12 agentH: tin dựng bằng mẫu agent_brain_notify (1 khối/job, kèm kết quả).
     meaningful = []
+    blocks = []
     for r in results:
-        acts = []
-        for step in (r.get("results") or []):
-            res = step.get("result") or {}
-            if hasattr(res, "body"):
-                try:
-                    res = json.loads(res.body.decode("utf-8"))
-                except Exception:
-                    res = {"error": str(res)}
-            if not isinstance(res, dict):
-                res = {"value": res}
-            if res.get("error") or res.get("status_code") in (409, 400):
-                continue
-            if res.get("skipped"):
-                continue
-            acts.append(step.get("action"))
-        if acts:
-            meaningful.append(f"· {r.get('job_id')}: {', '.join(acts)}")
+        try:
+            from agents.agent_brain_notify import heal_summary
+            hs = heal_summary(r)
+        except Exception:  # noqa: BLE001
+            hs = {"outcome": "noop", "actions": [], "reason": ""}
+        jid = str((r or {}).get("job_id") or "")
+        log_line(work_root, f"heal {jid} → {hs['outcome']} acts={hs['actions']} {hs.get('reason') or ''}".rstrip())
+        if hs["outcome"] != "ok" or not jid:
+            continue
+        meaningful.append(f"{jid}:{','.join(hs['actions'])}")
+        try:
+            from agents.agent_brain_notify import render_job, split_part
+            base, part = split_part(jid)
+            data = _read_manifest(work_root / jid)
+            parent = _read_manifest(work_root / base) if part is not None else None
+            blocks.append(render_job(jid, data, [{"kind": "heal", "by": "watch", **hs}], parent=parent))
+        except Exception as e:  # noqa: BLE001
+            log_line(work_root, f"render tin heal {jid} lỗi: {e}")
 
     if meaningful:
-        msg = f"Pineline V2 watch: healed {len(meaningful)} job(s)\n" + "\n".join(meaningful[:8])
-        log_line(work_root, msg.replace("\n", " | "))
-        telegram_send(msg, dedupe_key="|".join(meaningful))
+        from agents.agent_brain_notify import render_tick
+        msg = render_tick(blocks)
+        log_line(work_root, "healed " + " ; ".join(meaningful[:8]))
+        if msg:
+            telegram_send(msg, dedupe_key="watch:" + "|".join(meaningful))
     else:
         log_line(work_root, f"heal xong nhưng không có action thành công ({len(results)} job)")
 
@@ -330,6 +351,18 @@ def _loop(work_root: Path, list_jobs, hooks, interval: int, max_jobs: int) -> No
             force=True,
             dedupe_key=f"startup:{interval}",
         )
+    # fix 2026-11-12 agentH (C): hoãn lượt heal đầu tiên sau khi start — server vừa lên, queue đang
+    # nối lại job (2937ffd7989f fail ASR đúng giây watcher «heal 6/6 safe» lúc khởi động).
+    try:
+        from agents.agent_heal import start_delay_sec
+        delay = start_delay_sec()
+    except Exception:  # noqa: BLE001
+        delay = 180
+    if delay > 0:
+        log_line(work_root, f"hoãn heal {delay}s sau khởi động")
+        if _stop.wait(delay):
+            log_line(work_root, "watcher stop")
+            return
     while not _stop.is_set():
         try:
             watch_once(work_root, list_jobs=list_jobs, hooks=hooks, max_jobs=max_jobs)

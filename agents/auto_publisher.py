@@ -4,6 +4,10 @@ auto_publisher.py — Tự động hoá toàn trình: Sau khi render xong → T�
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 import os
 import re
@@ -24,7 +28,7 @@ import agents.meta_studio as meta_studio
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 CONFIG_FILE = DATA_DIR / "auto_publish_config.json"
-YT_DIR = Path(os.getenv("YT_UPLOADER_DIR") or r"Z:\yt_uploader")
+YT_DIR = _machine.yt_uploader_dir()
 DEFAULT_TOKEN_FILE = YT_DIR / "accounts" / "default" / "token.json"
 SHARED_CLIENT_SECRET = YT_DIR / "client_secret.json"
 UPLOAD_HISTORY_FILE = YT_DIR / "upload_history.jsonl"

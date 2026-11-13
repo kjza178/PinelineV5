@@ -4,6 +4,10 @@ Tách từ server.py (đợt 7). Chỉ được nạp từ cuối server.py (sau
 định nghĩa): truy cập server qua `S.<tên>` để patch `server.<tên>` trong test vẫn có tác dụng."""
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 from pathlib import Path
 from fastapi.responses import FileResponse
@@ -101,7 +105,7 @@ def api_disk(base: str | None = None):
     except Exception:  # noqa: BLE001
         folder = ""
     if not folder:
-        folder = r"D:\Lib"
+        folder = str(_machine.library_dir())
     root = Path(folder)
     # lấy ổ chứa folder (D:\ …)
     drive = root.anchor or str(root)[:3] or "D:\\"

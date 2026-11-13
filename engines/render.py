@@ -816,14 +816,9 @@ FONT = "C\\:/Windows/Fonts/arial.ttf"     # Arial hỗ trợ tiếng Việt; ':'
 
 
 def _find_video(work_dir: Path) -> Path | None:
-    m = Manifest(work_dir)
-    vp = (m.stage("download") or {}).get("video_path")
-    if vp and Path(vp).exists():
-        return Path(vp)
-    for c in sorted(work_dir.glob("source.*")):
-        if c.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}:
-            return c
-    return None
+    # agentK 2026-11-12: 1 hàm resolve nguồn (preflight chờ → chạy; nguồn chuẩn hoá > gốc)
+    from engines.source_preflight import stage_source_video
+    return stage_source_video(work_dir)
 
 
 def _size(video: Path) -> tuple[int, int]:

@@ -51,6 +51,11 @@ Restart chỉ khi hàng đợi rảnh, hoặc user đồng ý (yes/no).
 
 ## Việc còn treo / cần user quyết
 
+- **11-13 — V5 port preflight + extract_pcm + FireRed slice + câu rác/parent chờ part (agent Q5) chờ restart :8805:** video nguồn được kiểm/chuẩn hoá ở stage đầu (`source_norm.*`, rollback `VIDEO_PREFLIGHT=0`); FireRed cắt slice tại khoảng lặng; câu ASR rác «None.» → «…» im lặng, nhận ≤ `SIMPLE_UNREVIEWED_TOLERANCE` câu nháp chưa soát; parent split giữ ghế khi part park. asr.json cũ không tự sửa. Xem `docs/fixes/2026-11-13-port-preflight-slice-junk.md`.
+- **11-13 — V5 port brain finished/park-vs-HOLD (agent R5) chờ restart :8805:** job đã xong không bị heal/nhắc lỗi; park tự động báo «⏸ tạm dừng … tự thử lại», chỉ HOLD cần người mới «⛔ … Cần bạn»; «Chạy tiếp» reset bộ đếm park. Xem `docs/fixes/2026-11-13-port-brain-finished-hold.md`.
+- **11-12 — V5 port simple + Demucs (agent F5) chờ restart :8805:** mặc định dịch = `translate_simple` (rollback `TRANSLATE_PIPELINE=legacy`), ASR chạy trên vocals Demucs (rollback `ASR_USE_DEMUCS=0`). Chạy `Z:\PinelineV6\scripts\test_v5_simple_demucs.bat` trước restart. translate-b2/b3 chưa port sang V5. Xem `docs/fixes/2026-11-12-port-simple-demucs.md`.
+- **11-12 — V5 port Second Brain + đóng dấu luồng dịch (agent P5) chờ restart :8805:** Telegram brain = `events` (chỉ tin chuyển stage/hành động, mẫu cố định), chạy tay TTS/mux/dịch (UI hoặc lệnh Telegram của bạn) trên job HOLD → tự gỡ HOLD (`agent.hold_override`); job giữ luồng dịch đã đóng dấu (`manifest.translate_pipeline`). Xem `docs/fixes/2026-11-12-port-brain-hold-pipeline.md`.
+
 - **11-11 ~03:05 — Chờ restart nạp fix B1–B10:** :8801 (V2), :8804 (V4), :8805 (V5 — lần đầu sau khi chuyển package). Chạy pytest trước (xem `docs/fixes/2026-11-11-*`). V2 đang chạy production → restart khi queue rảnh / user đồng ý.
 - **Restart :8801 nạp queue-park + Studio SOP / Aurora∥ REVIEW** — process cũ chưa có. Restart cắt `365baf` nếu đang dịch → hỏi yes/no. Sau: xếp `60892_p01` đầu hàng TTS; không CLI review song song queue.
 - **Job `9c3af49061a2` (video 5)** — VI hiện tại kém (audit); sandbox 6×90s NMT **149/194 improved, 0 worse** (docs/reviews/2026-11-09-job5-retranslate-compare.md). Remake full ASR+dịch+TTS+mux → hỏi yes/no. Caveat: SenseVoice/NMT còn lệch số.

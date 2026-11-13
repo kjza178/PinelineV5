@@ -9,6 +9,10 @@ Cấu hình qua config.json / pineline.config.json (LLM_* / TRANSLATE_MODEL / RE
 """
 from __future__ import annotations
 
+try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
+    from core import machine as _machine
+except ImportError:  # pragma: no cover
+    import machine as _machine  # type: ignore
 import json
 import os
 import sys
@@ -47,7 +51,7 @@ LOCAL_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1").rs
 LOCAL_PREFIX = "local/"
 
 # 2. llama-server :8083 (OpenAI-compatible siêu tốc GGUF)
-LLAMA_BASE_URL = os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:8083/v1").rstrip("/")
+LLAMA_BASE_URL = _machine.llama_base_url()  # machine-config: LLAMA_BASE_URL > LLM_BASE_URL(localhost) > :8083
 
 
 class LLMUnavailable(RuntimeError):
@@ -69,7 +73,7 @@ def _settings() -> tuple[str, str, str]:
 def _llama_base() -> str:
     try:
         import core.config as _c
-        return (_c.get("LLAMA_BASE_URL") or os.getenv("LLAMA_BASE_URL") or LLAMA_BASE_URL).rstrip("/")
+        return _machine.llama_base_url()
     except Exception:
         return LLAMA_BASE_URL
 
@@ -175,22 +179,8 @@ def is_chatgpt(model: str | None) -> bool:
 
 def _chatgpt_settings() -> tuple[list[str], str, str]:
     """(bases, key, default_model) cho Aurora pool."""
-    bases: list[str] = []
-    for k in ("AURORA_BASE_URL", "CHATGPT_BASE_URL"):
-        try:
-            v = (_cfg_get(k) or "").strip().rstrip("/")
-        except Exception:
-            v = (os.getenv(k) or "").strip().rstrip("/")
-        if v and v not in bases:
-            bases.append(v)
-    # Local GPT proxy trước; Aurora LAN còn làm fallback (upload file / khi :3377 tắt)
-    for fb in (
-        "http://127.0.0.1:3377/v1",
-        "http://192.168.31.247:5005/v1",
-        "http://192.168.31.244:5005/v1",
-    ):
-        if fb not in bases:
-            bases.append(fb)
+    # machine-config: AURORA_BASE_URL, CHATGPT_BASE_URL, :3377 local, AURORA_FALLBACK_URLS (LAN)
+    bases: list[str] = list(_machine.aurora_base_urls())
     try:
         key = (_cfg_get("CHATGPT_API_KEY") or _cfg_get("CHATGPT_ACCESS_TOKEN") or "").strip()
     except Exception:
@@ -314,7 +304,7 @@ def _chatgpt_chat(
                     wait = min(2 ** attempt, 6)
                     print(f"[llm] chatgpt lỗi {base} {chosen} ({attempt + 1}): {e} — {wait}s", flush=True)
                     time.sleep(wait)
-    raise LLMUnavailable(f"Aurora/ChatGPT thất bại: {last_err}")
+    raise LLMUnavailable(f"Aurora/ChatGPT thất bại: {last_err} — {_machine.aurora_missing_hint()}")
 
 
 def aurora_upload_file(path: str | Path, purpose: str = "assistants") -> dict:
@@ -677,7 +667,7 @@ def chat(
         cloud_base = (_cfg_get("CLOUD_LLM_BASE_URL") or "").strip().rstrip("/")
         cloud_key = (_cfg_get("CLOUD_LLM_API_KEY") or "").strip()
         if not cloud_base:
-            cloud_base = "http://192.168.31.247:20128/v1"
+            cloud_base = _machine.cloud_llm_base_url()
         if not cloud_key or cloud_key == "sk-local":
             # fallback: LLM_* nếu đang trỏ 9router
             if "20128" in (base or "") and key and key != "sk-local":
