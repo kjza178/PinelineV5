@@ -493,7 +493,7 @@ def chunk_cuts(video: Path, total: float, sec: float, avoid: list[dict]) -> list
 
 def _run_chunked(video: Path, work_dir: Path, graph: str, venc: list[str], pre_in: list[str],
                  cuts: list[float], total: float, mixed: Path, abit: str, out_tmp: Path,
-                 m: Manifest, lo: float, par: int = 3) -> tuple[int, str]:
+                 m: Manifest, lo: float, par: int = 3, audio_af: str | None = None) -> tuple[int, str]:
     """Render video theo khúc (giữ mốc gốc), tối đa `par` khúc chạy cùng lúc, ghép copy, gắn audio 1 lần."""
     import threading
 
@@ -555,7 +555,10 @@ def _run_chunked(video: Path, work_dir: Path, graph: str, venc: list[str], pre_i
 
     # AAC chỉ chạy 1 luồng (~14x realtime) -> encode song song với video, lúc ghép chỉ copy.
     aud = work_dir / "_audio.m4a"
-    acmd = ["ffmpeg", "-y", "-i", _ff_input(mixed, work_dir), "-vn", "-c:a", "aac", "-b:a", abit, "-ar", "48000"]
+    acmd = ["ffmpeg", "-y", "-i", _ff_input(mixed, work_dir), "-vn"]
+    if audio_af:
+        acmd += ["-af", audio_af]
+    acmd += ["-c:a", "aac", "-b:a", abit, "-ar", "48000"]
     if total and total > 0:
         acmd += ["-t", f"{total:.3f}"]
     acmd += ["-loglevel", "error", aud.name]
@@ -672,6 +675,8 @@ def _run_chunked(video: Path, work_dir: Path, graph: str, venc: list[str], pre_i
     else:
         cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", lst.name, "-i", _ff_input(mixed, work_dir),
                "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", abit]
+        if audio_af:
+            cmd += ["-af", audio_af]
     if total and total > 0:
         cmd += ["-t", f"{total:.3f}"]
     cmd += ["-loglevel", "error", out_tmp.name]
@@ -2350,6 +2355,84 @@ def _ensure_mixed_audio(
     return mixed, f"{used}+twopass"
 
 
+def _loudnorm_cfg() -> tuple[bool, float, float]:
+    """fix 2026-11-13: chuẩn hoá độ to bản trộn cho YouTube (−14 LUFS). RENDER_LOUDNORM=0 → tắt (như cũ).
+    RENDER_LOUDNORM_I (−14), RENDER_LOUDNORM_TP (−1.5 dBTP)."""
+    on = str(cfg("RENDER_LOUDNORM", "1") or "1").strip().lower() not in ("0", "off", "false", "no")
+    try:
+        target = float(cfg("RENDER_LOUDNORM_I", "-14") or -14)
+    except (TypeError, ValueError):
+        target = -14.0
+    try:
+        tp = float(cfg("RENDER_LOUDNORM_TP", "-1.5") or -1.5)
+    except (TypeError, ValueError):
+        tp = -1.5
+    return on, target, min(-0.5, tp)
+
+
+def _measure_lufs(path: Path) -> float | None:
+    """Integrated loudness (EBU R128) của file audio — chỉ đo, không ghi."""
+    try:
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vn",
+                            "-af", "ebur128", "-f", "null", "-"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+    except Exception as e:  # noqa: BLE001
+        print(f"[render] đo LUFS lỗi: {e}", flush=True)
+        return None
+    val = None
+    seen = False
+    for ln in r.stderr.splitlines():
+        if "Integrated loudness" in ln:
+            seen = True
+            continue
+        if seen and ln.strip().startswith("I:"):
+            try:
+                val = float(ln.split("I:")[1].split("LUFS")[0].strip())
+            except ValueError:
+                val = None
+            break
+    return val if (val is not None and val > -70.0) else None
+
+
+def _loudnorm_gain_filter(mixed: Path) -> str | None:
+    """Lệnh tăng/giảm TUYẾN TÍNH + alimiter chặn đỉnh (không nén động → giữ nguyên chất giọng).
+    Kết quả đo lưu loudness.json theo (size, mtime) của mixed_audio.wav để reuse."""
+    on, target, tp = _loudnorm_cfg()
+    if not on:
+        return None
+    cache = mixed.with_name("loudness.json")
+    try:
+        s = mixed.stat()
+        key = [s.st_size, int(s.st_mtime)]
+    except OSError:
+        return None
+    lufs = None
+    try:
+        d = json.loads(cache.read_text(encoding="utf-8"))
+        if d.get("key") == key:
+            lufs = d.get("lufs")
+    except (OSError, ValueError):
+        pass
+    if lufs is None:
+        print(f"[render] đo độ to {mixed.name}…", flush=True)
+        lufs = _measure_lufs(mixed)
+        if lufs is None:
+            print("[render] không đo được LUFS → giữ nguyên độ to", flush=True)
+            return None
+        try:
+            cache.write_text(json.dumps({"key": key, "lufs": lufs}), encoding="utf-8")
+        except OSError:
+            pass
+    gain = max(-6.0, min(10.0, target - float(lufs)))
+    if abs(gain) < 0.3:
+        print(f"[render] độ to {lufs:.1f} LUFS ≈ đích {target:.0f} → giữ nguyên", flush=True)
+        return None
+    lim = 10 ** (tp / 20.0)
+    print(f"[render] độ to {lufs:.1f} LUFS → {target:.0f} LUFS (gain {gain:+.1f} dB, trần {tp} dBTP)",
+          flush=True)
+    return f"volume={gain:.2f}dB,alimiter=limit={lim:.3f}:attack=5:release=80:level=0"
+
+
 def _mix_signature(cmd: list[str], af: str | None, total: float, work_dir: Path) -> dict:
     """Filter + (đường dẫn, size, mtime) mọi input -i + độ dài — đổi thì phải trộn lại."""
     inputs = []
@@ -2843,10 +2926,13 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
             total_render = total
 
         af: str | None = None
+        loud_f: str | None = None
         if twopass_mixed is not None:
             cmd += ["-i", _ff_input(twopass_mixed, work_dir)]  # [1] = mixed_audio
-            if use_speed:
-                graph = f"[0:v]{vf}[vout];[1:a]atempo={speed_factor:.4f}[aout]"
+            loud_f = _loudnorm_gain_filter(twopass_mixed)
+            a_chain = ",".join(x for x in (loud_f, f"atempo={speed_factor:.4f}" if use_speed else None) if x)
+            if a_chain:
+                graph = f"[0:v]{vf}[vout];[1:a]{a_chain}[aout]"
             else:
                 graph = f"[0:v]{vf}[vout]"
         else:
@@ -2861,7 +2947,7 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
         _attach_filter_complex(cmd, graph, work_dir)
         cmd += ["-map", "[vout]"]
         if twopass_mixed is not None:
-            if use_speed:
+            if use_speed or loud_f:
                 cmd += ["-map", "[aout]"]
             else:
                 cmd += ["-map", "1:a"]
@@ -2921,8 +3007,8 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
         cuts = chunk_cuts(video, total, chunk_sec, fixes) if chunk_sec > 0 else []
         if cuts:
             pre_in = ["-hwaccel", "cuda", "-hwaccel_device", "0"] if use_hwaccel else []
-            rc, err = _run_chunked(video, work_dir, graph, venc, pre_in, cuts, total,
-                                   twopass_mixed, abit, out_tmp, m, enc_lo, chunk_par)
+            rc, err = _run_chunked(video, work_dir, f"[0:v]{vf}[vout]", venc, pre_in, cuts, total,
+                                   twopass_mixed, abit, out_tmp, m, enc_lo, chunk_par, audio_af=loud_f)
             if rc != 0 and err != "stopped by user":
                 print(f"[render] chia đoạn lỗi ({err}) → render 1 lượt", flush=True)
         if rc != 0 and err != "stopped by user":
@@ -2939,8 +3025,9 @@ def run_render(work_dir: str | Path, zoom: float = 1.12, add_sub: bool = True,
                     cmd2 = ["ffmpeg", "-y", "-i", _ff_input(video, work_dir)]
                     if twopass_mixed is not None:
                         cmd2 += ["-i", _ff_input(twopass_mixed, work_dir)]
-                        if use_speed:
-                            graph2 = f"[0:v]{vf}[vout];[1:a]atempo={speed_factor:.4f}[aout]"
+                        if use_speed or loud_f:
+                            a_chain2 = ",".join(x for x in (loud_f, f"atempo={speed_factor:.4f}" if use_speed else None) if x)
+                            graph2 = f"[0:v]{vf}[vout];[1:a]{a_chain2}[aout]"
                             _attach_filter_complex(cmd2, graph2, work_dir)
                             cmd2 += ["-map", "[vout]", "-map", "[aout]"]
                         else:

@@ -2921,6 +2921,71 @@ def merge_series_normalized(
         shutil.rmtree(tmp_root, ignore_errors=True)
 
 
+def merge_series_concat_copy(
+    folder: Path,
+    on_pct: Callable[[float], None] | None = None,
+) -> dict[str, Any]:
+    """Gộp local concat ``-c copy`` khi mọi tập cùng res (folder chỉ trên đĩa, Hongguo không biết).
+
+    Hongguo ``/dl/library/merge`` chỉ gộp series trong thư viện app → folder Lib thuần
+    (vd ``钞能玩家``) báo «need at least 2 downloaded episodes» dù đĩa đủ tập.
+    """
+    folder = Path(folder)
+    eps = _list_episode_frags(folder)
+    if len(eps) < 2:
+        return {"ok": False, "error": f"need ≥2 episodes (got {len(eps)})"}
+    out_name = f"{folder.name} (merged).mp4"
+    out_path = folder / out_name
+    tmp_root = Path(tempfile.mkdtemp(prefix="hg_copy_merge_"))
+    try:
+        list_txt = tmp_root / "list.txt"
+        with list_txt.open("w", encoding="utf-8") as f:
+            for i, ep in enumerate(eps):
+                esc = ep.resolve().as_posix().replace("'", r"'\''")
+                f.write(f"file '{esc}'\n")
+                if on_pct:
+                    on_pct((i + 1) / len(eps) * 10.0)
+        partial = folder / (out_name + ".tmp.mp4")
+        # dọn tmp dở lần trước (vd merged.library.tmp.mp4 / *.tmp.mp4)
+        for stale in folder.glob("*.tmp.mp4"):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "concat", "-safe", "0", "-i", str(list_txt),
+            "-c", "copy", "-f", "mp4", "-movflags", "+faststart",
+            str(partial),
+        ]
+        if on_pct:
+            on_pct(15.0)
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        if r.returncode != 0 or not partial.is_file() or partial.stat().st_size < 1_000_000:
+            err = (r.stderr or r.stdout or "")[-400:]
+            try:
+                partial.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return {"ok": False, "error": f"concat copy: {err or r.returncode}"}
+        if out_path.exists():
+            out_path.unlink()
+        partial.replace(out_path)
+        if on_pct:
+            on_pct(100.0)
+        return {
+            "ok": True,
+            "merged_file": out_name,
+            "path": str(out_path),
+            "policy": "concat_copy",
+            "episodes": len(eps),
+            "size": out_path.stat().st_size,
+        }
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+
 def mark_done(name: str, merged_file: str | None = None, removed: int = 0) -> None:
     with _merge_lock:
         _merge_done[name] = {
@@ -3555,6 +3620,37 @@ def _merge_worker(base: str) -> None:
                 time.sleep(3)
                 continue
             if not r.get("ok"):
+                # Folder chỉ trên đĩa / Hongguo không có series → gộp local
+                nfrag = len(_list_episode_frags(folder)) if folder else 0
+                if folder and nfrag >= 2:
+                    err_hg = r.get("error") or str(r)
+                    _hist(name, "fallback", f"Hongguo: {err_hg} → gộp local -c copy ({nfrag} tập)")
+                    _set_phase(name, "gộp local -c copy", 0)
+                    last_pct = [-1.0]
+
+                    def _cp(p: float) -> None:
+                        _set_phase(name, "gộp local -c copy", p)
+                        if p - last_pct[0] >= 5 or p >= 99:
+                            last_pct[0] = p
+                            _hist(name, "local", f"{p:.0f}% concat -c copy")
+
+                    nr = merge_series_concat_copy(folder, on_pct=_cp)
+                    if nr.get("ok"):
+                        _set_phase(name, "dọn tập lẻ → thùng rác")
+                        cr = cleanup_fragments(folder)
+                        removed = int(cr.get("removed") or 0)
+                        mf = nr.get("merged_file")
+                        if cr.get("ok"):
+                            mark_done(name, mf, removed)
+                            _hist(name, "done",
+                                  f"{mf} · local concat · dọn {removed} tập → thùng rác")
+                        else:
+                            _hist(name, "error", f"{mf} · {cr.get('error')}")
+                        _finish(name)
+                        continue
+                    _hist(name, "error", f"local concat: {nr.get('error') or nr}")
+                    _finish(name)
+                    continue
                 _hist(name, "error", r.get("error") or str(r))
                 _finish(name)
                 continue

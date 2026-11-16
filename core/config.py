@@ -55,6 +55,8 @@ LLM_FILE_FIRST_KEYS = frozenset({
     "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL", "TRANSLATE_MODEL", "REVIEW_MODEL",
     "NAME_MODEL", "PRONOUN_MODEL", "CHATGPT_BASE_URL", "CHATGPT_MODEL", "CHATGPT_API_KEY",
     "AURORA_BASE_URL", "CLOUD_LLM_BASE_URL", "CLOUD_LLM_API_KEY", "PRONOUN_ANALYZE", "PRONOUN_ANALYZE_MODEL", "PRONOUN_ANALYZE_CHUNK",
+    "ALIBABA_BASE_URL", "ALIBABA_API_KEY", "ALIBABA_MODEL", "DASHSCOPE_API_KEY",
+    "DEEPSEEK_BASE_URL", "DEEPSEEK_API_KEY", "DEEPSEEK_MODEL",
     # Fan-out REVIEW Aurora: sửa file có hiệu lực ngay (không cần restart)
     "REVIEW_PARALLEL", "REVIEW_PARALLEL_DEFAULT", "REVIEW_PARALLEL_MAX",
     "REVIEW_BACKUP", "REVIEW_PASS1_MAX_UPLOAD_BYTES", "REVIEW_PASS1_CHUNK_CUES",
@@ -137,6 +139,10 @@ def llm_settings() -> dict:
         "pronoun_model": get("PRONOUN_MODEL") or None,
         "chatgpt_base": (get("AURORA_BASE_URL") or get("CHATGPT_BASE_URL") or "").rstrip("/"),
         "chatgpt_model": get("CHATGPT_MODEL") or "gpt-5-6-mini",
+        "alibaba_base": (get("ALIBABA_BASE_URL") or "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").rstrip("/"),
+        "alibaba_model": get("ALIBABA_MODEL") or "qwen-plus",
+        "deepseek_base": (get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1").rstrip("/"),
+        "deepseek_model": get("DEEPSEEK_MODEL") or "deepseek-chat",
     }
 
 

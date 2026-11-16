@@ -198,12 +198,15 @@ def get_settings() -> tuple[int, dict]:
         "VIENEU_BATCH": get("VIENEU_BATCH") or "8",
         "OMNI_MODEL": get("OMNI_MODEL") or "",
         "RENDER_ENCODER": get("RENDER_ENCODER") or "nvenc",
+        "DEEPSEEK_API_KEY": get("DEEPSEEK_API_KEY") or "",
+        "DEEPSEEK_CONCURRENCY": get("DEEPSEEK_CONCURRENCY") or "32",
+        "ALIBABA_API_KEY": get("ALIBABA_API_KEY") or get("DASHSCOPE_API_KEY") or "",
     }
     return _ok({
         "config": flat,
         "available_models": avail_models,
         "storage": {k: flat[k] for k in ("LIBRARY_DIR", "WORK_DIR", "YT_UPLOADER_DIR", "TEMP")},
-        "ai": {k: flat[k] for k in flat if k.startswith(("LLM_", "TRANSLATE_", "REVIEW_", "AGENT_"))},
+        "ai": {k: flat[k] for k in flat if k.startswith(("LLM_", "TRANSLATE_", "REVIEW_", "AGENT_", "DEEPSEEK_", "ALIBABA_"))},
         "telegram": {
             "TELEGRAM_BOT_TOKEN": tele_token,
             "TELEGRAM_ALLOWED_USERS": tele_users,
@@ -241,7 +244,8 @@ def update_settings(payload: dict) -> tuple[int, dict]:
     if "ai" in payload and isinstance(payload["ai"], dict):
         for k in ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL", "TRANSLATE_MODEL",
                   "REVIEW_MODEL", "AGENT_MODEL", "AGENT_FALLBACK_MODEL",
-                  "AGENT_BASE_URL", "AGENT_API_KEY"):
+                  "AGENT_BASE_URL", "AGENT_API_KEY", "DEEPSEEK_API_KEY",
+                  "DEEPSEEK_CONCURRENCY", "ALIBABA_API_KEY"):
             if k in payload["ai"]:
                 updates[k] = str(payload["ai"][k]).strip()
     if "telegram" in payload and isinstance(payload["telegram"], dict):
@@ -255,7 +259,8 @@ def update_settings(payload: dict) -> tuple[int, dict]:
     # Flat keys from Films UI form
     for k in ("LIBRARY_DIR", "WORK_DIR", "YT_UPLOADER_DIR", "LLM_BASE_URL", "LLM_API_KEY",
               "LLM_MODEL", "TRANSLATE_MODEL", "AGENT_MODEL", "TELEGRAM_BOT_TOKEN",
-              "TELEGRAM_ALLOWED_USERS"):
+              "TELEGRAM_ALLOWED_USERS", "DEEPSEEK_API_KEY", "DEEPSEEK_CONCURRENCY",
+              "ALIBABA_API_KEY"):
         if k in payload and payload[k] is not None:
             updates[k] = str(payload[k]).strip()
     if "AGENT_TELEGRAM" in payload:

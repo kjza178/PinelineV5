@@ -225,7 +225,8 @@ def library(base: str) -> list[dict]:
                 if not d.is_dir() or d.name in seen_names or d.name.startswith("."):
                     continue
                 info = hg.inspect_series_folder(d)
-                if info.get("merged") and info.get("merged_file"):
+                # merged sẵn HOẶC ≥2 tập lẻ (cần hiện need_merge trên Films UI)
+                if (info.get("merged") and info.get("merged_file")) or int(info.get("fragments") or 0) >= 2:
                     title = d.name
                     s_id = ""
                     sj = d / ".series.json"

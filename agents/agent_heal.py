@@ -35,6 +35,42 @@ def start_delay_sec() -> int:
         return 180
 
 
+def _on_queue_seat(job_id: str, seat: str | None) -> bool:
+    """job là current, part của current, hoặc parent của part đang current."""
+    if not seat:
+        return True
+    jid = str(job_id or "")
+    cur = str(seat)
+    if not jid:
+        return False
+    return jid == cur or jid.startswith(cur + "_p") or cur.startswith(jid + "_p")
+
+
+def other_seat_busy(job_id: str) -> str | None:
+    """Studio SOP: ghế queue đang của job KHÁC → không được xếp GPU (fill/TTS/ASR…).
+
+    Khác job_active: job này có thể idle (pending) nhưng vẫn bị chặn vì seat ≠ nó.
+    Fix 2026-11-14 — Brain translate_fill tạo ghost running ngoài ghế."""
+    import sys
+    jid = str(job_id or "")
+    if not jid:
+        return None
+    jq = sys.modules.get("core.job_queue") or sys.modules.get("job_queue")   # V5: core/job_queue
+    if jq is None:
+        return None
+    try:
+        cur = getattr(jq, "_current", None)
+        if cur is None and hasattr(jq, "queue_state"):
+            cur = (jq.queue_state() or {}).get("current")
+    except Exception:  # noqa: BLE001
+        cur = getattr(jq, "_current", None)
+    if not cur:
+        return None
+    if _on_queue_seat(jid, cur):
+        return None
+    return f"queue.current={cur}"
+
+
 def job_active(job_id: str, hooks: dict | None = None) -> str | None:
     """Lý do job đang chạy thật (không được heal): queue.current / claim stage / engine sống.
     None = không thấy hoạt động. Không import server (tránh vòng) — dùng module đã nạp."""
@@ -213,13 +249,18 @@ def diagnose_job(work_root: Path, job_id: str) -> dict:
             issues.append({"code": "no_source", "stage": "download", "detail": "thiếu source video"})
             actions_aggressive.append({"action": "download_or_import", "why": "cần tải/import lại — không auto"})
 
+    # fix 2026-11-13 agentS (60892cc63cb7): PARENT split không có asr.json theo thiết kế (ASR ở part) →
+    # trước: «asr_bad» → Brain asr_run_force trên parent → cắt lại part + ép ASR từng part đã xong.
+    _si = data.get("split_info") if isinstance(data.get("split_info"), dict) else {}
+    is_split_parent = len(_si.get("sub_job_ids") or []) >= 2
+
     # ASR
     asr_ok = (work / "asr.json").is_file()
     # fix 2026-11-13 agentN: asr done + đã dịch xong mà asr.json đã dọn ≠ ASR hỏng
     tr_s = stages["translate"].get("status")
-    if stages["asr"].get("status") == "failed" or (not asr_ok and (
+    if not is_split_parent and (stages["asr"].get("status") == "failed" or (not asr_ok and (
         tr_s in ("failed", "running") or (tr_s == "done" and stages["asr"].get("status") != "done")
-    )):
+    ))):
         issues.append({"code": "asr_bad", "stage": "asr", "detail": "asr.json thiếu hoặc ASR failed"})
         actions_aggressive.append({"action": "asr_run_force", "why": "nhận diện lại — nặng GPU"})
 
@@ -400,6 +441,15 @@ def heal_job(
     for step in auto_plan:
         act = step["action"]
         try:
+            # Studio SOP: heal_stale OK mọi lúc; action GPU chỉ khi đúng ghế
+            if act in _ASYNC_STOP:
+                why_seat = other_seat_busy(job_id)
+                if why_seat:
+                    results.append({
+                        "action": act,
+                        "result": {"skipped": f"chờ ghế ({why_seat})", "blocked_by_seat": True},
+                    })
+                    continue
             if act == "heal_stale_running":
                 fn = hooks.get("heal_stale")
                 results.append({"action": act, "result": fn(job_id) if fn else {"skipped": "no hook"}})
@@ -424,6 +474,11 @@ def heal_job(
                 fn = hooks.get("mux_retry")
                 results.append({"action": act, "result": fn(job_id) if fn else {"skipped": "no hook"}})
             elif act == "asr_run_force":
+                _si = (_mf(work).get("split_info") or {}) if (work / "manifest.json").is_file() else {}
+                if len(_si.get("sub_job_ids") or []) >= 2:   # agentS: không ép ASR lên parent split
+                    results.append({"action": act, "result": {
+                        "skipped": "parent split — ASR nằm ở part; heal/ASR từng part nếu cần"}})
+                    continue
                 fn = hooks.get("asr_force")
                 results.append({"action": act, "result": fn(job_id) if fn else {"skipped": "no hook"}})
             elif act == "translate_rerun":

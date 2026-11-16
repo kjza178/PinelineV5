@@ -169,6 +169,22 @@ def is_local(model: str | None) -> bool:
 
 
 CHATGPT_PREFIXES = ("chatgpt/", "aurora/")
+ALIBABA_PREFIXES = ("alibaba/", "dashscope/", "qwen/")
+DEFAULT_ALIBABA_BASE = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+DEEPSEEK_PREFIXES = ("deepseek/", "deepseek-")
+DEFAULT_DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+
+# Cooldown tạm thời (60s) cho base URL bị từ chối kết nối (vd 127.0.0.1:3377 tắt)
+# để chuyển thẳng sang 192.168.31.247:5005 / 192.168.31.244:5005 không mất 1s+2s+4s mỗi câu.
+_DEAD_BASES: dict[str, float] = {}
+_DEAD_BASE_TTL_SEC = 60.0
+
+import re as _re
+_PAYLOAD_TOO_LARGE_RE = _re.compile(
+    r"context_length_exceeded|maximum context length|payload too large|"
+    r"request entity too large|string too long|too many tokens",
+    _re.I,
+)
 
 
 def is_chatgpt(model: str | None) -> bool:
@@ -177,10 +193,197 @@ def is_chatgpt(model: str | None) -> bool:
     return bool(m) and any(m.startswith(p) for p in CHATGPT_PREFIXES)
 
 
+def is_alibaba(model: str | None) -> bool:
+    """Model route qua Alibaba Cloud DashScope (OpenAI-compatible). Tiền tố alibaba/, dashscope/, qwen/."""
+    m = (model or "").strip().lower()
+    return bool(m) and any(m.startswith(p) for p in ALIBABA_PREFIXES)
+
+
+def _alibaba_settings() -> tuple[str, str, str]:
+    """(base, key, default_model) cho Alibaba Cloud DashScope."""
+    try:
+        base = (_cfg_get("ALIBABA_BASE_URL") or os.getenv("ALIBABA_BASE_URL") or DEFAULT_ALIBABA_BASE).strip().rstrip("/")
+    except Exception:
+        base = (os.getenv("ALIBABA_BASE_URL") or DEFAULT_ALIBABA_BASE).strip().rstrip("/")
+    try:
+        key = (
+            _cfg_get("ALIBABA_API_KEY")
+            or _cfg_get("DASHSCOPE_API_KEY")
+            or os.getenv("ALIBABA_API_KEY")
+            or os.getenv("DASHSCOPE_API_KEY")
+            or ""
+        ).strip()
+    except Exception:
+        key = (os.getenv("ALIBABA_API_KEY") or os.getenv("DASHSCOPE_API_KEY") or "").strip()
+    try:
+        default_m = (_cfg_get("ALIBABA_MODEL") or os.getenv("ALIBABA_MODEL") or "qwen-plus").strip()
+    except Exception:
+        default_m = (os.getenv("ALIBABA_MODEL") or "qwen-plus").strip()
+    return base, key, default_m
+
+
+def _alibaba_chat(
+    model: str,
+    messages: list[dict],
+    temperature: float,
+    max_tokens: int,
+    json_mode: bool,
+    retries: int,
+    timeout: int,
+) -> str:
+    """Gọi Alibaba Cloud DashScope (OpenAI-compatible) cho Qwen3 / Qwen-Max / Qwen-Plus / Qwen-MT."""
+    base, key, default_m = _alibaba_settings()
+    if not key:
+        raise LLMUnavailable(
+            "Model Alibaba cần ALIBABA_API_KEY (hoặc DASHSCOPE_API_KEY) trong pineline.config.json"
+        )
+    m = (model or "").strip()
+    for pfx in ALIBABA_PREFIXES:
+        if m.lower().startswith(pfx):
+            m = m[len(pfx):].strip()
+            break
+    if not m or m.lower() in ("auto", "default", "alibaba", "dashscope", "qwen"):
+        m = default_m or "qwen-plus"
+
+    url = f"{base.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    enable_think = (os.getenv("LLM_ENABLE_THINKING") or "").strip() in ("1", "true", "yes")
+    is_mt = m.lower().startswith("qwen-mt")
+    payload: dict = {
+        "model": m,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+    if not is_mt:
+        payload["enable_thinking"] = enable_think
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+    last_err: Exception | None = None
+    tries = max(1, min(retries, 4))
+    for attempt in range(tries):
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if r.status_code == 413 or (r.status_code in (400, 422) and _PAYLOAD_TOO_LARGE_RE.search(r.text or "")):
+                raise LLMUnavailable(f"Alibaba {r.status_code} (no-retry payload): {r.text[:300]}")
+            if r.status_code in (429, 500, 502, 503, 504):
+                raise requests.HTTPError(f"{r.status_code} {r.text[:200]}", response=r)
+            r.raise_for_status()
+            msg = (r.json().get("choices") or [{}])[0].get("message") or {}
+            content = (msg.get("content") or "").strip()
+            if content:
+                print(f"[llm] alibaba/{m} via {base}", flush=True)
+                return content
+            payload.pop("response_format", None)
+            time.sleep(0.4)
+        except LLMUnavailable:
+            raise
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            wait = min(2 ** attempt, 8)
+            print(f"[llm] alibaba lỗi {base} {m} ({attempt + 1}/{tries}): {e} — {wait}s", flush=True)
+            time.sleep(wait)
+    raise LLMUnavailable(f"Alibaba ({m}) thất bại sau {tries} lần: {last_err}") from last_err
+
+
+def is_deepseek(model: str | None) -> bool:
+    """Model route qua DeepSeek Official API (OpenAI-compatible). Tiền tố deepseek/ hoặc deepseek-."""
+    m = (model or "").strip().lower()
+    return bool(m) and any(m.startswith(p) for p in DEEPSEEK_PREFIXES)
+
+
+def _deepseek_settings() -> tuple[str, str, str]:
+    """(base, key, default_model) cho DeepSeek Official API."""
+    try:
+        base = (_cfg_get("DEEPSEEK_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL") or DEFAULT_DEEPSEEK_BASE).strip().rstrip("/")
+    except Exception:
+        base = (os.getenv("DEEPSEEK_BASE_URL") or DEFAULT_DEEPSEEK_BASE).strip().rstrip("/")
+    try:
+        key = (_cfg_get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or "").strip()
+    except Exception:
+        key = (os.getenv("DEEPSEEK_API_KEY") or "").strip()
+    try:
+        default_m = (_cfg_get("DEEPSEEK_MODEL") or os.getenv("DEEPSEEK_MODEL") or "deepseek-flash").strip()
+    except Exception:
+        default_m = (os.getenv("DEEPSEEK_MODEL") or "deepseek-flash").strip()
+    return base, key, default_m
+
+
+def _deepseek_chat(
+    model: str,
+    messages: list[dict],
+    temperature: float,
+    max_tokens: int,
+    json_mode: bool,
+    retries: int,
+    timeout: int,
+) -> str:
+    """Gọi DeepSeek Official API (OpenAI-compatible) — mặc định deepseek-flash siêu tốc & tiết kiệm."""
+    base, key, default_m = _deepseek_settings()
+    if not key:
+        raise LLMUnavailable(
+            "Model DeepSeek cần DEEPSEEK_API_KEY trong pineline.config.json"
+        )
+    m = (model or "").strip()
+    for pfx in DEEPSEEK_PREFIXES:
+        if m.lower().startswith(pfx):
+            m = m[len(pfx):].strip()
+            if pfx == "deepseek/" and not m.startswith("deepseek-"):
+                m = f"deepseek-{m}" if m in ("chat", "coder", "reasoner", "v3", "r1", "flash", "v4-pro") else m
+            break
+    # Map mọi tên gọi chung hoặc chat/v3/flash về deepseek-flash để tối ưu chi phí rẻ nhất, né pro
+    if not m or m.lower() in ("auto", "default", "deepseek", "v3", "deepseek-v3", "chat", "deepseek-chat", "flash", "deepseek-flash"):
+        m = "deepseek-flash"
+
+    url = f"{base.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    payload: dict = {
+        "model": m,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+
+    last_err: Exception | None = None
+    tries = max(1, min(retries, 4))
+    for attempt in range(tries):
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if r.status_code == 413 or (r.status_code in (400, 422) and _PAYLOAD_TOO_LARGE_RE.search(r.text or "")):
+                raise LLMUnavailable(f"DeepSeek {r.status_code} (no-retry payload): {r.text[:300]}")
+            if r.status_code in (429, 500, 502, 503, 504):
+                raise requests.HTTPError(f"{r.status_code} {r.text[:200]}", response=r)
+            r.raise_for_status()
+            msg = (r.json().get("choices") or [{}])[0].get("message") or {}
+            content = (msg.get("content") or "").strip()
+            if content:
+                print(f"[llm] deepseek/{m} via {base}", flush=True)
+                return content
+            payload.pop("response_format", None)
+            time.sleep(0.4)
+        except LLMUnavailable:
+            raise
+        except Exception as e:
+            last_err = e
+            wait = min(2 ** attempt, 8)
+            print(f"[llm] deepseek lỗi {base} {m} ({attempt + 1}/{tries}): {e} — {wait}s", flush=True)
+            time.sleep(wait)
+    raise LLMUnavailable(f"DeepSeek ({m}) thất bại sau {tries} lần: {last_err}") from last_err
+
+
 def _chatgpt_settings() -> tuple[list[str], str, str]:
     """(bases, key, default_model) cho Aurora pool."""
     # machine-config: AURORA_BASE_URL, CHATGPT_BASE_URL, :3377 local, AURORA_FALLBACK_URLS (LAN)
     bases: list[str] = list(_machine.aurora_base_urls())
+    now = time.time()   # port 2026-11-16 (V2 15/11): base vừa chết kết nối xuống cuối trong 60 s
+    alive = [b for b in bases if _DEAD_BASES.get(b, 0.0) <= now]
+    dead = [b for b in bases if _DEAD_BASES.get(b, 0.0) > now]
+    ordered_bases = alive + dead if alive else bases
     try:
         key = (_cfg_get("CHATGPT_API_KEY") or _cfg_get("CHATGPT_ACCESS_TOKEN") or "").strip()
     except Exception:
@@ -193,7 +396,7 @@ def _chatgpt_settings() -> tuple[list[str], str, str]:
         default_m = (_cfg_get("CHATGPT_MODEL") or "gpt-5-6-mini").strip()
     except Exception:
         default_m = (os.getenv("CHATGPT_MODEL") or "gpt-5-6-mini").strip()
-    return bases, key, default_m
+    return ordered_bases, key, default_m
 
 
 def _jwt_expired(token: str) -> bool:
@@ -255,6 +458,7 @@ def _chatgpt_chat(
             candidates.append(alt)
 
     last_err: Exception | None = None
+    tries = max(1, min(retries, 3))
     for chosen in candidates:
         payload: dict = {
             "model": chosen,
@@ -265,44 +469,64 @@ def _chatgpt_chat(
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
-        for base in bases:
+        # Cập nhật lại thứ tự bases theo _DEAD_BASES mới nhất
+        now = time.time()
+        alive_bases = [b for b in bases if _DEAD_BASES.get(b, 0.0) <= now]
+        iter_bases = alive_bases if alive_bases else bases
+        for base in iter_bases:
+            if alive_bases and _DEAD_BASES.get(base, 0.0) > time.time():
+                continue
             url = f"{base.rstrip('/')}/chat/completions"
             headers = {"Content-Type": "application/json"}
-            if key:
-                headers["Authorization"] = f"Bearer {key}"
-            for attempt in range(max(1, min(retries, 3))):
+            # Chỉ gắn sk-local cho loopback (:3377); Aurora LAN (.247/.244) dùng pool nội bộ
+            use_key = key if (key and (key != "sk-local" or _is_loopback_base(base))) else ""
+            if use_key:
+                headers["Authorization"] = f"Bearer {use_key}"
+            for attempt in range(tries):
                 try:
                     r = requests.post(url, headers=headers, json=payload, timeout=timeout)
-                    if r.status_code in (401, 403) and key:
+                    if r.status_code in (401, 403) and "Authorization" in headers:
                         # thử lại không token (Aurora pool nội bộ)
                         headers.pop("Authorization", None)
-                        key = ""
                         continue
-                    # 413/400/422 = payload quá lớn hoặc request không hợp lệ — retry cùng body vô ích
-                    if r.status_code in (400, 413, 422):
+                    # Chỉ 413 hoặc 400/422 báo vượt giới hạn context/payload mới cấm retry
+                    if r.status_code == 413 or (
+                        r.status_code in (400, 422) and _PAYLOAD_TOO_LARGE_RE.search(r.text or "")
+                    ):
                         raise LLMUnavailable(
                             f"Aurora/ChatGPT {r.status_code} (no-retry): {r.text[:300]}"
                         )
-                    if r.status_code in (429, 500, 502, 503, 504):
-                        raise requests.HTTPError(f"{r.status_code} {r.text[:200]}")
+                    # Aurora trả 400 (no available account / auth error của 1 acc trong pool) hoặc 429/5xx -> retry xoay acc & đổi base
+                    if r.status_code in (400, 422, 429, 500, 502, 503, 504):
+                        raise requests.HTTPError(f"{r.status_code} {r.text[:200]}", response=r)
                     r.raise_for_status()
                     msg = (r.json().get("choices") or [{}])[0].get("message") or {}
                     content = (msg.get("content") or "").strip()
                     if content:
+                        _DEAD_BASES.pop(base, None)
                         print(f"[llm] chatgpt/{chosen} via {base}", flush=True)
                         return content
                     payload.pop("response_format", None)
                     time.sleep(0.4)
                 except LLMUnavailable:
                     raise
+                except requests.ConnectionError as e_conn:
+                    # Port đóng / từ chối kết nối (vd 127.0.0.1:3377 tắt) -> đánh dấu dead 60s và nhảy NGAY sang .247/.244
+                    _DEAD_BASES[base] = time.time() + _DEAD_BASE_TTL_SEC
+                    last_err = e_conn
+                    print(
+                        f"[llm] chatgpt {base} lỗi kết nối ({chosen}) — chuyển ngay sang fallback LAN: {e_conn}",
+                        flush=True,
+                    )
+                    break
                 except Exception as e:  # noqa: BLE001
-                    # HTTPError/Response với status client-error → không retry cùng payload
                     sc = getattr(getattr(e, "response", None), "status_code", None)
-                    if sc in (400, 413, 422):
+                    body_txt = getattr(getattr(e, "response", None), "text", "") or str(e)
+                    if sc == 413 or (sc in (400, 422) and _PAYLOAD_TOO_LARGE_RE.search(body_txt)):
                         raise LLMUnavailable(f"Aurora/ChatGPT {sc} (no-retry): {e}") from e
                     last_err = e
-                    wait = min(2 ** attempt, 6)
-                    print(f"[llm] chatgpt lỗi {base} {chosen} ({attempt + 1}): {e} — {wait}s", flush=True)
+                    wait = min(2 ** attempt, 4)
+                    print(f"[llm] chatgpt lỗi {base} {chosen} ({attempt + 1}/{tries}): {e} — {wait}s", flush=True)
                     time.sleep(wait)
     raise LLMUnavailable(f"Aurora/ChatGPT thất bại: {last_err} — {_machine.aurora_missing_hint()}")
 
@@ -478,7 +702,7 @@ def chatgpt_chat_with_file(
                     if r.status_code in (401, 403) and auth:
                         continue
                     if r.status_code >= 400:
-                        raise requests.HTTPError(f"{r.status_code} {r.text[:300]}")
+                        raise requests.HTTPError(f"{r.status_code} {r.text[:300]}", response=r)
                     msg = (r.json().get("choices") or [{}])[0].get("message") or {}
                     text = (msg.get("content") or "").strip()
                     if text and _file_unread_response(text):
@@ -506,7 +730,7 @@ def chatgpt_chat_with_file(
             f"Aurora nhận file_id nhưng GPT không đọc được (upload/chat lệch account). "
             f"Cần Aurora sticky X-Aurora-Account-Id. last={last_err}"
         )
-    raise LLMUnavailable(f"Aurora file-QA thất bại: {last_err}")
+    raise LLMUnavailable(f"Aurora file-QA thất bại: {last_err}") from last_err
 
 
 _pulled: set = set()   # cache trong tiến trình: model đã kiểm/pull rồi
@@ -652,6 +876,18 @@ def chat(
         return _chatgpt_chat(
             m, messages, temperature, max_tokens, json_mode,
             retries=min(retries, 3), timeout=t_chat,
+        )
+
+    if is_alibaba(m):
+        return _alibaba_chat(
+            m, messages, temperature, max_tokens, json_mode,
+            retries=retries, timeout=max(int(timeout or 0), 180),
+        )
+
+    if is_deepseek(m):
+        return _deepseek_chat(
+            m, messages, temperature, max_tokens, json_mode,
+            retries=retries, timeout=max(int(timeout or 0), 180),
         )
 
     # Nhận diện tự động nếu gọi vào llama-server :8083

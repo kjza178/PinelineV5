@@ -71,7 +71,12 @@ _STATUS_RES = (
 _LIMIT_RE = re.compile(
     r"rate[ _-]?limit|too many requests|quota|usage[ _-]?(?:limit|cap)|limit[ _-]?(?:reached|exceeded)|"
     r"(?:reached|exceeded|hit)\s+(?:the|your|a)?\s*(?:usage\s+|rate\s+|message\s+)?(?:limit|cap)|"
-    r"insufficient_quota|requests? per (?:min|minute|hour|day)",
+    r"insufficient_quota|requests? per (?:min|minute|hour|day)|"
+    r"no available account|account_deactivated|token_expired",
+    re.I,
+)
+_AURORA_POOL_400_RE = re.compile(
+    r"no available account|account_deactivated|token_expired|authorization_error|invalid_api_key",
     re.I,
 )
 _EXHAUSTED_RE = re.compile(r"thất bại|that bai|timed? ?out|timeout|connection (?:reset|aborted|refused)", re.I)
@@ -114,11 +119,13 @@ def classify_cloud_retry(e: BaseException) -> str | None:
     if isinstance(e, ValueError):            # ReviewBadOutput / parse JSON → không phải lỗi mạng
         return None
     st = error_status(e)
+    text = " | ".join(str(x) for x in _chain(e))
     if st == 429:
         return "limit"
+    if st in (400, 401, 403) and "(no-retry)" not in text and _AURORA_POOL_400_RE.search(text):
+        return "transient"
     if st in _NO_RETRY_STATUS:
         return None
-    text = " | ".join(str(x) for x in _chain(e))
     if _LIMIT_RE.search(text):
         return "limit"
     if st in _TRANSIENT_STATUS:

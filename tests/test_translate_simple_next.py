@@ -37,7 +37,7 @@ def test_lexicon_entries_have_src():
     data = json.loads((ROOT / "data" / "lexicon" / "idioms_zh_vi.json").read_text(encoding="utf-8"))
     srcs = {e.get("src") for e in data["entries"]}
     assert srcs <= {"translate_rules", "golden_derived", "expert"} and None not in srcs
-    tsrc = (ROOT / "engines" / "translate.py").read_text(encoding="utf-8")
+    tsrc = (ROOT / "translate.py").read_text(encoding="utf-8")
     for e in data["entries"]:   # translate_rules = THẬT SỰ có trong luật translate.py
         assert (e["src"] == "translate_rules") == (e["zh"] in tsrc), e["zh"]
     assert all(e["src"] for e in lexicon.load())
@@ -441,6 +441,7 @@ def test_fix_names_guarded():
 
 def test_pipeline_zh_source_flag(tmp_path, monkeypatch):
     monkeypatch.setenv("SIMPLE_ZH_SOURCE", "1")
+    monkeypatch.setenv("SIMPLE_ZH_OCR_MODE", "full")
     segs = [dict(s) for s in SEGS]
     segs[0]["text"] = "苏晴，我等你很久了吗。"
     wd = _job(tmp_path, segs=segs)
@@ -495,7 +496,7 @@ def _orig_pipeline(tmp_path) -> object:
     bk = _backup_dir()
     base = tmp_path / "orig_pkg"
     pkg = base / "translate_simple_orig"
-    shutil.copytree(ROOT / "engines" / "translate_simple", pkg, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(ROOT / "translate_simple", pkg, ignore=shutil.ignore_patterns("__pycache__"))
     for f in (bk / "translate_simple").glob("*.py"):
         shutil.copyfile(f, pkg / f.name)
     (base / "data" / "lexicon").mkdir(parents=True)

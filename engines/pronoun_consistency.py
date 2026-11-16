@@ -837,6 +837,8 @@ def run_post_translate_consistency(
                     print(f"[pronoun-qa] GPT vá lỗi: {e}", flush=True)
                     fixes = {}
                 for i, vi in fixes.items():
+                    if i in pos and rows[pos[i]].get("manual"):
+                        continue  # fix 2026-11-11 translate-b1 C2: không ghi đè câu sửa tay
                     if i in pos and vi and vi != rows[pos[i]].get("vi"):
                         if len(sample) < 10:
                             sample.append({"i": i, "before": rows[pos[i]].get("vi"), "after": vi})

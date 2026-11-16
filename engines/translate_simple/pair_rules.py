@@ -136,21 +136,34 @@ def _resolve(rel: dict, text: str, ga: str, gb: str, name_b: list[str], name_a: 
     return None
 
 
+_ROLE_OF_RE_CACHE: dict[tuple[str, str], re.Pattern] = {}
+
+
 def _role_of(text: str, kws, names: list[str]) -> bool:
     """text nói «<kw> [≤2 từ] của <tên>» hoặc «<名字>的<kw>»."""
+    if "của" not in text and "的" not in text:
+        return False
     for nm in names:
         n = nfc(nm).strip().lower()
-        if len(n) < 2:
+        if len(n) < 2 or n not in text:
             continue
         for kw in kws or []:
             k = nfc(kw).strip().lower()
-            if not k:
+            if not k or k not in text:
                 continue
             if _CJK_RE.search(k):
                 if _CJK_RE.search(n) and (n + "的" + k) in text:
                     return True
                 continue
-            if re.search(r"(?<!\w)" + re.escape(k) + r"(?:\s+[^\s,.;]+){0,2}?\s+của\s+" + re.escape(n) + r"(?!\w)", text):
+            ckey = (k, n)
+            rx = _ROLE_OF_RE_CACHE.get(ckey)
+            if rx is None:
+                rx = re.compile(
+                    r"(?<!\w)" + re.escape(k) + r"(?:\s+[^\s,.;]+){0,2}?\s+của\s+" + re.escape(n) + r"(?!\w)"
+                )
+                if len(_ROLE_OF_RE_CACHE) < 4096:
+                    _ROLE_OF_RE_CACHE[ckey] = rx
+            if rx.search(text):
                 return True
     return False
 

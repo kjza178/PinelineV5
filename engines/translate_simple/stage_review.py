@@ -60,7 +60,6 @@ REPAIR_PROMPT = (
     "- name: thiếu/sai tên nhân vật → dùng đúng tên VI trong bảng; nếu câu cố ý gọi bằng danh xưng (học trưởng, "
     "sư phụ…) hoặc đại từ thay tên là đúng thì giữ và đặt \"ok\":true.\n"
     "- empty: câu chưa có bản dịch → dịch mới từ zh.\n"
-    "- cjk: còn chữ Hán → dịch hết sang tiếng Việt.\n"
     "Trả về DUY NHẤT JSON: {\"lines\":[{\"i\":<int>,\"vi\":\"…\",\"spk\":\"…\",\"to\":\"…\",\"conf\":<0..1>,"
     "\"ok\":<true nếu xác nhận câu hiện tại đúng>}]} — đủ mọi i trong DANH SÁCH, không markdown."
 )
@@ -72,6 +71,8 @@ def _decode(text: str | None):
     t = (text or "").strip()
     if "<think>" in t and "</think>" in t:
         t = re.sub(r"<think>[\s\S]*?</think>", "", t).strip()
+    if "</escape>" in t or "<escape>" in t:
+        t = re.sub(r"</?escape>", "", t).strip()
     if not t:
         raise BadOutput("phản hồi rỗng")
     if "```" in t:
@@ -92,7 +93,13 @@ def _decode(text: str | None):
                     val, _ = dec.raw_decode(t, mm.start())
                 except json.JSONDecodeError:
                     continue
-                if isinstance(val, dict) and isinstance(val.get("lines"), list):
+                if isinstance(val, dict) and (
+                    isinstance(val.get("lines"), list)
+                    or isinstance(val.get("pairs"), list)
+                    or isinstance(val.get("characters"), list)
+                    or isinstance(val.get("terms"), list)
+                    or bool(val.get("summary"))
+                ):
                     data = val
                     break
             if data is None:
@@ -174,7 +181,7 @@ def build_prompt(rows: list[dict], before: list[dict], after: list[dict], pv: Pl
     if hints:
         parts.append("GỢI Ý THÀNH NGỮ / LÓNG (có trong lô):\n" + "\n".join(lexicon.hint_lines(hints)))
     if before:
-        parts.append("NGỮ CẢNH TRƯỚC (chỉ đọc · i | zh | vi):\n" + "\n".join(_ctx_line(r, "vi") for r in before))
+        parts.append("NGỮ CẢNH TRƯỚC (CHỒNG LẤN · chỉ đọc · i | zh | vi):\n" + "\n".join(_ctx_line(r, "vi") for r in before))
     payload = []
     for r in rows:
         item = {"i": int(r["i"]), "zh": r.get("zh") or "", "nhap": (r.get("vi") or "").strip(),
@@ -191,7 +198,7 @@ def build_prompt(rows: list[dict], before: list[dict], after: list[dict], pv: Pl
         payload.append(item)
     parts.append("DANH SÁCH (JSON):\n" + json.dumps(payload, ensure_ascii=False))
     if after:
-        parts.append("NGỮ CẢNH SAU (chỉ đọc · i | zh | nháp):\n" + "\n".join(_ctx_line(r, "vi") for r in after))
+        parts.append("NGỮ CẢNH SAU (NHÌN TRƯỚC · chỉ đọc · i | zh | nháp):\n" + "\n".join(_ctx_line(r, "vi") for r in after))
     return (REPAIR_PROMPT if repair_flags is not None else SYSTEM_PROMPT), "\n\n".join(p for p in parts if p)
 
 
@@ -218,16 +225,21 @@ def call_llm(system: str, user: str, want: set[int], *, model: str | None, stop_
     )
 
 
-def make_jobs(rows: list[dict], todo_idx: list[int], batch: int, ctx: int) -> list[dict]:
-    """Chia các vị trí cần làm (todo_idx, theo thứ tự) thành lô; ngữ cảnh ±ctx lấy theo vị trí trong rows."""
+def make_jobs(rows: list[dict], todo_idx: list[int], batch: int, ctx: int, overlap: int | None = None) -> list[dict]:
+    """Chia các vị trí cần làm (todo_idx, theo thứ tự) thành lô; ngữ cảnh ±ctx lấy theo vị trí trong rows.
+    overlap: A8 - số câu liền trước đưa vào ngữ cảnh trước (chỉ đọc) để nối mạch văn và xưng hô."""
+    if overlap is None:
+        fn = getattr(cfg, "overlap_cues", None)
+        overlap = fn() if callable(fn) else 3
+    actual_before = max(ctx, overlap)
     jobs = []
     for k in range(0, len(todo_idx), batch):
         pos = todo_idx[k:k + batch]
         p0, p1 = pos[0], pos[-1]
         in_lot = set(pos)
-        before = [rows[j] for j in range(max(0, p0 - ctx), p0) if j not in in_lot]
+        before = [rows[j] for j in range(max(0, p0 - actual_before), p0) if j not in in_lot]
         after = [rows[j] for j in range(p1 + 1, min(len(rows), p1 + 1 + ctx)) if j not in in_lot]
-        jobs.append({"k": k, "pos": pos, "before": before, "after": after})
+        jobs.append({"k": k, "pos": pos, "before": before, "after": after, "overlap": overlap})
     return jobs
 
 
@@ -266,7 +278,15 @@ def run(store: ScriptStore, pv: PlanView, *, model: str | None, stop_check=None,
     stats = {"n_todo": len(todo_idx), "n_ok": 0, "n_fail_lots": 0, "n_left": 0, "lots": 0}
     if not todo_idx:
         return stats
-    batch, ctx, workers = (int(batch) if batch else cfg.batch()), cfg.ctx(), cfg.workers()
+    try:
+        workers = cfg.workers(model)
+    except TypeError:
+        workers = cfg.workers()
+    if hasattr(cfg, "batch_for_rows"):
+        batch = cfg.batch_for_rows(len(todo_idx), workers, explicit=int(batch) if batch else None)
+    else:
+        batch = int(batch) if batch else cfg.batch()
+    ctx = cfg.ctx()
     lock = threading.Lock()
 
     def _do(job: dict, step: str) -> int:
@@ -281,10 +301,17 @@ def run(store: ScriptStore, pv: PlanView, *, model: str | None, stop_check=None,
         except Exception as e:  # noqa: BLE001
             if "stopped by user" in str(e).lower():
                 raise
+            # R1.3: lỗi code → ném lên (HOLD ngay), không nuốt thành «lô cloud»
+            if isinstance(e, (TypeError, AttributeError, KeyError, NameError, ImportError,
+                              AssertionError, SyntaxError)):
+                raise
             with lock:
                 for r in lot:
+                    # R1.1: «Soát lại» + cloud chết — phải bỏ rv cũ nếu không n_ok đếm rv sót → done giả
+                    r.pop("rv", None)
+                    r.pop("unreviewed_accepted", None)
                     store.note(step, r.get("i"), f"lô lỗi: {str(e)[:160]}")
-            print(f"[simple-review] lô {job['k']} lỗi ({type(e).__name__}: {str(e)[:160]}) — giữ chưa rv",
+            print(f"[simple-review] lô {job['k']} lỗi ({type(e).__name__}: {str(e)[:160]}) — bỏ rv, giữ chưa soát",
                   flush=True)
             return -1
         with lock:
@@ -316,16 +343,30 @@ def run(store: ScriptStore, pv: PlanView, *, model: str | None, stop_check=None,
                 done_n += 1
                 if progress:
                     progress(f"review lô {done_n}/{len(jobs)}")
-    # lượt thử lại: câu còn chưa rv (lô lỗi hoặc LLM bỏ sót) — lô ½, tuần tự
+    # lượt thử lại: câu còn chưa rv (lô lỗi hoặc LLM bỏ sót) — lô ½, chạy song song + báo progress
     stats["n_fail_lots"] = len(failed)
     left_idx = [p for p in todo_idx if not rows[p].get("rv")]
     if left_idx:
         small = max(4, batch // 2)
         retry = make_jobs(rows, left_idx, small, ctx)
-        print(f"[simple-review] thử lại {len(left_idx)} câu chưa rv ({len(retry)} lô × ≤{small}, tuần tự)",
+        rw = min(workers, len(retry))
+        print(f"[simple-review] thử lại {len(left_idx)} câu chưa rv ({len(retry)} lô × ≤{small}, workers={rw})",
               flush=True)
-        for j in retry:
-            _do(j, "review-retry")
+        done_r = 0
+        if rw <= 1:
+            for j in retry:
+                _do(j, "review-retry")
+                done_r += 1
+                if progress:
+                    progress(f"review-retry lô {done_r}/{len(retry)}")
+        else:
+            with ThreadPoolExecutor(max_workers=rw, thread_name_prefix="simple-rv-retry") as ex:
+                futs_r = {ex.submit(_do, j, "review-retry"): j for j in retry}
+                for f in as_completed(futs_r):
+                    f.result()
+                    done_r += 1
+                    if progress:
+                        progress(f"review-retry lô {done_r}/{len(retry)}")
     stats["n_left"] = sum(1 for p in todo_idx if not rows[p].get("rv"))
     stats["n_ok"] = len(todo_idx) - stats["n_left"]
     return stats

@@ -29,6 +29,10 @@ KIN = {
 }
 SOFT = {"mình"}
 ONLY_IF_EXPECTED = {"con", "ba", "bố", "mẹ", "cha", "đệ tử", "chủ nhân", "mọi người", "thuộc hạ", "bạn"}
+# R1.5: thân tộc + động từ tường thuật đầu câu («Chị bảo tôi tới») = ngôi 3, không phải xưng hô 2
+_SPEECH_VERBS = {
+    "bảo", "nói", "hỏi", "kêu", "gọi", "thét", "gào", "đáp", "biểu", "truyền", "ra", "bảo rằng",
+}
 _PLURAL = ("các ", "chúng ", "bọn ", "mấy ", "nhà ")
 INCLUSIVE = {"chúng ta", "chúng mình", "bọn mình", "tụi mình", "chúng tôi", "bọn tôi", "chúng em", "bọn em",
              "chúng con", "chúng tao", "bọn tao", "tụi tao", "bọn ta"}
@@ -143,6 +147,10 @@ def pronoun_violations(vi: str, exp_self: list[str], exp_call: list[str]) -> lis
             if it["next_l"] in pron_words or it["next_l"] in ("ấy", "ta", "kia", "này", "đó", "nó", "họ", "hắn", "của"):
                 continue
             if it["prev"] in ("nhà", "là", "làm", "một", "những", "người", "vị", "hai", "ba"):
+                continue
+            # R1.5: «Chị bảo tôi tới» / «Anh nói với em…» tường thuật ngôi 3
+            nxt0 = (it["next_l"] or "").split()[0] if (it["next_l"] or "").strip() else ""
+            if (not it["prev"] or it["prev"] in ("thì", "mà", "nhưng", "và", "rồi", "nên")) and nxt0 in _SPEECH_VERBS:
                 continue
             if not (exp_self and exp_call):
                 kin_unknown.append(it["orig"])

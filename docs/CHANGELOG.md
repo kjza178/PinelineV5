@@ -1,6 +1,17 @@
-﻿# Changelog
+# Changelog
 
 Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần restart gì. Chi tiết bug: docs/fixes/. Nhật ký phiên: docs/worklog/.
+
+
+## 2026-11-16 — Port từ V2 (phiên Claude, ghép theo khúc — giữ lớp machine-config/cổng riêng của cây)
+
+- Nguồn: `Z:\\PinelineV2` trạng thái 16/11. Công cụ + bản ghép: `Z:\\PinelineV6\\scratch\\port_1116\\` (`portmerge.py`, `run_v4.py`, `run_v5.py`).
+- Đã vào: parent đã ghép Full không chạy lại part + kiểm mối nối khi ghép (agent S) · loudnorm −14 LUFS (`RENDER_LOUDNORM`) · OCR hardsub có chọn lọc (`zh_ocr_target`, `hs_ocr_fast`, `SIMPLE_ZH_OCR_MODE`) + bỏ OCR khi script đã soát đủ · R1.1–R1.5 (`core/timeutil`, cổng `plan_failed`, HOLD lỗi code) · khoá ghế hàng đợi (`_queue_seat_blocks`, `other_seat_busy`) · A7 plan cả phim / A8 overlap · llm: bỏ qua base chết 60 s, DeepSeek + DashScope, Aurora «no available account» → thử lại · sửa `_decode` cho `pair_fill` · các fix legacy translate b1/b2/b3 đi kèm `translate.py`/`server.py`.
+- Giữ nguyên của cây: mọi khúc `_machine.*` / LIBRARY_DIR / cổng / tên cây; `preset_switcher.py`, `migrate_work.py` KHÔNG đụng.
+- Sửa tay sau ghép: `llm._chatgpt_settings` (bases từ machine-config + xếp base chết xuống cuối).
+- Backup: `.backup_port_20261116\\` (giữ đường dẫn). Test mới chép từ V2.
+- CHƯA chạy pytest / chưa chạy server (máy kiểm không có pytest). Trước khi push/restart: `python -m pytest -q tests` (AGENT_BRAIN=0) + `python scripts\\tree_audit.py`.
+- Chưa port: `films_ui.html` / static, `rvc_bridge`, docs brain. Lỗi A7 lấy mẫu (giới hạn 26.000 ký tự không có tác dụng) còn nguyên như V2.
 
 ## 2026-11-13
 

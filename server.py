@@ -309,6 +309,40 @@ def _job_lineage_busy(job_id: str) -> str | None:
     return None
 
 
+def _job_on_queue_seat(job_id: str, seat: str | None) -> bool:
+    """True nếu job_id là queue.current, part của current, hoặc parent của part đang current."""
+    if not seat:
+        return True
+    jid = str(job_id or "")
+    cur = str(seat)
+    if not jid:
+        return False
+    if jid == cur:
+        return True
+    if jid.startswith(cur + "_p"):
+        return True
+    if cur.startswith(jid + "_p"):
+        return True
+    return False
+
+
+def _queue_seat_blocks(job_id: str) -> str | None:
+    """Studio SOP 1 ghế: None = được phép GPU; ngược lại lý do (queue.current=…).
+
+    Brain/UI từng gọi translate_fill trên job chờ → đánh running + xếp _gpu ngoài ghế
+    → UI nhiều cam (ghost) trong khi worker chỉ chạy 1 job. Fix 2026-11-14.
+    """
+    try:
+        cur = (job_queue.queue_state() or {}).get("current")
+    except Exception:  # noqa: BLE001
+        cur = getattr(job_queue, "_current", None)
+    if not cur:
+        return None
+    if _job_on_queue_seat(job_id, cur):
+        return None
+    return f"queue.current={cur}"
+
+
 def _claim_stage(job_id: str, stage: str) -> bool:
     """Giữ chỗ trước khi submit thread — chống bấm 2-3 lần tạo nhiều task."""
     with _STAGE_BUSY_LOCK:
@@ -1440,6 +1474,7 @@ def _process_gpu(job_id: str, target: str):
         if job_id in _STOP_JOBS:
             print(f"[gpu] {job_id}: đã DỪNG — bỏ qua (task xếp hàng trước khi bấm Dừng)")
             return
+        _hs_ocr_prefetch(work_dir)
         free_gpu_vram("trước ASR — nhường GPU")
         eng = _resolve_asr_engine(work_dir, None)
         _run_engine(_asr_script(eng), work_dir)  # subprocess -> UI không khựng
@@ -1454,8 +1489,16 @@ def _process_gpu(job_id: str, target: str):
         if n_miss > 0:
             if job_id in _STOP_JOBS:
                 raise _Stopped(job_id)
-            print(f"[gpu] {job_id}: sau dịch còn {n_miss} trống -> vá batch")
-            run_translate(work_dir, batch=25, target=target, mode="batch")
+            # fix 2026-11-11 translate-b2: NMT primary + REVIEW cloud → REVIEW bước 0 vá bằng cloud,
+            # không gọi lại run_translate (đường gemma cũ)
+            _act = _translate_gate_action(work_dir, n_miss, 0)
+            if _act == "review_fill":
+                print(f"[gpu] {job_id}: sau dịch còn {n_miss} trống -> REVIEW bước 0 vá bằng cloud")
+                from engines.translate import run_review as _fill_review
+                _fill_review(work_dir, target=target, force=False)
+            else:
+                print(f"[gpu] {job_id}: sau dịch còn {n_miss} trống -> vá batch")
+                run_translate(work_dir, batch=25, target=target, mode="batch")
         # TTS KHÔNG tự chạy: người dùng chọn giọng rồi bấm "Tạo giọng".
     except _Stopped:
         print(f"[gpu] {job_id}: đã DỪNG theo yêu cầu")
@@ -1570,6 +1613,9 @@ def _check_and_run_auto_split_parts(
         m_p.save()
 
         for idx, s_id in enumerate(sub_ids, 1):
+            if _split_parent_stop_if_finished(job_id, f"trước Part {idx}/{len(sub_ids)}"):   # agentS
+                _ensure_parent_mux_merged_done(wd, len(sub_ids))
+                return True
             if job_id in _STOP_JOBS:
                 print(f"[auto-split] Dừng theo yêu cầu khi đang làm Part {idx}/{len(sub_ids)}: {s_id}", flush=True)
                 # Nếu Full đã có sẵn → heal mux done (đừng để 80% treo)
@@ -1595,7 +1641,12 @@ def _check_and_run_auto_split_parts(
             # Chạy toàn bộ pipeline cho sub-job này (ASR -> Dịch -> TTS -> Render)
             _auto_gpu(s_id, target, audio_mode, voice_vol, orig_vol, use_ocr,
                       fit, resolution, translate_mode, render_kw or {},
-                      asr_engine=asr_engine)
+                      asr_engine=asr_engine,
+                      abort_if=lambda: _split_parent_finished(job_id))   # agentS: dừng trước mỗi stage
+
+        if _split_parent_stop_if_finished(job_id, "sau vòng part"):   # agentS: Full ghép nền xong
+            _ensure_parent_mux_merged_done(wd, len(sub_ids))
+            return True
 
         if job_id in _STOP_JOBS:
             if (wd / "output_full.mp4").is_file() or _mux_output_ok(wd):
@@ -1632,6 +1683,51 @@ def _check_and_run_auto_split_parts(
     finally:
         with _AUTO_SPLIT_LOCK:
             _AUTO_SPLIT_ACTIVE.discard(job_id)
+
+
+# fix 2026-11-13 agentS (60892cc63cb7): Brain asr_run_force trên PARENT (21:36 UTC) nằm hàng _gpu 2 h,
+# chạy lúc 23:36 → cắt lại part + ép ASR từng part dù part đã mux và Full đã ghép (00:12). Nay: parent
+# đã ghép Full → mọi vòng part DỪNG (trước mỗi part + trước mỗi stage) và gỡ parent khỏi hàng đợi;
+# force là «dùng một lần» (bỏ khi artifact đã mới hơn lúc ra lệnh). docs/fixes/2026-11-13-parent-rerun-after-done.md
+def _split_parent_finished(job_id: str) -> bool:
+    """Parent split đã ghép Full (split_info merged + Full còn) hoặc agent_hold.job_finished."""
+    wd = WORK_ROOT / str(job_id)
+    try:
+        data = json.loads((wd / "manifest.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return False
+    si = data.get("split_info") if isinstance(data.get("split_info"), dict) else {}
+    sub_ids = list(si.get("sub_job_ids") or [])
+    if str(si.get("status") or "").lower() == "merged" and _parent_full_output_ok(wd, sub_ids):
+        return True
+    try:
+        import agents.agent_hold as _ah
+        return bool(_ah.job_finished(wd, data, check_parent=False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _split_parent_stop_if_finished(job_id: str, where: str = "") -> bool:
+    """True = parent đã xong → log + gỡ parent khỏi hàng đợi (người gọi dừng vòng part)."""
+    if not _split_parent_finished(job_id):
+        return False
+    print(f"[auto-split] {job_id}: parent ĐÃ ghép Full — dừng vòng part"
+          + (f" ({where})" if where else "") + ", gỡ khỏi hàng đợi, không chạy lại part.", flush=True)
+    try:
+        job_queue.queue_remove([job_id])
+    except Exception as e:  # noqa: BLE001
+        print(f"[auto-split] {job_id}: gỡ hàng đợi lỗi: {e}", flush=True)
+    return True
+
+
+def _force_consumed(work_dir: Path, requested_at: float | None, artifact: str = "asr.json") -> bool:
+    """Lệnh force cũ: artifact đã được tạo lại SAU lúc ra lệnh → không ép lần nữa."""
+    if not requested_at:
+        return False
+    try:
+        return (Path(work_dir) / artifact).stat().st_mtime > float(requested_at)
+    except OSError:
+        return False
 
 
 # fix 2026-11-13 agentM (60892cc63cb7_p01): trước đây part 1 park waiting_review → vòng auto-split chạy
@@ -1762,6 +1858,17 @@ def _auto_pipeline(job_id: str, audio_mode: str, voice_vol: float, orig_vol: flo
             _release_stage(job_id, "__all__")
 
 
+def _translate_gate_action(wd: Path, n_miss: int, gap: int) -> str:
+    """fix 2026-11-11 translate-b2: hỏi translate.post_translate_gate_action (import lúc gọi —
+    hợp với reload translate). Lỗi import/gọi → "translate" (hành vi cũ)."""
+    try:
+        from engines.translate import post_translate_gate_action
+        return str(post_translate_gate_action(wd, n_miss, gap) or "translate")
+    except Exception as e:  # noqa: BLE001
+        print(f"[auto] gate dịch lỗi ({e}) → đường cũ", flush=True)
+        return "translate" if (n_miss > 0 or gap > 0) else "ok"
+
+
 def _run_requested_review(wd: Path, target: str) -> dict | None:
     """Rà soát do Agent/user yêu cầu (manifest.agent.review_request): rà tên nhân vật theo bảng
     rồi rà văn phong toàn bộ. Chạy 1 lần/yêu cầu; None nếu không có yêu cầu đang chờ."""
@@ -1843,6 +1950,101 @@ _REVIEW_RETRY_SEC = float(os.getenv("QUEUE_REVIEW_RETRY_SEC", "300") or 300)
 _REVIEW_RETRY_MAX = int(os.getenv("QUEUE_REVIEW_RETRY_MAX", "3") or 3)
 
 
+def _fill_pending_park_on() -> bool:
+    """fix 2026-11-12 translate-b3 (D1): FILL_PENDING_PARK (mặc định 0 = như cũ: dừng «dịch CHƯA XONG»
+    chờ người). 1 = câu NMT sót vá cloud thất bại (fill_pending=1) → park waiting_review như B2
+    (tự thử lại sau QUEUE_REVIEW_RETRY_SEC, tối đa QUEUE_REVIEW_RETRY_MAX lượt)."""
+    try:
+        from core.config import get as _cfg_get_fp
+        v = _cfg_get_fp("FILL_PENDING_PARK", "0")
+    except Exception:  # noqa: BLE001
+        v = os.getenv("FILL_PENDING_PARK", "0")
+    return str(v or "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _n_fill_pending_rows(rows) -> int:
+    """Số câu VI trống mang fill_pending=1 (vá cloud thất bại ở translate-b2)."""
+    if not isinstance(rows, list):
+        return 0
+    return sum(
+        1 for r in rows
+        if isinstance(r, dict) and r.get("fill_pending") and not (r.get("vi") or "").strip()
+    )
+
+
+def _n_fill_pending(wd: Path) -> int:
+    try:
+        return _n_fill_pending_rows(json.loads((wd / "script.json").read_text(encoding="utf-8")))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _park_fill_pending(wd: Path, job_id: str, n_miss: int, gap: int) -> bool:
+    """translate-b3 D1: True = đã park waiting_review (caller return). Chỉ khi cờ bật, còn câu
+    fill_pending và cổng là «review_fill» (NMT primary + REVIEW cloud) — TRANSLATE_FILL_MODEL=local
+    / coverage gap / cấu hình cũ → False (giữ đường cũ, gemma vá như trước)."""
+    if not _fill_pending_park_on():
+        return False
+    n_fp = _n_fill_pending(wd)
+    if n_fp <= 0 or gap > 0:
+        return False
+    if _translate_gate_action(wd, n_miss, gap) != "review_fill":
+        return False
+    try:
+        m_fp = Manifest(wd)
+        tr = m_fp.data.setdefault("stages", {}).setdefault("translate", {})
+        why_fp = f"còn {n_fp} câu VI trống (cloud vá lỗi)"
+        tr.update({
+            "status": "pending",
+            "n_missing": max(0, int(n_miss)),
+            "cur_text": f"soát dở — {why_fp}, tự thử lại sau {int(_REVIEW_RETRY_SEC)}s",
+            "updated_at": time.time(),
+        })
+        m_fp.data["stages"]["translate"] = tr
+        tts = m_fp.data.setdefault("stages", {}).setdefault("tts", {})
+        if tts.get("status") == "running":
+            tts["status"] = "pending"
+            tts["cur_text"] = "chờ vá câu trống"
+        agent_fp = dict(m_fp.data.get("agent") or {})
+        agent_fp["held_at"] = "waiting_review"
+        agent_fp["hold_reason"] = f"soát dở — {why_fp}"
+        n_try = int(agent_fp.get("review_retries") or 0) + 1
+        agent_fp["review_retries"] = n_try
+        if n_try > _REVIEW_RETRY_MAX:
+            agent_fp["held_at"] = "review_failed"
+            agent_fp["hold_after_translate"] = True
+            agent_fp["hold_reason"] = (
+                f"vá câu trống thất bại {n_try - 1} lượt — {why_fp}, cần người xem"
+            )
+            agent_fp.pop("review_retry_at", None)
+        else:
+            agent_fp["review_retry_at"] = time.time() + _REVIEW_RETRY_SEC
+        m_fp.data["agent"] = agent_fp
+        m_fp.save()
+        print(
+            f"[auto] {job_id}: {why_fp} — PARK waiting_review (lượt {n_try}/{_REVIEW_RETRY_MAX}), "
+            "không dừng chờ người",
+            flush=True,
+        )
+        return True
+    except Exception as e_fp:  # noqa: BLE001
+        print(f"[auto] {job_id}: park fill_pending lỗi ({e_fp}) → đường cũ", flush=True)
+        return False
+
+
+def _hs_ocr_prefetch(wd: Path) -> None:
+    """fix 2026-11-14: SIMPLE_ZH_SOURCE bật + luồng simple → mở OCR hardsub NỀN (hs_ocr_fast) song song
+    Demucs/ASR; bước dịch lấy kết quả. Lỗi bất kỳ → bỏ qua (dịch vẫn chạy bằng ASR)."""
+    try:
+        from engines.translate_simple import cfg as _ts_cfg
+        if not _ts_cfg.zh_source() or _ts_cfg.zh_ocr_mode() != "full" or not _translate_pipeline_simple(wd):
+            return
+        import engines.hs_ocr_fast as hs_ocr_fast
+        hs_ocr_fast.start_background(wd)
+    except Exception as e_hs:  # noqa: BLE001
+        print(f"[hs_ocr] mở OCR nền lỗi ({e_hs}) — bỏ qua", flush=True)
+
+
 def _translate_pipeline_simple(wd: Path | None = None, *, fresh: bool = False) -> bool:
     """translate-simple: True → luồng dịch mới (translate_simple.pipeline.run) thay cặp
     run_translate + run_review + cổng vá.
@@ -1874,6 +2076,37 @@ def _auto_translate_simple(wd: Path, job_id: str, target: str) -> bool:
     except Exception as e_s:  # noqa: BLE001
         if "stopped by user" in str(e_s).lower() or job_id in _STOP_JOBS:
             raise _Stopped(job_id) from e_s
+        import traceback
+        tb = getattr(e_s, "_simple_traceback", None) or traceback.format_exc()
+        is_code = bool(getattr(e_s, "_simple_code_error", False)) or isinstance(
+            e_s, (TypeError, AttributeError, KeyError, NameError, ImportError,
+                  AssertionError, SyntaxError))
+        if is_code:
+            # R1.3: lỗi CODE → HOLD ngay (không park 3×5 phút), giữ traceback
+            print(f"[auto] {job_id}: dịch simple LỖI CODE: {type(e_s).__name__}: {e_s} → HOLD",
+                  flush=True)
+            print(tb[-1500:], flush=True)
+            why_code = f"lỗi CODE {type(e_s).__name__}: {e_s}"[:200]
+
+            def _fn_code(d):
+                ag = dict(d.get("agent") or {})
+                ag["held_at"] = "simple_code"
+                ag["hold_after_translate"] = True
+                ag["hold_reason"] = f"HOLD simple CODE — {why_code}"[:300]
+                for k in ("review_retries", "review_retry_at", "simple_park"):
+                    ag.pop(k, None)
+                d["agent"] = ag
+                stg = d.setdefault("stages", {}).setdefault("translate", {})
+                stg["status"] = "pending"
+                stg["cur_text"] = f"HOLD simple CODE — {why_code}"[:150]
+                stg["last_error"] = tb[:2000]
+                stg["error_kind"] = "code"
+                stg["updated_at"] = time.time()
+            try:
+                Manifest(wd).update(_fn_code)
+            except Exception as e_m:  # noqa: BLE001
+                print(f"[auto] {job_id}: stamp simple_code: {e_m}", flush=True)
+            return False
         print(f"[auto] {job_id}: dịch simple lỗi: {e_s} → park waiting_review", flush=True)
         res = {"status": "park", "gate": {"reasons": [f"lỗi: {str(e_s)[:120]}"]}}
     st = str(res.get("status") or "park")
@@ -1882,7 +2115,7 @@ def _auto_translate_simple(wd: Path, job_id: str, target: str) -> bool:
     def _fn(d):
         ag = dict(d.get("agent") or {})
         if st == "done" or (st == "hold" and ag.get("qa_override")):
-            if ag.get("held_at") in ("waiting_review", "simple_gate"):
+            if ag.get("held_at") in ("waiting_review", "simple_gate", "simple_code"):
                 ag.pop("held_at", None)
             for k in ("review_retries", "review_retry_at", "simple_park"):
                 ag.pop(k, None)
@@ -1926,7 +2159,8 @@ def _auto_translate_simple(wd: Path, job_id: str, target: str) -> bool:
 def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
               orig_vol: float, use_ocr: bool, fit: bool = True,
               resolution: str = "source", translate_mode: str | None = None,
-              render_kw: dict | None = None, asr_engine: str | None = None):
+              render_kw: dict | None = None, asr_engine: str | None = None,
+              abort_if=None):
     """Phần GPU của 1-click (hàng _gpu, tuần tự): ASR -> Dịch -> TTS -> [Tách nền]
     -> [OCR] -> Render. Mỗi engine tự SKIP nếu đã xong -> resume được. Kiểm tra cờ
     Dừng giữa các bước."""
@@ -1934,7 +2168,16 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
     rkw = dict(render_kw or {})
 
     def stopped() -> bool:
-        return job_id in _STOP_JOBS
+        if job_id in _STOP_JOBS:
+            return True
+        if abort_if is not None:   # agentS: vòng part — parent đã ghép Full → dừng trước stage kế
+            try:
+                if abort_if():
+                    print(f"[auto] {job_id}: parent đã ghép Full — dừng, không chạy stage kế", flush=True)
+                    return True
+            except Exception:  # noqa: BLE001
+                return False
+        return False
 
     try:
         if stopped():
@@ -1946,6 +2189,7 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
                 flush=True,
             )
             return
+        _hs_ocr_prefetch(wd)
         free_gpu_vram("trước ASR — nhường GPU")
         # ASR trực tiếp từ audio gốc — không ép Demucs để tránh cắt nuốt chữ / méo tiếng trên audio dài
         asr_eng = _resolve_asr_engine(wd, asr_engine)
@@ -1970,14 +2214,33 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
         n_miss = count_script_missing(wd)
         gap = translate_coverage_gap(wd)
         if (n_miss > 0 or gap > 0) and not _simple:
-            print(f"[auto] {job_id}: dịch còn miss={n_miss} gap={gap} -> vá lô nhỏ")
-            try:
-                run_translate(wd, batch=25, target=target, mode="batch")
-            except Exception as e_tr2:  # noqa: BLE001
-                if "stopped by user" in str(e_tr2).lower() or stopped():
-                    print(f"[auto] {job_id}: DỪNG lúc vá dịch — không nhảy TTS", flush=True)
-                    raise _Stopped(job_id) from e_tr2
-                raise
+            # fix 2026-11-11 translate-b2: cấu hình NMT primary + REVIEW cloud, chỉ còn câu trống
+            # → KHÔNG gọi lại run_translate (đường gemma); REVIEW bước 0 vá bằng rmodel cloud.
+            # Coverage gap thật (thiếu dòng so ASR) / cấu hình cũ → như trước.
+            _act = _translate_gate_action(wd, n_miss, gap)
+            if _act == "review_fill":
+                print(
+                    f"[auto] {job_id}: dịch còn miss={n_miss} (NMT primary + REVIEW cloud) "
+                    f"-> REVIEW bước 0 vá bằng cloud, không gọi lại dịch local",
+                    flush=True,
+                )
+                try:
+                    from engines.translate import run_review as _fill_review
+                    _fill_review(wd, target=target, force=False)
+                except Exception as e_fill:  # noqa: BLE001
+                    if "stopped by user" in str(e_fill).lower() or stopped():
+                        print(f"[auto] {job_id}: DỪNG lúc vá câu trống — không nhảy TTS", flush=True)
+                        raise _Stopped(job_id) from e_fill
+                    print(f"[auto] {job_id}: REVIEW vá câu trống lỗi: {e_fill}", flush=True)
+            else:
+                print(f"[auto] {job_id}: dịch còn miss={n_miss} gap={gap} -> vá lô nhỏ")
+                try:
+                    run_translate(wd, batch=25, target=target, mode="batch")
+                except Exception as e_tr2:  # noqa: BLE001
+                    if "stopped by user" in str(e_tr2).lower() or stopped():
+                        print(f"[auto] {job_id}: DỪNG lúc vá dịch — không nhảy TTS", flush=True)
+                        raise _Stopped(job_id) from e_tr2
+                    raise
             n_miss = count_script_missing(wd)
             gap = translate_coverage_gap(wd)
         # Soát dở (còn câu chưa rv) → không TTS khi AUTO_REVIEW bật
@@ -2057,7 +2320,8 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
                         print(f"[auto] {job_id}: stamp review-incomplete: {e_pend}", flush=True)
                     return
             # Soát xong (unrev=0) → gỡ waiting_review để tiếp TTS
-            if n_unrev == 0:
+            # translate-b3 D1: còn câu fill_pending (FILL_PENDING_PARK=1) → giữ bộ đếm lượt thử
+            if n_unrev == 0 and not (_fill_pending_park_on() and _n_fill_pending(wd) > 0):
                 try:
                     m_clr = Manifest(wd)
                     ag_clr = dict(m_clr.data.get("agent") or {})
@@ -2073,6 +2337,8 @@ def _auto_gpu(job_id: str, target: str, audio_mode: str, voice_vol: float,
                 except Exception:  # noqa: BLE001
                     pass
         ready, why = translate_ready_for_tts(wd)
+        if not ready and _park_fill_pending(wd, job_id, n_miss, gap):
+            return  # translate-b3 D1: park waiting_review, queue tự thử lại (không chờ người)
         if not ready:
             # TRƯỚC: «TTS sẽ bỏ qua câu thiếu» → nhảy TTS với script dở (vd 398/2698)
             print(f"[auto] {job_id}: dịch CHƯA XONG ({why}) — DỪNG, không TTS/mux")
@@ -3570,7 +3836,7 @@ def start_job(job_id: str):
 
 def _run_stage(job_id: str, stage: str, target: str, force: bool,
                voice: str | None = None, speed: float | None = None,
-               engine: str | None = None):
+               engine: str | None = None, requested_at: float | None = None):
     """Chạy ĐÚNG 1 bước (người dùng tự chọn). download -> hàng _dl; còn lại -> _gpu."""
     work_dir = WORK_ROOT / job_id
     _clear_stop(job_id)          # bắt đầu chạy -> xoá cờ dừng cũ
@@ -3602,9 +3868,15 @@ def _run_stage(job_id: str, stage: str, target: str, force: bool,
                     from engines.split_parts import probe_duration
                     dur = probe_duration(v_cand)
 
-            if dur >= 3.0 * 3600.0 and not is_subjob:
+            # agentS: parent đã chia part (split_info) → luôn đi nhánh part, kể cả khi thiếu duration_sec
+            is_split_parent = len((m.data.get("split_info") or {}).get("sub_job_ids") or []) >= 2
+            if (dur >= 3.0 * 3600.0 or is_split_parent) and not is_subjob:
                 from engines.split_parts import split_job_to_subjobs, merge_subjob_asr_to_parent
-                sp_res = split_job_to_subjobs(job_id)
+                # agentS: lệnh nằm hàng _gpu lâu — lúc chạy parent đã ghép Full → bỏ (không cắt/ASR lại)
+                if _split_parent_stop_if_finished(job_id, "lệnh ASR parent tới lượt"):
+                    return
+                # agentS: split_job_to_subjobs DÙNG LẠI part đúng kế hoạch (không cắt lại / reset stage)
+                sp_res = split_job_to_subjobs(job_id, work_root=WORK_ROOT)
                 sub_ids = sp_res.get("sub_job_ids") or []
                 if sub_ids:
                     print(f"[stage asr] Video dài {dur/3600:.2f}h: tự động chạy ASR ({asr_eng}) theo {len(sub_ids)} part...", flush=True)
@@ -3618,9 +3890,26 @@ def _run_stage(job_id: str, stage: str, target: str, force: bool,
                     for sid in sub_ids:
                         if _check_stopped(job_id):
                             raise _Stopped()
-                        _run_stage(sid, "asr", target=target, force=force, engine=asr_eng)
-                    merge_subjob_asr_to_parent(job_id)
+                        if _split_parent_stop_if_finished(job_id, f"trước ASR {sid}"):
+                            return
+                        swd = WORK_ROOT / sid
+                        if _part_pipeline_complete(swd):
+                            # force ở PARENT không lan xuống part đã mux (muốn ASR lại: force trực tiếp part)
+                            print(f"[stage asr] {sid}: part đã mux xong — bỏ qua (force parent không áp)",
+                                  flush=True)
+                            continue
+                        f_part = bool(force) and not _force_consumed(swd, requested_at)
+                        _run_stage(sid, "asr", target=target, force=f_part, engine=asr_eng,
+                                   requested_at=requested_at)
+                    if _split_parent_stop_if_finished(job_id, "sau ASR part"):
+                        return
+                    merge_subjob_asr_to_parent(job_id, work_root=WORK_ROOT)
                     return
+
+            if force and _force_consumed(work_dir, requested_at):
+                print(f"[stage asr] {job_id}: asr.json mới hơn lệnh force — force đã tiêu thụ, không ép lại",
+                      flush=True)
+                force = False
 
             _run_engine(_asr_script(asr_eng), work_dir, *(["--force"] if force else []))
         elif stage == "translate":
@@ -4166,12 +4455,14 @@ def run_stage(job_id: str, stage: str, force: bool = False, voice: str | None = 
         pass
     _clear_stop(job_id)
 
+    req_at = time.time()   # agentS: force «dùng một lần» — so artifact với lúc ra lệnh
+
     def _wrapped():
         try:
             if job_id in _STOP_JOBS:
                 print(f"[stage] {job_id}/{stage}: đã DỪNG — bỏ qua")
                 return
-            _run_stage(job_id, stage, target, force, voice, speed, engine)
+            _run_stage(job_id, stage, target, force, voice, speed, engine, requested_at=req_at)
         except _Stopped:
             print(f"[stage] {job_id}/{stage}: đã DỪNG theo yêu cầu")
         finally:
@@ -4277,6 +4568,13 @@ def translate_fill(job_id: str, request: Request = None):
         return JSONResponse({"error": f"đọc script.json lỗi: {e}"}, status_code=400)
     if n_miss <= 0:
         return {"started": False, "n_missing": 0, "msg": "không còn câu trống"}
+    seat_block = _queue_seat_blocks(job_id)
+    if seat_block:
+        return JSONResponse(
+            {"error": f"ghế đang chạy job khác ({seat_block}) — chờ xong hoặc Stop job đó rồi vá",
+             "n_missing": n_miss, "blocked_by_seat": True},
+            status_code=409,
+        )
     busy = _busy_response(job_id, work_dir)
     if busy:
         return busy
@@ -4285,14 +4583,18 @@ def translate_fill(job_id: str, request: Request = None):
     _manual_hold_override(request, job_id, "translate", "translate_fill")
     try:
         m = Manifest(work_dir)
-
-        def _mark(d):
-            st = d.setdefault("stages", {}).setdefault("translate", {})
-            st.update({"status": "running", "n_missing": n_miss,
-                       "cur_text": f"vá {n_miss} câu trống…"})
-        m.update(_mark)
-        _job_cache.pop(str(work_dir), None)
         target = m.data.get("request", {}).get("target", "Tiếng Việt")
+        # Chưa đánh running — chỉ khi worker _gpu thật sự bắt đầu (tránh ghost cam).
+        def _mark_queued(d):
+            st = d.setdefault("stages", {}).setdefault("translate", {})
+            st.update({
+                "status": "pending",
+                "n_missing": n_miss,
+                "cur_text": f"xếp hàng vá {n_miss} câu trống…",
+                "updated_at": time.time(),
+            })
+        m.update(_mark_queued)
+        _job_cache.pop(str(work_dir), None)
         _clear_stop(job_id)
     except Exception:
         _release_stage(job_id, "translate")
@@ -4302,6 +4604,35 @@ def translate_fill(job_id: str, request: Request = None):
 
     def _run():
         try:
+            # Đôi phòng: ghế đổi / Stop trong lúc chờ _gpu
+            again = _queue_seat_blocks(job_id)
+            if again:
+                print(f"[translate-fill] {job_id}: bỏ — {again}", flush=True)
+                try:
+                    Manifest(work_dir).update(lambda d: d.setdefault("stages", {}).setdefault(
+                        "translate", {}).update({
+                            "status": "pending",
+                            "cur_text": f"chờ ghế ({again})",
+                            "n_missing": n_miss,
+                            "updated_at": time.time(),
+                        }) or True)
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+            if job_id in _STOP_JOBS or (work_dir / ".stop").exists():
+                print(f"[translate-fill] {job_id}: đã DỪNG — bỏ qua", flush=True)
+                return
+            try:
+                Manifest(work_dir).update(lambda d: d.setdefault("stages", {}).setdefault(
+                    "translate", {}).update({
+                        "status": "running",
+                        "n_missing": n_miss,
+                        "cur_text": f"vá {n_miss} câu trống…",
+                        "updated_at": time.time(),
+                    }) or True)
+                _job_cache.pop(str(work_dir), None)
+            except Exception as e_mk:  # noqa: BLE001
+                print(f"[translate-fill] {job_id}: mark running lỗi: {e_mk}", flush=True)
             if _simple_fill:
                 # luồng simple: không force → chỉ nháp NMT câu trống + soát + cổng (giữ câu đã có)
                 _simple_translate_run(work_dir, target)
@@ -4315,7 +4646,8 @@ def translate_fill(job_id: str, request: Request = None):
         finally:
             _release_stage(job_id, "translate")
     _gpu.submit(_run)
-    return {"started": True, "n_missing": n_miss, "pipeline": "simple" if _simple_fill else "legacy"}
+    return {"started": True, "n_missing": n_miss, "pipeline": "simple" if _simple_fill else "legacy",
+            "queued": True}
 
 
 @app.post("/api/jobs/{job_id}/script-line")
@@ -4670,6 +5002,11 @@ def _queue_run_one(job_id: str, opts: dict) -> tuple[str, str]:
 
     try:
         early = _next_incomplete_stage(work_dir) or "mux"
+        try:   # agentS: parent split không tự ASR — «asr failed» trên parent làm Brain ép ASR (60892)
+            if len((Manifest(work_dir).data.get("split_info") or {}).get("sub_job_ids") or []) >= 2:
+                early = "mux"
+        except Exception:  # noqa: BLE001
+            pass
         Manifest(work_dir).mark_running(early)
     except Exception:  # noqa: BLE001
         pass
@@ -5170,11 +5507,11 @@ def _context_studio_input(work_dir: Path) -> Path | None:
 
 def _do_context_studio(work_dir: Path, use_llm: bool = True) -> dict:
     """Chạy PRE-SCAN → ghi pack vào work_dir."""
-    from context_studio.analyzer import analyze, summarize
-    from context_studio.character_mapper import enrich_characters, validate_pronouns
-    from context_studio.exporter import write_pack
-    from context_studio.schema import scan_number_flags
-    from context_studio.srt_io import load_segments
+    from tools.context_studio.analyzer import analyze, summarize
+    from tools.context_studio.character_mapper import enrich_characters, validate_pronouns
+    from tools.context_studio.exporter import write_pack
+    from tools.context_studio.schema import scan_number_flags
+    from tools.context_studio.srt_io import load_segments
 
     m = Manifest(work_dir)
     st = m.data.setdefault("stages", {}).setdefault("context_studio", {})
@@ -6408,6 +6745,13 @@ def retranslate_job(job_id: str, req: TranslateReq, request: Request = None):
     elif not (work_dir / "asr.json").exists():
         return JSONResponse({"error": "chưa có asr.json (nhận diện trước)"}, status_code=400)
     target = Manifest(work_dir).data.get("request", {}).get("target", "Tiếng Việt")
+    seat_block = _queue_seat_blocks(job_id)
+    if seat_block:
+        return JSONResponse(
+            {"error": f"ghế đang chạy job khác ({seat_block}) — chờ xong hoặc Stop job đó rồi dịch",
+             "blocked_by_seat": True},
+            status_code=409,
+        )
     busy = _busy_response(job_id, work_dir)
     if busy:
         return busy
@@ -6716,8 +7060,10 @@ def _queue_park_ready(job_id: str) -> bool:
             )
         except Exception:  # noqa: BLE001
             return False
-        if unrev == 0 and not agent.get("simple_park"):   # translate-simple: park simple chờ review_retry_at
+        if unrev == 0 and not (_fill_pending_park_on() and _n_fill_pending_rows(rows) > 0) \
+                and not agent.get("simple_park"):   # translate-simple: park simple chờ review_retry_at
             return True
+        # translate-b3 D1: còn câu fill_pending → chờ tới hạn review_retry_at như B2 (không lặp nóng)
         # fix 2026-11-11 B2: tới hạn thử lại → chạy lại cùng job (REVIEW trong ghế), không treo hàng đợi
         try:
             due = float(agent.get("review_retry_at") or 0)

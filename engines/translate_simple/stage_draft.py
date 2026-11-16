@@ -37,6 +37,145 @@ def _series_plan(work_dir: Path) -> dict | None:
         return None
 
 
+def _plan_usable(plan) -> bool:
+    """R1.2: glossary rỗng / plan_status=failed → không reuse (phải lập lại)."""
+    if not isinstance(plan, dict):
+        return False
+    if str(plan.get("plan_status") or "").lower() == "failed":
+        return False
+    chars = plan.get("characters") or []
+    pronouns = plan.get("pronouns") or []
+    terms = plan.get("terms") or []
+    if chars or pronouns or terms:
+        return True
+    # plan «ok» có chủ đích trống (phim không nhân vật) — hiếm; cho reuse nếu đánh dấu
+    return str(plan.get("plan_status") or "").lower() == "ok"
+
+
+def build_full_movie_plan(
+    work_dir: Path,
+    segments: list[dict],
+    target: str = "Tiếng Việt",
+    *,
+    model: str | None = None,
+    name_hints: list[str] | None = None,
+    series_plan: dict | None = None,
+) -> dict | None:
+    """A7: Lập glossary toàn phim bằng cách đưa toàn bộ text thoại ASR vào LLM context lớn.
+
+    Tận dụng DeepSeek/Aurora/Qwen với context window lớn:
+    - Đọc xuyên suốt toàn bộ phim để nhận diện đầy đủ nhân vật, vai trò, quan hệ xưng hô và bối cảnh.
+    - Giới hạn text sạch ~26.000 ký tự để vừa vặn ngưỡng prompt mà không bị lỗi length/payload.
+    - Trả về dict chuẩn schema glossary.json (characters, pronouns, terms, summary, style_lock).
+    """
+    valid_segs = [s for s in segments if (s.get("text") or "").strip()]
+    if len(valid_segs) < 5:
+        return None
+
+    texts = [(s.get("text") or "").strip() for s in valid_segs]
+    total_len = sum(len(t) for t in texts)
+    max_chars = 26000
+
+    if total_len <= max_chars:
+        full_text = " ".join(texts)
+    else:
+        # Lấy mẫu dày đều từ đầu đến cuối phim để bảo toàn 100% dòng thời gian
+        n_segs = len(texts)
+        target_count = max(10, int(n_segs * (max_chars / total_len) * 0.95))
+        indices = [int(round(k * (n_segs - 1) / max(1, target_count - 1))) for k in range(target_count)]
+        indices = sorted(list(dict.fromkeys(indices)))
+        sampled = []
+        cur_chars = 0
+        for idx in indices:
+            t = texts[idx]
+            if cur_chars + len(t) + 1 > max_chars:
+                break
+            sampled.append(t)
+            cur_chars += len(t) + 1
+        full_text = " ".join(sampled)
+
+    import engines.translate as T
+    seed = T._plan_seed_blocks(name_hints, series_plan, soft_ocr=True)
+
+    sys_prompt = (
+        "Bạn là Chuyên gia Cao Cấp phân tích kịch bản và ngôn ngữ phim Trung Quốc, chuẩn bị phương án dịch "
+        f"và lồng tiếng sang {target}.\n"
+        "Nhiệm vụ của bạn là ĐỌC TOÀN BỘ thoại ASR của cả bộ phim và lập HỒ SƠ PHIM TOÀN DIỆN (bảng nhân vật, "
+        "mối quan hệ xưng hô thực tế, thuật ngữ, bối cảnh xuyên suốt).\n"
+        "CHỈ trả về DUY NHẤT một JSON object hợp lệ, không bọc markdown, không thêm bất kỳ văn bản nào ngoài JSON."
+    )
+    user_prompt = (
+        f"Dưới đây là TOÀN BỘ thoại tiếng Trung (ASR) của cả bộ phim:\n\"\"\"{full_text}\"\"\"\n\n"
+        f"{seed}\n\n"
+        "Hãy phân tích toàn bộ câu chuyện và trả về JSON với cấu trúc chuẩn sau:\n"
+        "{\n"
+        '  "summary": "Tóm tắt ngắn gọn cốt truyện chính và bối cảnh toàn phim (3-5 câu)",\n'
+        '  "genre": "thể loại phim (ví dụ: Đô thị, Tu tiên, Tổng tài, Cổ trang...)",\n'
+        '  "tone": "văn phong chủ đạo (ví dụ: Hài hước, Kịch tính, Trầm lắng...)",\n'
+        '  "characters": [\n'
+        '    {\n'
+        '      "zh": "tên tiếng Trung trong thoại",\n'
+        '      "vi": "tên Hán-Việt chuẩn",\n'
+        '      "gender": "nam | nữ",\n'
+        '      "role": "vai trò / chức vụ / thân phận / quan hệ",\n'
+        '      "aliases": ["tên gọi khác hoặc lỗi đồng âm ASR bị nghe nhầm sang"]\n'
+        '    }\n'
+        '  ],\n'
+        '  "pronouns": [\n'
+        '    {\n'
+        '      "who": "tên VI người nói",\n'
+        '      "to": "tên VI người nghe",\n'
+        '      "self": "tự xưng (ví dụ: anh, tôi, muội...)",\n'
+        '      "call": "cách gọi đối phương (ví dụ: em, cô, sư huynh...)",\n'
+        '      "note": "ngữ cảnh / thái độ"\n'
+        '    }\n'
+        '  ],\n'
+        '  "terms": [\n'
+        '    {\n'
+        '      "zh": "từ tiếng Trung",\n'
+        '      "vi": "nghĩa Hán-Việt hoặc bản dịch chuẩn",\n'
+        '      "type": "place | org | title | skill | object"\n'
+        '    }\n'
+        '  ],\n'
+        '  "style_lock": {\n'
+        '    "mode": "modern | ancient | mixed",\n'
+        '    "pronoun_policy": "quy tắc xưng hô chung của phim"\n'
+        '  }\n'
+        "}"
+    )
+
+    from .stage_review import _decode
+    import engines.cloud_retry as cloud_retry
+    from engines.llm import chat
+
+    def _call():
+        out = chat(
+            [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
+            model=model,
+            temperature=cfg.temperature(),
+            json_mode=True,
+            max_tokens=cfg.max_tokens(),
+            timeout=max(cfg.timeout(), 420),
+        )
+        return _decode(out)
+
+    try:
+        data = cloud_retry.call_with_cloud_retry(
+            _call,
+            model=model,
+            label="[simple-plan-a7]",
+            what=f"plan cả phim ({len(valid_segs)} câu ASR)",
+            cfg_get=cfg.get,
+        )
+        if isinstance(data, dict) and (data.get("characters") or data.get("terms") or data.get("pronouns")):
+            data.setdefault("plan_status", "ok")
+            data.setdefault("plan_source", "full_movie_asr")
+            return data
+    except Exception as e:
+        print(f"[simple-plan] A7 full-movie plan lỗi ({e})", flush=True)
+    return None
+
+
 def build_plan(work_dir: Path, segments: list[dict], target: str, *, force: bool = False) -> dict:
     import engines.translate as T
     from core.fileio import atomic_write_json
@@ -45,8 +184,9 @@ def build_plan(work_dir: Path, segments: list[dict], target: str, *, force: bool
     skip_plan = bool((_load_json(work_dir / "context_pack.json") or {}).get("skip_plan"))
     plan = None
     if plan_path.exists() and (not force or skip_plan):
-        plan = _load_json(plan_path)
-        if isinstance(plan, dict):
+        loaded = _load_json(plan_path)
+        if _plan_usable(loaded):
+            plan = loaded
             print("[simple-plan] dùng lại glossary.json có sẵn", flush=True)
             if skip_plan:
                 try:
@@ -55,44 +195,50 @@ def build_plan(work_dir: Path, segments: list[dict], target: str, *, force: bool
                 except Exception:  # noqa: BLE001
                     pass
         else:
+            print("[simple-plan] glossary.json rỗng/failed — lập lại plan", flush=True)
             plan = None
     if plan is None:
         try:
-            _bp_kw = {}
-            try:  # V5 port: engines.translate.build_plan của V5 chưa có tham số before_local_llm (translate-b2)
-                import inspect as _insp
-                if "before_local_llm" in _insp.signature(T.build_plan).parameters:
-                    _bp_kw["before_local_llm"] = None  # simple: KHÔNG đổi preset local
-            except (TypeError, ValueError):
-                pass
+            pm_fn = getattr(cfg, "plan_model", None)
+            plan_m = pm_fn(work_dir) if callable(pm_fn) else None
             plan = T.build_plan(
-                segments, target=target, model=None,
+                segments, target=target, model=plan_m,
                 name_hints=T._ocr_name_hints(work_dir) or None,
                 series_plan=_series_plan(work_dir), work_dir=work_dir,
-                **_bp_kw,
+                before_local_llm=None,  # simple: KHÔNG đổi preset local
             )
+            if isinstance(plan, dict):
+                plan.setdefault("plan_status", "ok")
             # review 2026-11-12: ghi plan vừa lập TRƯỚC save_from (như run_translate cũ) — trước đây
             # save_from đọc glossary.json chưa tồn tại / cũ → bảng bộ không học được tập mới.
             atomic_write_json(plan_path, plan, fsync=False)
         except Exception as e:  # noqa: BLE001
-            print(f"[simple-plan] LỖI lập plan ({e}) → dịch không có bảng nhân vật", flush=True)
+            print(f"[simple-plan] LỖI lập plan ({e}) → không ghi glossary.json rỗng (R1.2)", flush=True)
             plan = {"content_type": "", "genre": "", "tone": "", "characters": [], "terms": [],
-                    "pronouns": [], "scenes": [], "pronoun_notes": ""}
+                    "pronouns": [], "scenes": [], "pronoun_notes": "",
+                    "plan_status": "failed", "plan_error": str(e)[:300]}
+            try:
+                atomic_write_json(work_dir / "glossary.plan_failed.json", plan, fsync=False)
+            except Exception:  # noqa: BLE001
+                pass
     try:
         import engines.series_glossary as series_glossary
         plan = series_glossary.apply(work_dir, plan)
-        series_glossary.save_from(work_dir, reason="cập nhật plan tập mới (simple)")
+        if _plan_usable(plan):
+            series_glossary.save_from(work_dir, reason="cập nhật plan tập mới (simple)")
     except Exception as e:  # noqa: BLE001
         print(f"[simple-plan] bảng bộ: {e}", flush=True)
     plan = T.ensure_hard_terms(plan)
-    if cfg.pronoun_analyze():
+    if cfg.pronoun_analyze() and _plan_usable(plan):
         try:
             from engines.pronoun_consistency import ensure_analyze_before_translate
             plan, _pa = ensure_analyze_before_translate(work_dir, plan, segments=segments, force=False)
             plan = T.ensure_hard_terms(plan)
         except Exception as e:  # noqa: BLE001
             print(f"[simple-plan] pronoun-analyze bỏ qua: {e}", flush=True)
-    atomic_write_json(plan_path, plan, fsync=False)
+    # R1.2: chỉ ghi glossary.json khi plan dùng được (tránh khoá lần sau vào bản rỗng)
+    if _plan_usable(plan):
+        atomic_write_json(plan_path, plan, fsync=False)
     sl = plan.get("style_lock") if isinstance(plan, dict) else None
     if isinstance(sl, dict):
         atomic_write_json(work_dir / "style_lock.json", sl, fsync=False)
@@ -137,7 +283,16 @@ def run(store: ScriptStore, segments: list[dict], target: str, *, force: bool = 
     rows_snapshot = [dict(r) for r in store.rows]
     info: dict = {"parallel": not cfg.nmt_wait_plan()}
     t0 = time.time()
-    if cfg.nmt_wait_plan():
+    import engines.mt_zh_vi as mt_zh_vi
+    nmt_active = mt_zh_vi.enabled()
+    if not nmt_active:
+        print("[simple-draft] NMT tắt → DeepSeek dịch trực tiếp 100% từ tiếng Trung (zh)", flush=True)
+        plan = build_plan(wd, segments, target, force=force)
+        drafts = {}
+        info["t_plan"] = round(time.time() - t0, 2)
+        info["t_nmt"] = 0.0
+        info["parallel"] = False
+    elif cfg.nmt_wait_plan():
         plan = build_plan(wd, segments, target, force=force)
         info["t_plan"] = round(time.time() - t0, 2)
         drafts = nmt_drafts(rows_snapshot, plan)

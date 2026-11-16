@@ -126,17 +126,28 @@ def _hook_anchored_to_title(hook: str, title_vi: str) -> bool:
     return (hits / len(tokens)) >= 0.75
 
 
-def sanitize_hook_texts(hooks: list | None, title_vi: str = "", title_zh: str = "") -> list[str]:
-    """Loại hook sáo / trống / không neo tên phim; fallback tách từ tên phim."""
+def sanitize_hook_texts(
+    hooks: list | None,
+    title_vi: str = "",
+    title_zh: str = "",
+    *,
+    require_title_anchor: bool = True,
+) -> list[str]:
+    """Loại hook sáo / trống; mặc định neo tên phim. Concept/typography: tắt neo.
+
+    ``require_title_anchor=False`` dùng cho ``typography_direction.text_exact`` /
+    gợi ý concept (vd NHÃN DÁN / ĐỔI TƯƠNG LAI) — không ép về tên series.
+    """
     derived = hooks_from_series_title(title_vi, title_zh)
     cleaned: list[str] = []
     for h in (hooks or []):
         s = re.sub(r"\s+", " ", str(h or "").strip()).upper()
+        s = s.replace(" / ", " / ").strip(" /|")
         if not s or s in _CLICHE_HOOKS:
             continue
-        if title_vi and not _hook_anchored_to_title(s, title_vi):
+        if require_title_anchor and title_vi and not _hook_anchored_to_title(s, title_vi):
             continue
-        cleaned.append(s[:32])
+        cleaned.append(s[:40])
     if len(cleaned) >= 2:
         return cleaned[:2]
     if len(cleaned) == 1:
@@ -195,13 +206,21 @@ def build_master_image_prompt(
     badge_text: str = "NEW",
     sub_text: str = "",
     font_material: str = "",
+    trust_hooks: bool = False,
 ) -> str:
     """Prompt ảnh AI: scene + chữ 3D LATIN (không dấu) — giảm gen sai chữ Việt có dấu.
 
     Badge NEW/HOT. Hook/sub đã sanitize; bản nung ảnh = vi_to_image_latin(...).
+    ``trust_hooks=True``: giữ đúng 2 dòng hook đã chốt (concept/UI), không ép neo tên.
     """
     title = clean_series_name(title_vi or "", fallback=title_vi) or title_zh or "donghua"
-    hooks = sanitize_hook_texts(hook_texts, title_vi=title_vi or title, title_zh=title_zh)
+    if trust_hooks and hook_texts and len([h for h in hook_texts if str(h or "").strip()]) >= 2:
+        hooks = [
+            re.sub(r"\s+", " ", str(hook_texts[0] or "").strip()).upper()[:40],
+            re.sub(r"\s+", " ", str(hook_texts[1] or "").strip()).upper()[:40],
+        ]
+    else:
+        hooks = sanitize_hook_texts(hook_texts, title_vi=title_vi or title, title_zh=title_zh)
     badge = pick_badge_text(badge_text, title_vi=title_vi)
     sub = (sub_text or title).strip()[:48]
     moment = (story_moment or emotional_trigger or "decisive confrontation from the plot").strip()
@@ -247,19 +266,39 @@ def build_master_image_prompt(
 def finalize_thumb_meta_fields(
     data: dict, title_vi: str = "", title_zh: str = "", job_id: str = "",
 ) -> dict:
-    """Sanitize hook + badge NEW/HOT; dựng lại master_image_prompt (AI vẽ chữ, không Pillow)."""
+    """Sanitize hook + badge NEW/HOT; dựng lại master_image_prompt (AI vẽ chữ, không Pillow).
+
+    Ưu tiên ``typography_direction.text_exact`` từ concept (không ép neo tên phim) —
+    tránh khóa cứng hook = tên series khi AI chọn CTR khác (FATAL TAG…).
+    """
     if not isinstance(data, dict):
         return data
-    hooks = sanitize_hook_texts(data.get("hook_texts"), title_vi, title_zh)
+    concept = data.get("thumbnail_concept") if isinstance(data.get("thumbnail_concept"), dict) else {}
+    typo = data.get("typography_direction") if isinstance(data.get("typography_direction"), dict) else {}
+    exact = []
+    for o in (typo.get("text_exact") or []):
+        s = re.sub(r"\s+", " ", str(o or "").strip()).upper()
+        if s and s not in _CLICHE_HOOKS:
+            exact.append(s[:40])
+    if len(exact) >= 2:
+        hooks = sanitize_hook_texts(exact, title_vi, title_zh, require_title_anchor=False)
+        trust_hooks = True
+    else:
+        hooks = sanitize_hook_texts(data.get("hook_texts"), title_vi, title_zh)
+        trust_hooks = False
     data["hook_texts"] = hooks
     opts = []
     for o in (data.get("thumb_text_options") or []):
         s = re.sub(r"\s+", " ", str(o or "").strip()).upper()
         if s and s not in _CLICHE_HOOKS:
             opts.append(s[:40])
+    # Giữ text_exact / concept pills trước tên series
+    for s in exact:
+        if s not in opts:
+            opts.insert(0, s)
     if len(opts) < 2:
         opts = [f"{hooks[0]} {hooks[1]}".strip(), hooks[0], hooks[1]]
-    data["thumb_text_options"] = opts[:4]
+    data["thumb_text_options"] = opts[:6]
 
     sub = clean_series_name(str(data.get("sub_text") or title_vi or ""), fallback=title_vi or "")
     data["sub_text"] = (sub or hooks[0])[:48]
@@ -267,8 +306,6 @@ def finalize_thumb_meta_fields(
         data.get("badge_text"), job_id=job_id, title_vi=title_vi or sub,
     )
 
-    concept = data.get("thumbnail_concept") if isinstance(data.get("thumbnail_concept"), dict) else {}
-    typo = data.get("typography_direction") if isinstance(data.get("typography_direction"), dict) else {}
     data["master_image_prompt"] = build_master_image_prompt(
         title_vi=title_vi or sub,
         title_zh=title_zh,
@@ -286,6 +323,7 @@ def finalize_thumb_meta_fields(
         badge_text=data["badge_text"],
         sub_text=data["sub_text"],
         font_material=str(typo.get("effects") or typo.get("font_style") or ""),
+        trust_hooks=trust_hooks,
     )
     data["ai_image_prompt"] = data["master_image_prompt"]
     if typo is not None:
@@ -1001,23 +1039,32 @@ def _cfg(key: str, default: str = "") -> str:
     return (os.getenv(key) or default).strip()
 
 
+_DEAD_CHATGPT_BASES: dict[str, float] = {}
+_DEAD_BASE_TTL_SEC = 60.0
+
+
 def _get_chatgpt_token() -> str:
-    """Đọc Access Token / API key ChatGPT: config → env → data/chatgpt_token.txt."""
+    """Đọc Access Token / API key ChatGPT: config → env → data/chatgpt_token.txt (bỏ qua sk-local)."""
     for k in ("CHATGPT_API_KEY", "CHATGPT_ACCESS_TOKEN"):
         v = _cfg(k)
-        if v:
+        if v and v != "sk-local":
             return v
     token_file = ROOT / "data" / "chatgpt_token.txt"
     if token_file.exists():
         try:
-            return token_file.read_text(encoding="utf-8").strip()
+            tok = token_file.read_text(encoding="utf-8").strip()
+            if tok and tok != "sk-local":
+                return tok
         except Exception:
             pass
     return ""
 
 
 def _chatgpt_candidate_bases() -> list[str]:
-    """Ưu tiên CHATGPT_BASE_URL trong pineline.config (local :3377), rồi Aurora LAN."""
+    """Ưu tiên CHATGPT_BASE_URL trong pineline.config (local :3377), rồi Aurora LAN (.247/.244).
+    Đẩy các base vừa lỗi kết nối (ConnectionError) xuống cuối danh sách trong 60s.
+    """
+    import time
     bases: list[str] = []
     for k in ("AURORA_BASE_URL", "CHATGPT_BASE_URL"):
         v = _cfg(k).rstrip("/")
@@ -1026,7 +1073,10 @@ def _chatgpt_candidate_bases() -> list[str]:
     for u in _machine.aurora_base_urls():  # machine-config: :3377 + AURORA_FALLBACK_URLS
         if u not in bases:
             bases.append(u)
-    return bases
+    now = time.time()
+    alive = [b for b in bases if _DEAD_CHATGPT_BASES.get(b, 0.0) <= now]
+    dead = [b for b in bases if _DEAD_CHATGPT_BASES.get(b, 0.0) > now]
+    return alive + dead
 
 
 def extract_job_summary(job_id: str, max_chars: int = 5500) -> str:
@@ -1263,8 +1313,9 @@ def get_job_reference_images(job_id: str = "", poster_name: str = "") -> list[by
 
 def _call_chatgpt(messages: list[dict], model: str = "gpt-5-6") -> str:
     """Gọi LLM qua Aurora / Chat2Api chạy trên Raspberry Pi 5.
-    Ưu tiên model mới nhất (gpt-5-6 Luna / auto GPT-6) và tự động fallback.
+    Ưu tiên model mới nhất (gpt-5-6 Luna / auto GPT-6), tự động retry xoay account pool & fallback.
     """
+    import time
     import requests
     token = _get_chatgpt_token()
     candidate_urls = _chatgpt_candidate_bases()
@@ -1287,63 +1338,128 @@ def _call_chatgpt(messages: list[dict], model: str = "gpt-5-6") -> str:
             "stream": False,
         }
         for base_url in candidate_urls:
+            if _DEAD_CHATGPT_BASES.get(base_url, 0.0) > time.time():
+                continue
             url = f"{base_url}/chat/completions"
-            # Thử 1: Nếu có token, thử với token
+            # Thử 1: Nếu có token thật, thử với token
             if token:
                 try:
                     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                     r = requests.post(url, headers=headers, json=data, timeout=60)
                     if r.status_code == 200:
                         res = r.json()
-                        return res["choices"][0]["message"]["content"]
+                        content = ((res.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                        if content.strip():
+                            _DEAD_CHATGPT_BASES.pop(base_url, None)
+                            return content
+                except requests.ConnectionError as e_conn:
+                    _DEAD_CHATGPT_BASES[base_url] = time.time() + _DEAD_BASE_TTL_SEC
+                    last_err = e_conn
+                    continue
                 except Exception as e:
                     last_err = e
-            # Thử 2: Gọi trực tiếp không token (Aurora dùng pool tài khoản nội bộ trên Pi 5)
-            try:
-                headers = {"Content-Type": "application/json"}
-                r = requests.post(url, headers=headers, json=data, timeout=60)
-                if r.status_code == 200:
-                    res = r.json()
-                    return res["choices"][0]["message"]["content"]
-                r.raise_for_status()
-            except Exception as e:
-                last_err = e
-                continue
+            # Thử 2: Gọi trực tiếp không token (Aurora dùng pool tài khoản nội bộ trên Pi 5 — retry tối đa 2 lần để xoay acc lỗi 400/500)
+            for attempt in range(2):
+                try:
+                    headers = {"Content-Type": "application/json"}
+                    r = requests.post(url, headers=headers, json=data, timeout=60)
+                    if r.status_code == 200:
+                        res = r.json()
+                        content = ((res.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+                        if content.strip():
+                            _DEAD_CHATGPT_BASES.pop(base_url, None)
+                            return content
+                    last_err = RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
+                    time.sleep(0.6)
+                except requests.ConnectionError as e_conn:
+                    _DEAD_CHATGPT_BASES[base_url] = time.time() + _DEAD_BASE_TTL_SEC
+                    last_err = e_conn
+                    break
+                except Exception as e:
+                    last_err = e
+                    time.sleep(0.6)
 
     raise ConnectionError(f"Không thể kết nối tới LLM trên Pi 5 ({last_err})")
 
 
-def _decode_aurora_image_response(resp_json: dict, timeout: int = 60) -> bytes | None:
-    """Giải mã ảnh từ phản hồi của Aurora (/v1/images/edits hoặc /v1/images/generations)."""
+def _is_valid_generated_image(cand_bytes: bytes, reject_list: list[bytes] | None = None) -> bool:
+    """Kiểm tra ảnh trả về từ Aurora có phải ảnh AI mới sinh thật sự hay chỉ là ảnh gốc tham chiếu bị trả ngược lại."""
+    if not cand_bytes or len(cand_bytes) < 2000:
+        return False
+    if reject_list:
+        for ref_b in reject_list:
+            if cand_bytes == ref_b:
+                return False
+    try:
+        im = Image.open(io.BytesIO(cand_bytes))
+        w, h = im.size
+        # Nếu có reject_list (tức gọi từ /images/edits), ảnh AI mới của Aurora luôn có chiều rộng >= 800
+        # và không có kích thước trùng khớp với poster dọc nhỏ (< 600px) gửi lên.
+        if reject_list:
+            if w < 700 or h < 500:
+                return False
+            for ref_b in reject_list:
+                try:
+                    rim = Image.open(io.BytesIO(ref_b))
+                    if rim.size == (w, h) and abs(len(cand_bytes) - len(ref_b)) < 1024:
+                        return False
+                except Exception:
+                    pass
+        return w >= 512 and h >= 512
+    except Exception:
+        return False
+
+
+def _decode_aurora_image_response(
+    resp_json: dict,
+    timeout: int = 60,
+    reject_list: list[bytes] | None = None,
+) -> bytes | None:
+    """Giải mã ảnh từ phản hồi của Aurora (/v1/images/edits hoặc /v1/images/generations).
+    Bỏ qua các phần tử trùng với ảnh tham chiếu đầu vào (do /v1/images/edits trên pool Free trả ngược lại).
+    """
     import base64
     import requests
     data = (resp_json or {}).get("data") or []
     if not data or not isinstance(data, list):
         return None
-    item = data[0] if isinstance(data[0], dict) else {}
-    if item.get("b64_json"):
-        return base64.b64decode(item["b64_json"])
-    if item.get("url"):
-        r_img = requests.get(str(item["url"]), timeout=timeout)
-        if r_img.status_code == 200 and len(r_img.content) > 1000:
-            return r_img.content
+    # Duyệt từ cuối lên đầu vì nếu Aurora trả cả [input_image, output_image] thì ảnh mới nằm ở cuối
+    for raw_item in reversed(data):
+        item = raw_item if isinstance(raw_item, dict) else {}
+        cand_bytes: bytes | None = None
+        if item.get("b64_json"):
+            try:
+                cand_bytes = base64.b64decode(item["b64_json"])
+            except Exception:
+                cand_bytes = None
+        elif item.get("url"):
+            try:
+                r_img = requests.get(str(item["url"]), timeout=timeout)
+                if r_img.status_code == 200 and len(r_img.content) > 2000:
+                    cand_bytes = r_img.content
+            except Exception:
+                cand_bytes = None
+        if cand_bytes and _is_valid_generated_image(cand_bytes, reject_list=reject_list):
+            return cand_bytes
     return None
 
 
 def generate_ai_image(
     prompt: str,
-    size: str = "1024x1024",
+    size: str = "1792x1024",
     timeout: int = 150,
     ref_images: list[bytes] | bytes | None = None,
     job_id: str = "",
     poster_name: str = "",
 ) -> bytes | None:
     """Gọi Aurora trên Pi 5 để sinh ảnh Thumbnail 16:9 chất lượng cao:
-    - ƯU TIÊN SỐ 1: Đính kèm ảnh gốc tham chiếu (Poster + Frame trong phim) gửi lên `/v1/images/edits`
-      (`model="gpt-image-2"`) để giữ chuẩn khuôn mặt, trang phục, khí chất nhân vật và Visual DNA của phim.
-    - Dự phòng (Fallback): Nếu không có ảnh tham chiếu hoặc `/v1/images/edits` lỗi, tự động gọi `/v1/images/generations`.
+    - Bước 1: Thử gửi ảnh gốc tham chiếu (Poster + Frame trong phim) lên `/v1/images/edits`
+      (`model="gpt-image-2"`) và kiểm tra chặt xem Aurora có thực sự sinh ảnh mới hay chỉ trả ngược lại ảnh gốc.
+    - Bước 2 (Fallback chủ lực): Nếu `/v1/images/edits` trả ngược lại ảnh gốc hoặc lỗi (phổ biến trên pool Free),
+      tự động chuyển sang `/v1/images/generations` với kích thước 16:9 (`1792x1024` / `1672x941`) và tự xoay account khi gặp lỗi 400/500.
     """
     import base64
+    import time
     import requests
 
     token = _get_chatgpt_token()
@@ -1353,6 +1469,11 @@ def generate_ai_image(
     except Exception:
         cfg_t = 900
     timeout = max(int(timeout or 0), min(max(cfg_t, 180), 1800))
+
+    # Đảm bảo ưu tiên khổ ngang 16:9 (1792x1024) cho YouTube Thumbnail
+    req_size = (size or "1792x1024").strip()
+    if req_size == "1024x1024" and ("16:9" in (prompt or "") or "thumbnail" in (prompt or "").lower()):
+        req_size = "1792x1024"
 
     # Chuẩn bị danh sách ảnh tham chiếu (Reference Images)
     ref_list: list[bytes] = []
@@ -1370,26 +1491,26 @@ def generate_ai_image(
     if not ref_list and (job_id or poster_name):
         ref_list = get_job_reference_images(job_id=job_id, poster_name=poster_name)
 
-    # Local :3377 cần Bearer sk-local; Aurora pool có thể không cần token.
-    auth_headers_list: list[dict] = []
+    # Ưu tiên gọi pool nội bộ Aurora ({}) trước, sau đó mới thử Bearer token nếu có
+    auth_headers_list: list[dict] = [{}]
     if token:
         auth_headers_list.append({"Authorization": f"Bearer {token}"})
-    auth_headers_list.append({})
 
-    # 1. NẾU CÓ ẢNH THAM CHIẾU -> GỌI /v1/images/edits (Bám sát ngoại hình nhân vật & Visual DNA ảnh gốc)
+    # 1. NẾU CÓ ẢNH THAM CHIẾU -> THỬ /v1/images/edits (chỉ nhận khi ảnh trả về KHÁC ảnh tham chiếu đầu vào)
     if ref_list:
         ref_prefix = (
             "REFERENCE IMAGE MANDATE: Strictly use the attached reference image(s) for the main character's "
             "exact facial features, hairstyle, hair color, outfit design, and 3D/2D rendering aesthetic. "
             "Keep the character's identity 100% faithful to the reference image while composing a dramatic "
-            "16:9 horizontal YouTube thumbnail scene as instructed below:\n\n"
+            "16:9 horizontal widescreen YouTube thumbnail scene as instructed below:\n\n"
         )
         edit_prompt = prompt if "REFERENCE IMAGE" in prompt.upper() else (ref_prefix + prompt)
 
         for base_url in candidate_urls:
+            if _DEAD_CHATGPT_BASES.get(base_url, 0.0) > time.time():
+                continue
             edit_url = f"{base_url}/images/edits"
             for hdrs in auth_headers_list:
-                # Cách 1A: multipart/form-data theo chuẩn Aurora API.md
                 try:
                     files_payload = [
                         ("image", (f"ref_{idx}.jpg", img_b, "image/jpeg"))
@@ -1399,62 +1520,74 @@ def generate_ai_image(
                         "model": "gpt-image-2",
                         "prompt": edit_prompt,
                         "n": "1",
-                        "size": size,
+                        "size": req_size,
                         "response_format": "b64_json",
                     }
                     print(f"[meta_studio] Gửi {len(files_payload)} ảnh gốc tham chiếu lên {edit_url} (multipart)...", flush=True)
-                    r = requests.post(edit_url, headers=hdrs, data=form_data, files=files_payload, timeout=timeout)
+                    r = requests.post(edit_url, headers=hdrs, data=form_data, files=files_payload, timeout=min(timeout, 90))
                     if r.status_code == 200:
-                        out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout)
+                        out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout, reject_list=ref_list)
                         if out_bytes:
-                            print(f"[meta_studio] ✅ Sinh ảnh từ Reference Image (/images/edits multipart) thành công ({len(out_bytes)//1024} KB)!", flush=True)
+                            _DEAD_CHATGPT_BASES.pop(base_url, None)
+                            print(f"[meta_studio] ✅ Sinh ảnh mới từ Reference Image (/images/edits) thành công ({len(out_bytes)//1024} KB)!", flush=True)
                             return out_bytes
+                        print(f"[meta_studio] ⚠️ {edit_url} trả ngược lại ảnh tham chiếu gốc (pool Free không hỗ trợ edit file) -> chuyển sang /images/generations", flush=True)
+                        break
+                    else:
+                        print(f"[meta_studio] /images/edits status={r.status_code} ({base_url}): {r.text[:160]}", flush=True)
+                except requests.ConnectionError as e_conn:
+                    _DEAD_CHATGPT_BASES[base_url] = time.time() + _DEAD_BASE_TTL_SEC
+                    print(f"[meta_studio] /images/edits lỗi kết nối ({base_url}): {e_conn}", flush=True)
+                    break
                 except Exception as e_mp:
                     print(f"[meta_studio] /images/edits multipart warning ({base_url}): {e_mp}", flush=True)
 
-                # Cách 1B: application/json với mảng Base64 Data URL theo Aurora API.md
-                try:
-                    data_urls = [
-                        f"data:image/jpeg;base64,{base64.b64encode(img_b).decode('ascii')}"
-                        for img_b in ref_list[:2]
-                    ]
-                    json_payload = {
-                        "model": "gpt-image-2",
-                        "prompt": edit_prompt,
-                        "n": 1,
-                        "size": size,
-                        "response_format": "b64_json",
-                        "images": data_urls,
-                    }
-                    json_hdrs = {**hdrs, "Content-Type": "application/json"}
-                    r = requests.post(edit_url, headers=json_hdrs, json=json_payload, timeout=timeout)
-                    if r.status_code == 200:
-                        out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout)
-                        if out_bytes:
-                            print(f"[meta_studio] ✅ Sinh ảnh từ Reference Image (/images/edits json) thành công ({len(out_bytes)//1024} KB)!", flush=True)
-                            return out_bytes
-                except Exception as e_js:
-                    print(f"[meta_studio] /images/edits json warning ({base_url}): {e_js}", flush=True)
+    # 2. GỌI /v1/images/generations (Hỗ trợ đầy đủ trên Aurora pool, xoay account khi gặp lỗi 400/500)
+    gen_prompt = prompt
+    if "16:9" not in gen_prompt:
+        gen_prompt = f"16:9 widescreen horizontal YouTube thumbnail (1792x1024). {gen_prompt}"
 
-    # 2. FALLBACK -> GỌI /v1/images/generations
-    payload = {
-        "model": "gpt-image-2",
-        "prompt": prompt,
-        "n": 1,
-        "size": size,
-        "response_format": "b64_json",
-    }
-    for base_url in candidate_urls:
-        url = f"{base_url}/images/generations"
-        for hdrs in auth_headers_list:
-            try:
-                r = requests.post(url, headers={**hdrs, "Content-Type": "application/json"}, json=payload, timeout=timeout)
-                if r.status_code == 200:
-                    out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout)
-                    if out_bytes:
-                        return out_bytes
-            except Exception:
+    size_candidates = [req_size]
+    if "1024x1024" not in size_candidates:
+        size_candidates.append("1024x1024")
+
+    for chosen_size in size_candidates:
+        payload = {
+            "model": "gpt-image-2",
+            "prompt": gen_prompt,
+            "n": 1,
+            "size": chosen_size,
+            "response_format": "b64_json",
+        }
+        for base_url in _chatgpt_candidate_bases():
+            if _DEAD_CHATGPT_BASES.get(base_url, 0.0) > time.time():
                 continue
+            url = f"{base_url}/images/generations"
+            for hdrs in auth_headers_list:
+                for attempt in range(2):
+                    try:
+                        print(f"[meta_studio] Gọi {url} (size={chosen_size}, thử {attempt+1}/2)...", flush=True)
+                        r = requests.post(
+                            url,
+                            headers={**hdrs, "Content-Type": "application/json"},
+                            json=payload,
+                            timeout=timeout,
+                        )
+                        if r.status_code == 200:
+                            out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout, reject_list=ref_list)
+                            if out_bytes:
+                                _DEAD_CHATGPT_BASES.pop(base_url, None)
+                                print(f"[meta_studio] ✅ Sinh ảnh /images/generations ({base_url}, size={chosen_size}) thành công ({len(out_bytes)//1024} KB)!", flush=True)
+                                return out_bytes
+                        print(f"[meta_studio] /images/generations status={r.status_code} ({base_url}): {r.text[:180]}", flush=True)
+                        time.sleep(0.8)
+                    except requests.ConnectionError as e_conn:
+                        _DEAD_CHATGPT_BASES[base_url] = time.time() + _DEAD_BASE_TTL_SEC
+                        print(f"[meta_studio] /images/generations lỗi kết nối ({base_url}): {e_conn}", flush=True)
+                        break
+                    except Exception as e_gen:
+                        print(f"[meta_studio] /images/generations warning ({base_url}): {e_gen}", flush=True)
+                        time.sleep(0.8)
     return None
 
 

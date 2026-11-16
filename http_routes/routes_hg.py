@@ -906,6 +906,73 @@ def meta_generate_title(body: dict):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
+@router.post("/api/meta/ai-image")
+@router.post("/meta/ai-image")
+def meta_ai_image(body: dict):
+    """Sinh Master Thumbnail AI (GPT local :3377 / Aurora) — parity với sidecar :8802.
+
+    Films UI cũng được serve trên :8801; trước đây thiếu route này → fetch relative
+    `/api/meta/ai-image` trả 404 trong khi GPT vẫn sống.
+    """
+    import importlib
+    import io
+    import time
+
+    import agents.meta_studio as meta_studio
+
+    meta_studio = importlib.reload(meta_studio)
+    try:
+        prompt = str(body.get("prompt") or "").strip()
+        job_id = str(body.get("job_id") or f"gen_{int(time.time())}").strip()
+        poster_name = str(body.get("poster_name") or "").strip()
+        if not prompt:
+            return JSONResponse({"ok": False, "error": "Thiếu prompt"}, status_code=400)
+        img_bytes = meta_studio.generate_ai_image(
+            prompt,
+            timeout=300,
+            job_id=job_id,
+            poster_name=poster_name,
+        )
+        if not img_bytes:
+            return JSONResponse(
+                {"ok": False, "error": "Không sinh được ảnh (timeout/lỗi GPT local :3377 hoặc Aurora)"},
+                status_code=500,
+            )
+
+        raw_ai_name = f"thumb_{job_id}_ai_raw.png"
+        (meta_studio.THUMB_DIR / raw_ai_name).write_bytes(img_bytes)
+
+        jpg_name = f"thumb_{job_id}.jpg"
+        try:
+            from PIL import Image
+
+            im = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            tw, th = 1280, 720
+            ratio = im.width / max(im.height, 1)
+            target_ratio = tw / th
+            if ratio > target_ratio:
+                new_w = int(im.height * target_ratio)
+                im = im.crop(((im.width - new_w) // 2, 0, (im.width + new_w) // 2, im.height))
+            elif ratio < target_ratio:
+                new_h = int(im.width / target_ratio)
+                im = im.crop((0, (im.height - new_h) // 2, im.width, (im.height + new_h) // 2))
+            im = im.resize((tw, th), Image.Resampling.LANCZOS)
+            im.save(meta_studio.THUMB_DIR / jpg_name, format="JPEG", quality=95, optimize=True)
+        except Exception as e_proc:  # noqa: BLE001
+            print(f"[meta] Lỗi resize ảnh AI: {e_proc}, ghi trực tiếp bytes", flush=True)
+            (meta_studio.THUMB_DIR / jpg_name).write_bytes(img_bytes)
+
+        return {
+            "ok": True,
+            "filename": jpg_name,
+            "raw_ai_filename": raw_ai_name,
+            "url": f"/api/meta/thumbnail?file={jpg_name}",
+            "raw_url": f"/api/meta/thumbnail?file={raw_ai_name}",
+        }
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @router.post("/api/meta/thumbnail")
 @router.post("/meta/thumbnail")
 def meta_thumbnail(body: dict):

@@ -5,6 +5,9 @@ Không sửa config.json. Khoá:
                            = luồng cũ run_translate + run_review. Job đã bắt đầu luồng nào thì giữ luồng đó
                            (manifest.translate_pipeline) — xem job_pipeline().
   SIMPLE_MODEL             model REVIEW cloud (trống = REVIEW model như luồng cũ: _resolve_review_model)
+  SIMPLE_PLAN_MODEL        model lập plan A7 (trống = PLAN_MODEL trong config -> SIMPLE_MODEL)
+  SIMPLE_FULL_PLAN         1 = A7 lập plan đọc toàn bộ phim ASR bằng context lớn LLM (1)
+  SIMPLE_OVERLAP_CUES      số câu chồng lấn liền trước cho lô review A8 (3)
   SIMPLE_BATCH             số câu / lô review (30)
   SIMPLE_CTX               số câu ngữ cảnh chỉ đọc mỗi phía lô (4)
   SIMPLE_WORKERS           số lô gọi song song (8)
@@ -34,6 +37,9 @@ Cờ thử nghiệm 2026-11-12 «next» (docs/fixes/2026-11-12-translate-simple-
   SIMPLE_ZH_HS_MIN_RATIO   tỉ lệ khung có chữ ở dải phụ đề để coi là có hardsub (0.3)
   SIMPLE_ZH_NAMEFIX        1 = sửa tên ZH gần đúng theo hồ sơ phim khi SIMPLE_ZH_SOURCE=1 (1)
   SIMPLE_ZH_NAMEFIX_MIN    điểm giống tối thiểu để thay tên (0.75)
+  SIMPLE_ZH_OCR_MODE       targeted = OCR CÓ CHỌN LỌC 1 khung giữa câu (lượt A: 他/她/它, tên, số; lượt B: câu kém
+                           chắc người nói/nghe ±1) — mặc định; full = OCR cả phim nền (hs_ocr_fast) — 2026-11-14
+  SIMPLE_ZH_OCR_PASS_B     1 = chạy lượt B sau review (1)
   SIMPLE_UNREVIEWED_TOLERANCE  số câu CHƯA SOÁT tối đa được nhận bản nháp (cờ unreviewed_accepted) thay vì park
                            (trống = max(3, 0.2% số câu); 0 = tắt, park như cũ) — fix 2026-11-13 agentM
   SIMPLE_MISSING_BATCH     cỡ lô của lượt review bổ sung CHỈ câu chưa soát trước khi park (4)
@@ -155,15 +161,48 @@ def job_pipeline(work_dir, *, fresh: bool = False, stamp: bool = True) -> str:
     return p
 
 
+SIMPLE_BATCH_MIN = 40
+SIMPLE_BATCH_MAX = 200
+
+
+def deepseek_concurrency() -> int:
+    """Số request song song cho DeepSeek Official API (mặc định 32, kẹp [1, 64])."""
+    return _int("DEEPSEEK_CONCURRENCY", 32, 1, 64)
+
+
 def batch() -> int:
     return _int("SIMPLE_BATCH", 30, 4, 120)
+
+
+def batch_for_rows(n_rows: int, workers_count: int = 1, explicit: int | None = None) -> int:
+    """Tự chọn cỡ lô review theo số câu và mức song song:
+    - Nếu explicit > 0 hoặc user có cấu hình cứng SIMPLE_BATCH trong config/env: tôn trọng giá trị đó.
+    - Tự động: ceil(n_rows / workers_count), kẹp trong [SIMPLE_BATCH_MIN (40), SIMPLE_BATCH_MAX (200)].
+    """
+    if explicit is not None and explicit > 0:
+        return explicit
+    raw = str(get("SIMPLE_BATCH", "") or "").strip()
+    if raw:
+        try:
+            return max(4, min(300, int(float(raw))))
+        except ValueError:
+            pass
+    if n_rows <= 0 or workers_count <= 0:
+        return SIMPLE_BATCH_MIN
+    import math
+    calc = math.ceil(n_rows / workers_count)
+    return max(SIMPLE_BATCH_MIN, min(SIMPLE_BATCH_MAX, calc))
 
 
 def ctx() -> int:
     return _int("SIMPLE_CTX", 4, 0, 20)
 
 
-def workers() -> int:
+def workers(model: str | None = None) -> int:
+    """Số worker song song cho review: DeepSeek dùng DEEPSEEK_CONCURRENCY (32), khác (Aurora/local) dùng SIMPLE_WORKERS (8)."""
+    m = (model or "").strip().lower()
+    if m and (m.startswith("deepseek/") or m.startswith("deepseek-")):
+        return deepseek_concurrency()
     return _int("SIMPLE_WORKERS", 8, 1, 32)
 
 
@@ -271,6 +310,15 @@ def zh_source() -> bool:
     return _flag("SIMPLE_ZH_SOURCE", "0")
 
 
+def zh_ocr_mode() -> str:
+    v = str(get("SIMPLE_ZH_OCR_MODE", "targeted") or "targeted").strip().lower()
+    return "full" if v == "full" else "targeted"
+
+
+def zh_ocr_pass_b() -> bool:
+    return _flag("SIMPLE_ZH_OCR_PASS_B", "1")
+
+
 def zh_hs_samples() -> int:
     return _int("SIMPLE_ZH_HS_SAMPLES", 24, 4, 400)
 
@@ -285,6 +333,27 @@ def zh_namefix() -> bool:
 
 def zh_namefix_min() -> float:
     return _float("SIMPLE_ZH_NAMEFIX_MIN", 0.75, 0.5, 1.0)
+
+
+def full_plan_enabled() -> bool:
+    """A7: Lập plan đọc cả phim từ toàn bộ thoại ASR bằng LLM context lớn."""
+    return _flag("SIMPLE_FULL_PLAN", "1")
+
+
+def overlap_cues() -> int:
+    """A8: Số câu ngữ cảnh chồng lấn liền trước cho mỗi lô review (0-10, mặc định 3)."""
+    return _int("SIMPLE_OVERLAP_CUES", 3, 0, 10)
+
+
+def plan_model(work_dir=None) -> str | None:
+    """Model LLM dùng cho bước lập plan A7."""
+    m = str(get("SIMPLE_PLAN_MODEL", "") or "").strip()
+    if m:
+        return m
+    pm = str(get("PLAN_MODEL", "") or "").strip()
+    if pm:
+        return pm
+    return review_model(work_dir)
 
 
 def review_model(work_dir=None) -> str | None:

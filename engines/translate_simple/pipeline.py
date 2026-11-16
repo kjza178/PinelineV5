@@ -28,7 +28,12 @@ INFERRED = "plan_inferred.json"
 
 
 def _now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%S")
+    # R1.4 2026-11-14: ISO UTC (trước: strftime giờ máy, không múi giờ)
+    try:
+        from core.timeutil import now_iso
+        return now_iso()
+    except Exception:  # noqa: BLE001
+        return time.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
 def _manifest_update(work_dir: Path, fn) -> bool:
@@ -243,6 +248,20 @@ def _accept_unreviewed(store: ScriptStore) -> tuple[list[int], int]:
     return out, tol
 
 
+def _script_all_reviewed(wd: Path) -> bool:
+    """fix 2026-11-13: script.json đã có và MỌI câu đã soát (rv) → chạy lại (resume sau restart) không cần
+    chọn lại nguồn ZH: sync_rows chỉ chạm câu chưa soát → OCR cả phim (hàng giờ) là vô ích."""
+    p = wd / "script.json"
+    if not p.is_file():
+        return False
+    try:
+        rows = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return False
+    rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    return bool(rows) and all(r.get("rv") for r in rows)
+
+
 def _brain_line(wd: Path, text: str) -> None:
     """1 dòng cho Second Brain nếu brain đang chạy trong tiến trình (best-effort, không import mới, không test)."""
     import sys
@@ -284,8 +303,12 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
                n_total=len(segments))
     zh_rep = None
     if cfg.zh_source():
-        from . import zh_source
-        segments, zh_rep = zh_source.prepare(wd, segments)
+        if not force and _script_all_reviewed(wd):
+            print("[simple] nguồn ZH: script đã soát đủ → bỏ qua phát hiện hardsub/OCR (chạy lại)", flush=True)
+        else:
+            prog("nguồn ZH: phát hiện hardsub / OCR (phim có hardsub có thể mất lâu)…", force_write=True)
+            from . import zh_source
+            segments, zh_rep = zh_source.prepare(wd, segments)
     store = ScriptStore(wd)
     if store.rotate_trace(cfg.trace_max_bytes()):
         print("[simple] trace.jsonl vượt ngưỡng → xoay sang trace.1.jsonl", flush=True)
@@ -344,6 +367,22 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
         # 5) vá câu bị cờ (bỏ qua khi cloud chết hẳn: review không lô nào qua)
         rlog: list[dict] = []
         cloud_dead = rstats["n_todo"] > 0 and rstats["n_ok"] == 0
+        # 4b) 2026-11-14: OCR lượt B — câu kém chắc người nói/nghe hoặc bị cờ (±1 câu): OCR khác ASR → thay chữ,
+        #     bỏ rv → lượt soát bổ sung (5b) soát lại. Chỉ khi lượt A đã chạy (có hardsub, mode targeted).
+        if (zh_rep is not None and zh_rep.get("ocr_a") is not None and cfg.zh_ocr_pass_b()
+                and not cloud_dead and not stop_check()):
+            try:
+                from . import zh_ocr_target
+                prog("OCR lượt B: câu kém chắc người nói/nghe…", force_write=True)
+                rb = zh_ocr_target.pass_b(wd, store, flags, cfg.conf_min(),
+                                          done=set(zh_rep["ocr_a"].get("done_i") or []), stop_check=stop_check)
+                ch = set(rb.get("changed_i") or [])
+                flags = {i: f for i, f in flags.items() if i not in ch}
+                rstats["ocr_b"] = {k: rb.get(k) for k in ("n_target", "n_changed", "sec", "device", "hwdec")}
+                store.save()
+            except Exception as e_ob:  # noqa: BLE001
+                print(f"[simple] OCR lượt B lỗi ({e_ob}) — bỏ qua", flush=True)
+                store.note("zh_ocr_b", None, f"lỗi: {str(e_ob)[:200]}")
         if flags and not cloud_dead:
             flags, rlog = repair.run(store, pv, flags, model=model, stop_check=stop_check, progress=prog)
         store.save()
@@ -381,15 +420,32 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
             gap = max(0, int(translate_coverage_gap(wd)))
         except Exception:  # noqa: BLE001
             gap = 0
+        plan_failed = (isinstance(plan, dict)
+                       and str(plan.get("plan_status") or "").lower() == "failed"
+                       and not (plan.get("pronouns") or plan.get("characters")))
         g = gate.decide(n_rows=len(store.rows), n_asr=len(segments), coverage_gap=gap,
-                        n_missing=store.n_missing(), n_unreviewed=store.n_unreviewed(), flags=flags)
+                        n_missing=store.n_missing(), n_unreviewed=store.n_unreviewed(), flags=flags,
+                        plan_failed=plan_failed)
     except Exception as e:  # noqa: BLE001
+        import traceback
         store.save()
         stopped = "stopped by user" in str(e).lower()
+        tb = traceback.format_exc()
+        is_code = isinstance(e, (TypeError, AttributeError, KeyError, NameError, ImportError,
+                                 AssertionError, SyntaxError))
+        err_txt = f"{type(e).__name__}: {e}"
         _set_stage(wd, status="pending", n_missing=store.n_missing(),
-                   cur_text=("simple · đã dừng theo yêu cầu" if stopped else f"simple lỗi: {str(e)[:150]}"),
-                   **({} if stopped else {"last_error": str(e)[:200]}))
-        store.note("error", None, str(e)[:300])
+                   cur_text=("simple · đã dừng theo yêu cầu" if stopped
+                             else (f"simple lỗi CODE: {err_txt[:120]}" if is_code
+                                   else f"simple lỗi: {str(e)[:150]}")),
+                   **({} if stopped else {
+                       "last_error": (tb if is_code else str(e))[:2000],
+                       "error_kind": "code" if is_code else "runtime",
+                   }))
+        store.note("error", None, (tb if is_code else str(e))[:2000])
+        if is_code:
+            e._simple_code_error = True  # type: ignore[attr-defined]
+            e._simple_traceback = tb  # type: ignore[attr-defined]
         raise
     res = {"status": g["status"], "gate": g, "draft": dinfo, "review": rstats, "repair": rlog,
            "model": model, "t_total": round(time.time() - t0, 1), "script_path": str(store.path)}

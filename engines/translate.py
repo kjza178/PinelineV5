@@ -50,6 +50,7 @@ from engines.llm import chat, parse_json, unload_local, is_local, LLMUnavailable
 from engines.vram import free_gpu_vram
 from core.fileio import atomic_write_json, read_json_checkpoint
 from core.manifest import Manifest
+import engines.cloud_retry as _cloud_retry   # fix 2026-11-11 translate-b2 (Việc A)
 
 STAGE = "translate"
 MODEL = os.getenv("TRANSLATE_MODEL") or None    # None -> chat() dùng LLM_MODEL
@@ -109,6 +110,113 @@ def _is_llama_local_model(m: str | None) -> bool:
     return any(p in mc for p in ("gemma4-12b", "gemma4-26b", "qwen36", "qat", "mtp"))
 
 
+def _is_cloud_model(m: str | None) -> bool:
+    """Model cloud (chatgpt/aurora/9router…): không rỗng, không local Ollama, không llama."""
+    if not m or not str(m).strip():
+        return False
+    return not is_local(m) and not _is_llama_local_model(m)
+
+
+def _cloud_fill_model(
+    work_dir: str | Path | None = None,
+    model: str | None = None,
+) -> str | None:
+    """fix 2026-11-11 translate-b2 (Việc B): model vá câu NMT sót (rỗng/còn chữ Hán).
+
+    Trả model REVIEW cloud (qua `_resolve_review_model`) khi: NMT HachimiMT bật + primary
+    VÀ model review là cloud → KHÔNG cần nạp gemma (TRANSLATE_PRESET) cho bước dịch.
+    None = đường cũ (switch preset local + vá bằng TRANSLATE_MODEL).
+
+    TRANSLATE_FILL_MODEL: trống/auto = tự chọn như trên · `local` = ép đường cũ ·
+    tên model cloud (vd chatgpt/gpt-6) = dùng model đó (vẫn cần NMT primary).
+    """
+    forced = str(_cfg_get("TRANSLATE_FILL_MODEL", "") or "").strip()
+    if forced.lower() in ("local", "llama", "gemma", "old", "0", "off"):
+        return None
+    try:
+        import engines.mt_zh_vi as mt_zh_vi
+        if not (mt_zh_vi.enabled() and mt_zh_vi.primary_mode()):
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    if forced and forced.lower() not in ("auto", "review", "1"):
+        return forced if _is_cloud_model(forced) else None
+    try:
+        rm = _resolve_review_model(work_dir, model)
+    except Exception:  # noqa: BLE001
+        rm = None
+    return rm if _is_cloud_model(rm) else None
+
+
+def post_translate_gate_action(work_dir: str | Path, n_miss: int, gap: int) -> str:
+    """fix 2026-11-11 translate-b2: cổng server SAU run_translate (hàm thuần cho test).
+
+    - "ok": không thiếu gì.
+    - "translate": gọi lại run_translate(batch=25) như cũ (coverage gap thật so với ASR,
+      hoặc cấu hình cũ NMT tắt / review local / AUTO_REVIEW=0). Ở cấu hình NMT primary +
+      review cloud, run_translate KHÔNG đổi preset nữa (vá bằng cloud).
+    - "review_fill": NMT primary + REVIEW cloud + AUTO_REVIEW bật, chỉ còn câu trống →
+      KHÔNG gọi lại run_translate (đường gemma cũ); để run_review bước 0 vá bằng rmodel cloud.
+    """
+    try:
+        n_miss = int(n_miss)
+    except (TypeError, ValueError):
+        n_miss = 0
+    try:
+        gap = int(gap)
+    except (TypeError, ValueError):
+        gap = 0
+    if n_miss <= 0 and gap <= 0:
+        return "ok"
+    if gap > 0:
+        return "translate"
+    auto_review = (_cfg_get("AUTO_REVIEW", "1") or "1").strip().lower() in ("1", "true", "yes", "on")
+    if auto_review and _cloud_fill_model(work_dir, None):
+        return "review_fill"
+    return "translate"
+
+
+def _log_vram(stage: str) -> None:
+    """fix 2026-11-11 translate-b2: log VRAM nhẹ để đo thực tế — `[vram] <stage> used/total MiB`.
+    Chỉ chạy nếu có nvidia-smi trong PATH; timeout 3 s; mọi lỗi bỏ qua."""
+    try:
+        import shutil
+        import subprocess
+        exe = shutil.which("nvidia-smi")
+        if not exe:
+            return
+        kw: dict = {}
+        if os.name == "nt":
+            kw["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+        out = subprocess.run(
+            [exe, "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3, **kw,
+        )
+        if out.returncode != 0:
+            return
+        parts = []
+        for ln in (out.stdout or "").strip().splitlines():
+            cols = [c.strip() for c in ln.split(",")]
+            if len(cols) >= 2 and cols[0] and cols[1]:
+                parts.append(f"{cols[0]}/{cols[1]}")
+        if parts:
+            print(f"[vram] {stage} {' | '.join(parts)} MiB", flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _cloud_fill_call(fn, *, fill_model: str, label: str, what: str, work_dir: Path | None):
+    """Gọi 1 lô dịch-lấp bằng model cloud với retry Việc A (limit/5xx/timeout)."""
+    return _cloud_retry.call_with_cloud_retry(
+        fn,
+        model=fill_model,
+        label=label,
+        what=what,
+        stop_check=_cloud_retry.stop_checker(Path(work_dir) / ".stop") if work_dir else None,
+        cfg_get=_cfg_get,
+    )
+
+
 def _review_parallel_workers(work_dir: Path | None, rmodel: str | None) -> int:
     """Số worker fan-out REVIEW. Local LLM = 1; aurora_parallel / REVIEW_PARALLEL>1 → N.
 
@@ -147,6 +255,136 @@ def _review_parallel_workers(work_dir: Path | None, rmodel: str | None) -> int:
     return 1
 
 
+_HTTP_STATUS_RES = (
+    re.compile(r"Aurora/ChatGPT (\d{3}) \(no-retry\)"),
+    re.compile(r"từ chối payload \((\d{3})\)"),
+    re.compile(r"^\s*(\d{3})\b"),  # requests.HTTPError(f"{status} {text}") do llm.py tự dựng
+)
+_CTX_TOO_LONG_RE = re.compile(
+    r"context[ _-]?length|context_length_exceeded|maximum context|prompt is too long|"
+    r"too many tokens|request entity too large|payload too large",
+    re.I,
+)
+
+
+def _llm_error_status(e: BaseException) -> int | None:
+    """Mã HTTP của lỗi LLM: response.status_code nếu có, không thì mã ở các mẫu
+    thông điệp CỐ ĐỊNH do llm.py tự dựng (không đoán chuỗi con tự do)."""
+    sc = getattr(getattr(e, "response", None), "status_code", None)
+    if isinstance(sc, int):
+        return sc
+    msg = str(e)
+    for rx in _HTTP_STATUS_RES:
+        mm = rx.search(msg)
+        if mm:
+            try:
+                return int(mm.group(1))
+            except ValueError:
+                return None
+    if e.__cause__ is not None and e.__cause__ is not e:
+        return _llm_error_status(e.__cause__)
+    return None
+
+
+def _classify_review_error(e: BaseException) -> str:
+    """fix 2026-11-11 translate-b1 C9: phân loại lỗi REVIEW theo KIỂU exception / mã HTTP.
+
+    - "too_large": 413, hoặc 400/422 kèm thông điệp context-length → chia nhỏ lô, KHÔNG đổi preset.
+    - "out": 429/5xx, timeout/kết nối (requests), LLMUnavailable không mã (hết lượt thử)
+      → được phép fallback local (1 lần/lượt REVIEW).
+    - "bad_output": ReviewBadOutput / ValueError parse → lô lỗi (B1/B2 thử lại).
+    - "other": còn lại (400/422 thường…) → lô lỗi, không đổi preset.
+    """
+    if isinstance(e, ReviewBadOutput):
+        return "bad_output"
+    st = _llm_error_status(e)
+    if st == 413:
+        return "too_large"
+    if st in (400, 422):
+        return "too_large" if _CTX_TOO_LONG_RE.search(str(e)) else "other"
+    if st in (429, 500, 502, 503, 504):
+        return "out"
+    try:
+        import requests as _rq
+        if isinstance(e, (_rq.Timeout, _rq.ConnectionError)):
+            return "out"
+    except Exception:  # noqa: BLE001
+        pass
+    if isinstance(e, (TimeoutError, ConnectionError)):
+        return "out"
+    if isinstance(e, LLMUnavailable):
+        return "out"  # hết lượt thử / mất mạng / thiếu key cloud — không có mã cụ thể
+    if isinstance(e, ValueError):
+        return "bad_output"
+    return "other"
+
+
+def _new_review_fallback_state() -> dict:
+    """Trạng thái fallback local DÙNG CHUNG cho mọi luồng của MỘT lượt run_review.
+    switched: None = chưa thử · True = đã mở local OK · False = thử rồi, hỏng."""
+    return {
+        "lock": threading.Lock(),        # chỉ 1 luồng được switch_preset
+        "local_sem": threading.Semaphore(1),  # request local tuần tự (GPU dùng chung)
+        "switched": None,
+        "preset": None,
+        "n_switch": 0,
+    }
+
+
+# Dùng khi caller cũ không truyền fb_state (vd server giữ run_review cũ sau reload).
+# Kết quả switch của state mặc định chỉ tin trong _REVIEW_FB_DEFAULT_TTL giây (không kẹt
+# «đã hỏng»/«đã mở» vĩnh viễn trong tiến trình server sống lâu).
+_REVIEW_FB_STATE_DEFAULT = _new_review_fallback_state()
+_REVIEW_FB_DEFAULT_TTL = 900.0
+
+# chia nhỏ lô khi 413/context-length: tối đa 2 tầng (lô 40 → 20 → 10), lô < 4 câu thì thôi
+_REVIEW_SPLIT_MAX_DEPTH = 2
+_REVIEW_SPLIT_MIN_ROWS = 4
+
+
+def _review_split_on_too_large(
+    chunk_exp: list[dict],
+    plan_block: str,
+    prev_ctx: list[dict],
+    *,
+    target: str,
+    model: str,
+    plan: dict,
+    exemplars_pool: list[dict],
+    depth: int = 0,
+) -> dict | None:
+    """413/context-length: chia đôi chunk_exp và soát từng nửa (nửa sau nhận nửa đầu làm
+    ngữ cảnh). Bất kỳ nửa nào lỗi → None (cả lô lỗi, không rv)."""
+    if depth >= _REVIEW_SPLIT_MAX_DEPTH or len(chunk_exp) < _REVIEW_SPLIT_MIN_ROWS:
+        return None
+    mid = len(chunk_exp) // 2
+    halves = (
+        (chunk_exp[:mid], prev_ctx),
+        (chunk_exp[mid:], [*prev_ctx, *chunk_exp[:mid]][-max(1, CTX_LINES):]),
+    )
+    merged: dict = {}
+    for part, ctx in halves:
+        try:
+            res = review_batch(
+                part, plan_block, ctx, target=target, model=model, plan=plan,
+                exemplars_pool=exemplars_pool,
+            )
+        except Exception as e:  # noqa: BLE001
+            if _classify_review_error(e) == "too_large":
+                res = _review_split_on_too_large(
+                    part, plan_block, ctx, target=target, model=model, plan=plan,
+                    exemplars_pool=exemplars_pool, depth=depth + 1,
+                )
+            else:
+                print(f"[review] nửa lô (chia vì quá dài) lỗi: {e}", flush=True)
+                res = None
+        if res is None:
+            return None
+        merged.update(res)
+    print(f"[review] lô quá dài → đã chia {len(chunk_exp)} câu thành 2 phần (tầng {depth + 1})", flush=True)
+    return merged
+
+
 def _review_chunk_with_fallback(
     chunk_exp: list[dict],
     chunk: list[dict],
@@ -157,55 +395,122 @@ def _review_chunk_with_fallback(
     rmodel: str,
     plan: dict,
     exemplars_pool: list[dict],
+    fb_state: dict | None = None,
+    stop_path: str | Path | None = None,
+    cloud_retries: int | None = None,
 ) -> tuple[dict, str]:
-    """Chạy 1 lô review_batch; cloud lỗi quota/timeout → fallback local 1 lần.
+    """Chạy 1 lô review_batch; cloud lỗi quota/timeout → fallback local.
 
     Returns (fixes, model_used). fixes = None nghĩa là LÔ LỖI (không được đánh rv —
     fix 2026-11-11 B1: trước đây trả {} → câu chưa soát bị coi là đã soát).
+
+    fix 2026-11-11 translate-b1:
+    - C1: review_batch trả None / raise ReviewBadOutput (rỗng, JSON cụt) → lô lỗi.
+    - C9: chỉ MỘT luồng đổi preset cho cả lượt (fb_state chung); luồng khác chờ khoá rồi
+      dùng kết quả (OK → gọi local TUẦN TỰ; hỏng → lô lỗi). Phân loại lỗi theo mã HTTP /
+      kiểu exception; 413/context-length → chia nhỏ lô, KHÔNG đổi preset.
+
+    fix 2026-11-11 translate-b2 (Việc A): model cloud gặp limit/quota (429) hoặc lỗi tạm
+    (5xx/timeout) → THỬ LẠI CÙNG model cloud với backoff (REVIEW_CLOUD_RETRY /
+    REVIEW_CLOUD_BACKOFF, cửa chờ chung giữa các luồng) rồi mới fallback local C9
+    (REVIEW_LOCAL_FALLBACK=1) hoặc lô lỗi → B1 thử lại / B2 park (REVIEW_LOCAL_FALLBACK=0).
+    Local đã mở cho lượt này (fb_state.switched=True) → không chờ cloud nữa.
     """
+    st = fb_state if isinstance(fb_state, dict) else _REVIEW_FB_STATE_DEFAULT
+    is_cloud = not _is_llama_local_model(rmodel) and not is_local(rmodel)
+    if not is_cloud:
+        n_retry = 0
+    elif cloud_retries is not None:
+        n_retry = max(0, int(cloud_retries))
+    else:
+        n_retry = _cloud_retry.retry_count(_cfg_get)
+    if n_retry and st.get("switched") is True:
+        n_retry = 0
     try:
-        fixes = review_batch(
-            chunk_exp, plan_block, prev_ctx, target=target, model=rmodel, plan=plan,
-            exemplars_pool=exemplars_pool,
-        ) or {}
-        return fixes, rmodel
-    except Exception as e:  # noqa: BLE001
-        err_str = str(e).lower()
-        is_out = (
-            any(
-                w in err_str
-                for w in (
-                    "429", "token", "quota", "exhausted", "rate limit",
-                    "exceeded", "timeout", "unavailable", "500", "502", "503",
-                )
-            )
-            or isinstance(e, LLMUnavailable)
-            or "requests" in type(e).__module__
+        fixes = _cloud_retry.call_with_cloud_retry(
+            lambda: review_batch(
+                chunk_exp, plan_block, prev_ctx, target=target, model=rmodel, plan=plan,
+                exemplars_pool=exemplars_pool,
+            ),
+            model=rmodel,
+            label="[review]",
+            what=f"lô {len(chunk)} câu",
+            stop_check=_cloud_retry.stop_checker(stop_path),
+            retries=n_retry,
+            cfg_get=_cfg_get,
         )
-        if is_out and not _is_llama_local_model(rmodel):
-            local_rev = _cfg_get("REVIEW_PRESET", "qwen36-turbo")
+        if fixes is None:
+            print("[review] Lô trả None — coi là LỖI (không đánh rv)", flush=True)
+            return None, rmodel
+        return fixes, rmodel
+    except _cloud_retry.CloudRetryStopped:
+        raise
+    except Exception as e:  # noqa: BLE001
+        kind = _classify_review_error(e)
+        if getattr(e, "_cloud_retry_exhausted", False):
+            st["cloud_exhausted"] = True   # translate-b2: lượt thử lại B1 không chờ backoff đầy đủ nữa
+        if kind == "too_large":
+            print(f"[review] Lô quá dài ({e}) — chia nhỏ, KHÔNG đổi preset", flush=True)
+            fixes = _review_split_on_too_large(
+                chunk_exp, plan_block, prev_ctx, target=target, model=rmodel, plan=plan,
+                exemplars_pool=exemplars_pool,
+            )
+            if fixes is None:
+                print("[review] Chia nhỏ vẫn lỗi — lô coi là LỖI (không rv, thử lại sau)", flush=True)
+            return fixes, rmodel
+        if kind == "out" and is_cloud and not _cloud_retry.local_fallback_enabled(_cfg_get):
             print(
-                f"\n[review] ⚠️ Cloud REVIEW lỗi/quota: {e}\n"
-                f"[review] 🚀 Fallback local {local_rev}",
+                f"[review] Cloud REVIEW vẫn lỗi sau {n_retry} lần thử lại ({e}) — "
+                "REVIEW_LOCAL_FALLBACK=0: KHÔNG đổi local, lô coi là LỖI (thử lại/park)",
                 flush=True,
             )
+            return None, rmodel
+        if kind == "out" and not _is_llama_local_model(rmodel):
+            local_rev = _cfg_get("REVIEW_PRESET", "qwen36-turbo")
+            local_m = f"llama/{local_rev}"
+            with st["lock"]:
+                if (
+                    st is _REVIEW_FB_STATE_DEFAULT
+                    and st.get("switched") is not None
+                    and time.time() - float(st.get("ts") or 0) > _REVIEW_FB_DEFAULT_TTL
+                ):
+                    st["switched"] = None
+                if st.get("switched") is None:
+                    print(
+                        f"\n[review] ⚠️ Cloud REVIEW lỗi/quota: {e}\n"
+                        f"[review] 🚀 Fallback local {local_rev} (1 lần cho cả lượt)",
+                        flush=True,
+                    )
+                    ok = False
+                    try:
+                        import tools.preset_switcher as preset_switcher
+                        st["n_switch"] = int(st.get("n_switch") or 0) + 1
+                        ok = bool(preset_switcher.switch_preset(local_rev, max_wait_sec=180))
+                    except Exception as e_sw:  # noqa: BLE001
+                        print(f"[review] ❌ switch preset lỗi: {e_sw}", flush=True)
+                        ok = False
+                    st["switched"] = ok
+                    st["preset"] = local_rev
+                    st["ts"] = time.time()
+                switched = st.get("switched")
+            if not switched:
+                print(f"[review] ❌ Local {local_rev} không sẵn sàng — lô coi là LỖI", flush=True)
+                return None, rmodel
             try:
-                import tools.preset_switcher as preset_switcher
-                if not preset_switcher.switch_preset(local_rev, max_wait_sec=180):
-                    print(f"[review] ❌ Không mở được local {local_rev} — lô coi là LỖI", flush=True)
+                with st["local_sem"]:
+                    fixes = review_batch(
+                        chunk_exp, plan_block, prev_ctx, target=target, model=local_m,
+                        plan=plan, exemplars_pool=exemplars_pool,
+                    )
+                if fixes is None:
                     return None, rmodel
-                local_m = f"llama/{local_rev}"
-                fixes = review_batch(
-                    chunk_exp, plan_block, prev_ctx, target=target, model=local_m,
-                    plan=plan, exemplars_pool=exemplars_pool,
-                ) or {}
                 return fixes, local_m
             except Exception as e_fb:  # noqa: BLE001
                 print(f"[review] ❌ Fallback local lỗi: {e_fb}", flush=True)
                 return None, rmodel
-        if isinstance(e, LLMUnavailable):
-            raise
-        print(f"[review] Lô lỗi (không đánh rv, sẽ thử lại): {e}", flush=True)
+        if isinstance(e, LLMUnavailable) and kind == "out":
+            raise  # model local chết hẳn → dừng stage như cũ
+        print(f"[review] Lô lỗi ({kind}, không đánh rv, sẽ thử lại): {e}", flush=True)
         return None, rmodel
 
 # Ngữ cảnh trước mỗi lô — lô nhỏ + ctx vừa phải = nhớ tên riêng tốt hơn
@@ -880,11 +1185,43 @@ def build_plan(
     name_hints: list[str] | None = None,
     series_plan: dict | None = None,
     work_dir: str | Path | None = None,
+    before_local_llm=None,
 ) -> dict:
-    """Lập glossary: mặc định upload full ZH SRT (PLAN_MODE=file); fallback sample."""
+    """Lập glossary: mặc định upload full ZH SRT (PLAN_MODE=file); fallback sample.
+
+    before_local_llm: (translate-b2) hàm gọi TRƯỚC khi rơi xuống sample-mode (LLM local) —
+    run_translate dùng để nạp preset gemma lười khi đã bỏ switch ở đầu bước dịch."""
     mode = _plan_mode()
     data: dict = {}
-    if mode in ("file", "upload", "srt") and work_dir:
+    # A7: Tận dụng context lớn (DeepSeek/Aurora/Qwen) đọc toàn bộ thoại ASR của cả phim
+    if mode in ("file", "upload", "srt", "full", "a7"):
+        try:
+            from engines.translate_simple.cfg import full_plan_enabled
+            if full_plan_enabled():
+                from engines.translate_simple.stage_draft import build_full_movie_plan
+                data = build_full_movie_plan(
+                    Path(work_dir) if work_dir else None,
+                    segments,
+                    target,
+                    model=model,
+                    name_hints=name_hints,
+                    series_plan=series_plan,
+                ) or {}
+                if data and (data.get("characters") or data.get("terms") or data.get("pronouns")):
+                    data["_meta"] = {
+                        **(data.get("_meta") if isinstance(data.get("_meta"), dict) else {}),
+                        "plan_mode": "full_asr_context",
+                        "plan_model": model or _cfg_get("PLAN_MODEL") or "cloud",
+                    }
+                    print(
+                        f"[plan] A7 full-movie context OK · chars={len(data.get('characters') or [])} "
+                        f"pairs={len(data.get('pronouns') or [])} terms={len(data.get('terms') or [])}",
+                        flush=True,
+                    )
+        except Exception as e_a7:  # noqa: BLE001
+            print(f"[plan] A7 context lỗi ({e_a7}) → fallback file/sample", flush=True)
+            data = {}
+    if (not data or not (data.get("characters") or data.get("terms"))) and mode in ("file", "upload", "srt") and work_dir:
         try:
             data = _build_plan_from_file(
                 Path(work_dir), segments, target, model, name_hints, series_plan,
@@ -898,11 +1235,16 @@ def build_plan(
             print(f"[plan] file-mode lỗi ({e_file}) → fallback sample", flush=True)
             data = {}
     if not data or not (data.get("characters") or data.get("terms")):
+        if callable(before_local_llm):
+            try:
+                before_local_llm()
+            except Exception as e_bl:  # noqa: BLE001
+                print(f"[plan] before_local_llm lỗi: {e_bl}", flush=True)
         data = _build_plan_sample(segments, target, model, name_hints, series_plan)
 
     data = _normalize_plan_data(data)
     try:
-        from context_studio.schema import apply_style_lock_from_genre
+        from tools.context_studio.schema import apply_style_lock_from_genre
         data = apply_style_lock_from_genre(data)
     except Exception:  # noqa: BLE001
         pass
@@ -1490,11 +1832,34 @@ def apply_halfcue_dangling_heal(rows: list[dict]) -> int:
     return n
 
 
+def _cfg_flag(key: str, default: str) -> bool:
+    """fix 2026-11-12 translate-b3: cờ bật/tắt đọc lúc gọi (env > pineline.config.json > mặc định)."""
+    try:
+        v = _cfg_get(key, default)
+    except Exception:  # noqa: BLE001
+        v = default
+    return str(v if v is not None else default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _pronoun_regex_mixed_on() -> bool:
+    """fix 2026-11-12 translate-b3 — PRONOUN_REGEX_MIXED (mặc định 1 = như cũ).
+
+    0 = TẮT mọi phép ĐỔI ĐẠI TỪ tất định trên phim mixed (style_lock.mode=mixed hoặc
+    genre đô thị+võ): nhánh mixed của `apply_style_polish` (ngươi→cậu, ta→tôi, vá «cậu tôi/
+    hắn tôi», «biến cậu tôi thành»→«biến hắn thành») và trong `apply_pronoun_postpass`
+    (detox Ta/Ngươi + ép self/call theo cặp) khi plan là mixed. Các luật polish khác giữ nguyên.
+    """
+    return _cfg_flag("PRONOUN_REGEX_MIXED", "1")
+
+
 def apply_style_polish(rows: list[dict], plan: dict | None = None) -> int:
     """Post-pass deterministic: sửa calque / văn mẫu thường gặp (mixed short-drama).
 
     An toàn: chỉ thay cụm VI cứng khi ZH có tín hiệu tương ứng; không đụng manual.
+    translate-b3: PRONOUN_REGEX_MIXED=0 → bỏ phép đổi đại từ ở nhánh mixed (xem
+    `_pronoun_regex_mixed_on`).
     """
+    pron_rx = _pronoun_regex_mixed_on()
     if not _is_mixed_genre(plan) and not (
         isinstance(plan, dict)
         and "dị năng" in str(plan.get("genre") or "").lower()
@@ -1712,6 +2077,7 @@ def apply_style_polish(rows: list[dict], plan: dict | None = None) -> int:
         # CẤM đụng «cậu ta»/«hắn ta» — \bta\b từng biến «cậu ta» → «cậu tôi».
         if _is_mixed_genre(plan):
             import re
+            _vi_before_pron = new  # translate-b3: PRONOUN_REGEX_MIXED=0 → hoàn lại khối đổi đại từ
             # «ông ta/cô ta/chúng ta…» = ngôi 3 / ngôi 1 gộp — đổi «ta»→«tôi» thành «ông tôi» (sai nghĩa).
             new = _TA_KEEP_RE.sub(lambda m: m.group(1) + "\0TA\0", new)
             new = re.sub(r"\bNgươi\b", "Cậu", new)
@@ -1736,6 +2102,8 @@ def apply_style_polish(rows: list[dict], plan: dict | None = None) -> int:
             if "奴隶" in zh and ("你的" in zh.replace(" ", "") or "变成" in zh):
                 new = re.sub(r"(?i)biến\s+cậu tôi\s+thành", "biến hắn thành", new, count=1)
                 new = re.sub(r"(?i)biến\s+cậu ấy\s+thành", "biến hắn thành", new, count=1)
+            if not pron_rx:
+                new = _vi_before_pron  # bỏ mọi phép đổi đại từ ở trên; luật dưới (thuật ngữ…) vẫn chạy
             # HV ấn ký số Ả Rập → Thập Bát khi là 18 tầng
             new = new.replace("Ấn ký 18 tầng", "Thập Bát Tầng Ấn Ký")
             new = new.replace("Ấn ký Thập Bát Tầng", "Thập Bát Tầng Ấn Ký")
@@ -1874,6 +2242,10 @@ def apply_pronoun_postpass(rows: list[dict], plan: dict | None = None) -> int:
     import re
     n = 0
     modern = _is_modernish_genre(plan)
+    # translate-b3: PRONOUN_REGEX_MIXED=0 + plan mixed → không detox / không ép self-call bằng regex
+    # (bình thường mode=mixed đã cho modern=False; cờ chặn nốt ca mode=modern mà genre đô thị+võ).
+    if modern and _is_mixed_genre(plan) and not _pronoun_regex_mixed_on():
+        modern = False
     pairs = _pronoun_pairs(plan)
     aliases = _char_aliases(plan)
 
@@ -1910,7 +2282,7 @@ def apply_pronoun_postpass(rows: list[dict], plan: dict | None = None) -> int:
                 if not _mentions(zh, who):
                     continue
             self_f, call = pr["self"], pr["call"]
-            if modern or _is_modernish_genre(plan):
+            if modern:  # translate-b3: trước là «modern or _is_modernish_genre(plan)» (= modern)
                 if call and call.lower() in ("cậu", "mày", "anh", "em", "chị", "bạn"):
                     if re.search(r"\b[Nn]gươi\b", new):
                         new = re.sub(r"\bNgươi\b", call[:1].upper() + call[1:], new)
@@ -1928,6 +2300,99 @@ def apply_pronoun_postpass(rows: list[dict], plan: dict | None = None) -> int:
     if n:
         print(f"[pronoun] post-pass sửa {n} câu (genre/ma trận)", flush=True)
     return n
+
+
+class ReviewBadOutput(ValueError):
+    """fix 2026-11-11 translate-b1 C1: REVIEW LLM trả rỗng / JSON hỏng / cụt / thiếu «fixes».
+    Lô phải coi là LỖI (không đánh rv) — khác với fixes=[] hợp lệ (không cần sửa)."""
+
+
+def _parse_review_fixes(text: str | None) -> dict[int, str] | None:
+    """Parse CHẶT phản hồi REVIEW. Trả {i: vi} (có thể rỗng) hoặc None = không tin được.
+
+    Hợp lệ: object TRỌN có khoá "fixes" là list (cho phép code fence, dấu phẩy thừa,
+    chữ thừa SAU object) hoặc mảng top-level parse trọn. Mọi trường hợp khác
+    (rỗng, cụt, fence mở không đóng, {} / thiếu fixes, fixes không phải list) → None.
+    """
+    t = (text or "").strip()
+    # review 2026-11-11: khối suy nghĩ TRỌN <think>…</think> (model reasoning) → bỏ trước khi parse
+    if "<think>" in t and "</think>" in t:
+        t = re.sub(r"<think>[\s\S]*?</think>", "", t).strip()
+    if not t:
+        return None
+    if "```" in t:
+        mfence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", t)
+        if not mfence:
+            return None  # fence mở không đóng = bị cắt
+        t = mfence.group(1).strip()
+        if not t:
+            return None
+    data = None
+    try:
+        data = json.loads(t)
+    except json.JSONDecodeError:
+        try:
+            data = json.loads(re.sub(r",\s*([\}\]])", r"\1", t))
+        except json.JSONDecodeError:
+            # review 2026-11-11: JSON TRỌN nằm giữa chữ thừa («Kết quả: [...]», ghi chú có «{i}»…).
+            # Chỉ nhận giá trị decode TRỌN (cụt → không khớp): object có "fixes" là list,
+            # hoặc mảng KHÁC RỖNG mà MỌI phần tử là {"i","vi"}. Không vớt từng object lẻ.
+            data = _scan_review_json(t)
+            if data is None:
+                return None
+    if isinstance(data, dict):
+        fixes = data.get("fixes")
+        if not isinstance(fixes, list):
+            return None
+    elif isinstance(data, list):
+        fixes = data
+    else:
+        return None
+    res: dict[int, str] = {}
+    for f in fixes:
+        if not isinstance(f, dict) or "i" not in f:
+            continue
+        vi = f.get("vi")
+        vi = vi.strip() if isinstance(vi, str) else ""
+        if not vi:
+            continue
+        try:
+            res[int(f["i"])] = vi
+        except (TypeError, ValueError):
+            continue
+    return res
+
+
+def _scan_review_json(t: str, max_starts: int = 200):
+    """Tìm giá trị JSON TRỌN hợp lệ cho REVIEW trong chuỗi có chữ thừa (xem _parse_review_fixes).
+    Ưu tiên object có "fixes" (list); sau đó mảng toàn {"i","vi"}. Không thấy → None."""
+    dec = json.JSONDecoder()
+    arr_hit = None
+    n = 0
+    for mm in re.finditer(r"[\[{]", t):
+        n += 1
+        if n > max_starts:
+            break
+        try:
+            val, _end = dec.raw_decode(t, mm.start())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(val, dict) and isinstance(val.get("fixes"), list):
+            return val
+        if (
+            arr_hit is None
+            and isinstance(val, list)
+            and val  # mảng RỖNG giữa chữ thừa (vd «"vi":"[]"» trong JSON cụt) không tính
+            and all(isinstance(x, dict) and "i" in x and "vi" in x for x in val)
+        ):
+            arr_hit = val
+    return arr_hit
+
+
+def _row_is_manual(r: dict | None) -> bool:
+    """fix 2026-11-11 translate-b1 C2: câu người sửa tay (server đặt manual=1/True) —
+    mọi lớp máy (REVIEW, name/pronoun pass, register policy, hậu kỳ) KHÔNG ghi đè vi."""
+    return bool(isinstance(r, dict) and r.get("manual"))
 
 
 def _salvage_items(text: str) -> dict:
@@ -2340,23 +2805,39 @@ def _pass1_upload_one_srt(
     use_model: str,
     timeout: int,
     label: str = "",
+    stop_path: str | Path | None = None,
 ) -> dict:
-    """Upload 1 SRT + hỏi GPT đọc file. Trả dict JSON hoặc {}."""
+    """Upload 1 SRT + hỏi GPT đọc file. Trả dict JSON hoặc {}.
+
+    fix 2026-11-11 translate-b2 (Việc A): limit/5xx/timeout → thử lại cloud có backoff
+    (cửa chờ chung với REVIEW lô) trước khi bỏ.
+    """
     from engines.llm import aurora_upload_file, chatgpt_chat_with_file
 
     tag = f" {label}" if label else ""
     print(f"[review-pass1] upload file{tag}: {srt_path.name} ({srt_path.stat().st_size/1024:.0f}KB)", flush=True)
-    up = aurora_upload_file(srt_path, purpose="assistants")
-    out = chatgpt_chat_with_file(
-        up["id"],
-        prompt,
-        model=_pass1_chat_model(use_model),
-        temperature=0.1,
-        max_tokens=4096,
-        json_mode=True,
-        timeout=timeout,
-        base=up.get("base"),
-        account_id=up.get("account_id") or None,
+
+    def _once() -> str:
+        up = aurora_upload_file(srt_path, purpose="assistants")
+        return chatgpt_chat_with_file(
+            up["id"],
+            prompt,
+            model=_pass1_chat_model(use_model),
+            temperature=0.1,
+            max_tokens=4096,
+            json_mode=True,
+            timeout=timeout,
+            base=up.get("base"),
+            account_id=up.get("account_id") or None,
+        )
+
+    out = _cloud_retry.call_with_cloud_retry(
+        _once,
+        model=use_model or "chatgpt/auto",
+        label="[review-pass1]",
+        what=f"file{tag}",
+        stop_check=_cloud_retry.stop_checker(stop_path),
+        cfg_get=_cfg_get,
     )
     parsed = parse_json(out) if out else {}
     if isinstance(parsed, dict) and not parsed.get("error"):
@@ -2397,13 +2878,20 @@ def _pass1_upload_full_via_chunks(
             got = _pass1_upload_one_srt(
                 cpath, chunk_prompt, use_model=use_model, timeout=timeout,
                 label=f"chunk {p + 1}/{n_parts}",
+                stop_path=Path(work_dir) / ".stop",
             )
             if got:
                 parts.append(got)
             else:
                 print(f"[review-pass1] chunk {p + 1}/{n_parts} trống/lỗi parse", flush=True)
+        except _cloud_retry.CloudRetryStopped:
+            raise
         except Exception as e:  # noqa: BLE001
             print(f"[review-pass1] chunk {p + 1}/{n_parts} lỗi: {e}", flush=True)
+            if getattr(e, "_cloud_retry_exhausted", False):
+                # translate-b2: cloud vẫn limit sau khi đã thử lại đủ — không đốt tiếp các phần sau
+                print("[review-pass1] cloud hết lượt thử lại — dừng chunk upload", flush=True)
+                break
     if not parts:
         return {}
     return _pass1_merge_chunk_results(parts)
@@ -2468,13 +2956,22 @@ def run_review_pass1_full_vi(
     max_b = _pass1_max_upload_bytes()
 
     # 1) Một file full nếu vừa trần
+    cloud_exhausted = False
     if srt_size > 0 and srt_size <= max_b:
         try:
             data = _pass1_upload_one_srt(
-                srt_path, prompt, use_model=use_model, timeout=timeout, label="full"
+                srt_path, prompt, use_model=use_model, timeout=timeout, label="full",
+                stop_path=work_dir / ".stop",
             )
+        except _cloud_retry.CloudRetryStopped:
+            raise
         except Exception as e:  # noqa: BLE001
-            print(f"[review-pass1] upload full lỗi ({e}) → thử chunk file", flush=True)
+            cloud_exhausted = bool(getattr(e, "_cloud_retry_exhausted", False))
+            print(
+                f"[review-pass1] upload full lỗi ({e}) → "
+                + ("cloud hết lượt thử lại — bỏ chunk upload" if cloud_exhausted else "thử chunk file"),
+                flush=True,
+            )
             data = {}
     else:
         print(
@@ -2483,11 +2980,13 @@ def run_review_pass1_full_vi(
         )
 
     # 2) Chunk upload — vẫn đọc HẾT cue qua file, không chat sample
-    if not data:
+    if not data and not cloud_exhausted:
         try:
             data = _pass1_upload_full_via_chunks(
                 work_dir, rows, prompt, use_model=use_model, timeout=timeout,
             )
+        except _cloud_retry.CloudRetryStopped:
+            raise
         except Exception as e:  # noqa: BLE001
             print(f"[review-pass1] chunk upload lỗi: {e}", flush=True)
             data = {}
@@ -2665,6 +3164,93 @@ def _pronoun_forms(vi: str) -> set[str]:
     return out
 
 
+def _review_pron_guide_on() -> bool:
+    """fix 2026-11-12 translate-b3: REVIEW được sửa xưng hô theo plan.
+
+    Chỉ khi REVIEW_PRONOUN_MASK=0 (mask tắt) VÀ REVIEW_PRONOUN_PLAN_GUIDE (mặc định 1) bật.
+    Mask bật (prod mặc định) → luôn False → prompt/lọc y như cũ.
+    """
+    if _review_pronoun_mask_on():
+        return False
+    return _cfg_flag("REVIEW_PRONOUN_PLAN_GUIDE", "1")
+
+
+def _plan_pronoun_forms(plan: dict | None) -> set[str]:
+    """Các dạng tự xưng/cách gọi đã chốt trong plan.pronouns (chữ thường)."""
+    out: set[str] = set()
+    for pr in _pronoun_pairs(plan):
+        for k in ("self", "call"):
+            for f in re.split(r"[/,;|]| hoặc ", str(pr.get(k) or "")):
+                f = f.strip().lower()
+                if f and len(f) <= 20:
+                    out.add(f)
+    return out
+
+
+def _review_pron_guide_block(plan: dict | None) -> str:
+    """Khối chỉ dẫn (G) — chỉ chèn khi `_review_pron_guide_on()`."""
+    lines = [
+        "(G) XƯNG HÔ THEO PLAN — lượt này ĐẠI TỪ KHÔNG BỊ KHOÁ, ĐƯỢC SỬA khi lệch cặp đã chốt:",
+        "  - Bám bảng XƯNG HÔ (who→to) trong plan + phân cảnh: vi_nhap dùng sai tự xưng/cách gọi của "
+        "cặp đã chốt (vd cặp chốt anh–em mà nháp «tôi–cậu»; cổ phong chốt ta–ngươi / lão phu–tiểu tử "
+        "mà nháp «tôi–cậu») → trả fix CHỈ đổi đại từ/danh xưng, giữ nguyên phần còn lại của câu.",
+        "  - Người nói/người nghe xác định từ ZH (你/您/我/老夫/本座/师兄…), tên trong câu, câu liền kề; "
+        "KHÔNG chắc ai nói với ai → GIỮ NGUYÊN.",
+        "  - Cổ phong (ta/ngươi, lão phu, bản tọa, vãn bối, sư huynh…) là ĐÚNG khi plan/ZH như vậy — "
+        "CẤM đổi thành tôi/cậu. Không đổi ngôi 3 (hắn/cô ấy…) trừ khi sai giới rõ theo ZH.",
+    ]
+    pairs = _pronoun_pairs(plan)
+    if pairs:
+        lines.append("  Cặp đã chốt (who → to: tự xưng / gọi):")
+        for pr in pairs[:24]:
+            lines.append(
+                f"    · {pr['who']} → {pr.get('to') or '*'}: «{pr.get('self') or '?'}» / «{pr.get('call') or '?'}»"
+            )
+    return "\n".join(lines) + "\n"
+
+
+def _pronoun_plan_fixes(fixes: dict, rows: list[dict], plan: dict | None) -> dict[int, str]:
+    """translate-b3: fix CHỈ đổi đại từ sang dạng có trong plan.pronouns → giữ (bộ lọc cosmetic
+    K20 vốn bỏ mọi fix chỉ đổi xưng hô). Phần còn lại của câu phải giống hệt (so sau khi che đại từ)."""
+    allowed = _plan_pronoun_forms(plan)
+    if not fixes or not allowed:
+        return {}
+    forms = sorted(
+        {"ngươi", "chúng ta", "tôi", "tao", "tớ", "mình", "ta", "cậu", "mày", "anh", "em", "chị", "ông",
+         "bà", "bạn", "cô", "con"} | allowed,
+        key=len, reverse=True,
+    )
+    rx = re.compile(r"(?<!\w)(" + "|".join(re.escape(f) for f in forms) + r")(?!\w)", re.IGNORECASE)
+
+    def _skel(s: str) -> str:
+        s = rx.sub("\u27e6P\u27e7", (s or "").strip().lower())
+        return re.sub(r"[\s\.,!?…;:]+", " ", s).strip()
+
+    def _found(s: str) -> set[str]:
+        return {m.group(1).lower() for m in rx.finditer(s or "")}
+
+    by_i = {int(r["i"]): r for r in rows if isinstance(r, dict) and "i" in r}
+    out: dict[int, str] = {}
+    for i, vi_fix in (fixes or {}).items():
+        try:
+            r = by_i.get(int(i)) or {}
+        except (TypeError, ValueError):
+            continue
+        if r.get("manual"):
+            continue
+        orig = (r.get("vi") or "").strip()
+        fix = (vi_fix or "").strip()
+        if not orig or not fix or fix == orig:
+            continue
+        if _skel(orig) != _skel(fix):
+            continue
+        added = _found(fix) - _found(orig)
+        if not added or not added <= allowed:
+            continue
+        out[int(i)] = fix
+    return out
+
+
 def review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
                  target: str = "Tiếng Việt", model: str | None = None,
                  plan: dict | None = None,
@@ -2757,6 +3343,10 @@ def review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
             sys
             + "\nToken ⟦Pn⟧ = đại từ KHÓA — giữ nguyên từng token; CẤM đổi ngôi / tháo token.\n"
         )
+    pron_guide = (not mask_on) and _review_pron_guide_on()
+    if pron_guide:
+        # translate-b3: mask tắt → REVIEW được sửa xưng hô theo plan (khối chỉ dẫn + giữ fix đại từ)
+        sys = sys + "\n" + _review_pron_guide_block(plan)
     must_f: list[int] = []
     if isinstance(plan, dict):
         p1 = plan.get("review_pass1") if isinstance(plan.get("review_pass1"), dict) else {}
@@ -2797,13 +3387,18 @@ def review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
         # chỉ trả câu cần sửa → output ngắn; 4096 đủ cho ~30 câu sửa
         max_tokens=4096,
     )
-    try:
-        data = parse_json(out)
-        fixes = data.get("fixes", data if isinstance(data, list) else [])
-        raw = {int(f["i"]): (f.get("vi") or "").strip()
-               for f in fixes if isinstance(f, dict) and "i" in f and (f.get("vi") or "").strip()}
-    except Exception:  # noqa: BLE001
-        raw = _salvage_items(out)     # JSON hỏng -> vớt; rỗng = không câu nào cần sửa
+    # fix 2026-11-11 translate-b1 C1: rỗng / JSON hỏng / cụt / thiếu «fixes» = LÔ LỖI
+    # (raise ReviewBadOutput → caller trả None → không đánh rv, B1/B2 thử lại / park).
+    # Chỉ {"fixes":[...]} (hoặc mảng top-level) parse ĐƯỢC TRỌN mới là hợp lệ;
+    # fixes=[] hợp lệ = «không câu nào cần sửa». Không còn vớt từng object (_salvage_items)
+    # vì vớt một phần rồi đánh rv cả lô = mất các fix bị cắt.
+    raw = _parse_review_fixes(out)
+    if raw is None:
+        raise ReviewBadOutput(
+            f"REVIEW trả rỗng/JSON hỏng/cụt (len={len(out or '')}) — lô coi là lỗi"
+            # review 2026-11-11: kèm đầu/cuối phản hồi để đo định dạng thật của model (1 dòng log)
+            + (f" · đầu={(out or '')[:120]!r} · cuối={(out or '')[-80:]!r}" if (out or "").strip() else "")
+        )
     if mask_on and token_map:
         restored = {}
         by_i = {int(r["i"]): r for r in rows if isinstance(r, dict) and "i" in r}
@@ -2816,7 +3411,11 @@ def review_batch(rows: list[dict], plan_block: str, prev_ctx: list[dict],
                 continue  # #1 đóng băng ngôi
             restored[int(i)] = vi2
         raw = restored
+    pron_keep = _pronoun_plan_fixes(raw, rows, plan) if pron_guide else {}
     raw = _filter_cosmetic_nmt_fixes(raw, [*prev_ctx, *rows], plan)
+    if pron_keep:
+        for _i_pk, _v_pk in pron_keep.items():
+            raw.setdefault(_i_pk, _v_pk)
     try:
         from engines.pronoun_consistency import filter_review_fixes_for_lock
         return filter_review_fixes_for_lock(raw, rows, plan)
@@ -3013,6 +3612,21 @@ def run_review(
     model: str | None = None,
     force: bool = False,
 ) -> dict:
+    """LƯỢT 2 — xem `_run_review_impl`. translate-b2: bọc log VRAM đầu/cuối."""
+    _log_vram("review:start")
+    try:
+        return _run_review_impl(work_dir, batch=batch, target=target, model=model, force=force)
+    finally:
+        _log_vram("review:end")
+
+
+def _run_review_impl(
+    work_dir: str | Path,
+    batch: int = 40,
+    target: str = "Tiếng Việt",
+    model: str | None = None,
+    force: bool = False,
+) -> dict:
     """LƯỢT 2: soát bản dịch nháp (script.json) bằng model chính xác (minimax) rồi
     vá tại chỗ. Lô lớn hơn dịch (output chỉ là câu cần sửa). Checkpoint từng lô,
     resume phần chưa soát (cờ 'rv'). Cập nhật tiến độ 'review' vào manifest."""
@@ -3031,8 +3645,35 @@ def run_review(
 
     # 0. BẢO ĐẢM 100% CÂU CÓ BẢN DỊCH: Tự động phát hiện và dịch lấp đầy các câu còn trống trước khi rà soát
     missing_indices = [idx for idx, r in enumerate(rows) if not (r.get("vi") or "").strip()]
+    # fix 2026-11-11 translate-b2 (Việc B): NMT primary + REVIEW cloud → vá bằng rmodel cloud
+    # (có retry Việc A), KHÔNG dùng local gemma (_tmodel). Cấu hình cũ giữ nguyên.
+    fill_cloud = _cloud_fill_model(work_dir, model) if missing_indices else None
+    fill_state = {"dead": False}
+
+    def _fill_translate(payload: list[dict], ctx: list[dict]) -> dict:
+        if not fill_cloud:
+            return _translate_safe(payload, plan_block, ctx, target=target, model=model or _tmodel(), plan=plan)
+        if fill_state["dead"]:
+            return {}
+        try:
+            return _cloud_fill_call(
+                lambda: _translate_safe(payload, plan_block, ctx, target=target, model=fill_cloud, plan=plan),
+                fill_model=fill_cloud, label="[review-fill]", what=f"{len(payload)} câu trống",
+                work_dir=work_dir,
+            )
+        except _cloud_retry.CloudRetryStopped:
+            raise
+        except Exception as e_fc:  # noqa: BLE001
+            fill_state["dead"] = True
+            print(
+                f"[review-fill] cloud {fill_cloud} vẫn lỗi ({str(e_fc)[:160]}) — để trống + fill_pending=1",
+                flush=True,
+            )
+            return {}
+
     if missing_indices:
-        print(f"[review] ⚠️ Phát hiện {len(missing_indices)} câu trống chưa có bản dịch! Tự động dịch vá ngay trước khi rà soát...", flush=True)
+        print(f"[review] ⚠️ Phát hiện {len(missing_indices)} câu trống chưa có bản dịch! Tự động dịch vá ngay trước khi rà soát..."
+              + (f" (model={fill_cloud} cloud)" if fill_cloud else ""), flush=True)
         k_miss = 0
         while k_miss < len(missing_indices):
             if (work_dir / ".stop").exists():
@@ -3057,7 +3698,7 @@ def run_review(
                 for j in range(max(0, p0 - CTX_LINES), p0)
                 if rows[j].get("vi")
             ]
-            fill_map = _translate_safe(chunk_payload, plan_block, prev_ctx_fill, target=target, model=model or _tmodel(), plan=plan)
+            fill_map = _fill_translate(chunk_payload, prev_ctx_fill)
             for p_idx, s_item in zip(chunk_indices, chunk_payload):
                 vi_val = (fill_map.get(s_item["i"]) or "").strip()
                 if _has_cjk(vi_val):
@@ -3065,12 +3706,17 @@ def run_review(
                 if vi_val and not _has_cjk(vi_val):
                     rows[p_idx]["vi"] = normalize_vi_thousands(vi_val)
                     rows[p_idx].pop("rv", None)  # câu mới dịch cần được soát
+                    rows[p_idx].pop("fill_pending", None)
             atomic_write_json(script_path, rows, fsync=False)
             print(f"  [review-fill] ...đã vá {min(k_miss, len(missing_indices))}/{len(missing_indices)} câu", flush=True)
 
         # Cứu từng câu đơn nếu còn sót
         still_miss = [idx for idx, r in enumerate(rows) if not (r.get("vi") or "").strip()]
         for idx in still_miss:
+            if fill_state["dead"]:
+                break
+            if (work_dir / ".stop").exists():
+                raise RuntimeError("stopped by user")
             r_single = rows[idx]
             single_payload = [{
                 "i": r_single.get("i", idx),
@@ -3078,10 +3724,35 @@ def run_review(
                 "end": r_single.get("end", 0),
                 "text": r_single.get("zh") or r_single.get("text") or "",
             }]
-            single_map = _translate_safe(single_payload, plan_block, [], target=target, model=model or _tmodel(), plan=plan)
+            single_map = _fill_translate(single_payload, [])
             if single_map.get(r_single.get("i", idx)):
                 rows[idx]["vi"] = normalize_vi_thousands(single_map[r_single.get("i", idx)])
                 rows[idx].pop("rv", None)
+                rows[idx].pop("fill_pending", None)
+        if fill_cloud:
+            # translate-b2: hậu kỳ tất định (lock tên / style / xưng hô) CHỈ trên câu vừa vá
+            # (không manual) — trước đây câu vá muộn ở REVIEW không qua hậu kỳ của run_translate.
+            patched = [
+                rows[idx] for idx in missing_indices
+                if (rows[idx].get("vi") or "").strip() and not _row_is_manual(rows[idx])
+            ]
+            if patched:
+                try:
+                    apply_hard_term_locks(patched, plan)
+                    apply_style_polish(patched, plan)
+                    apply_pronoun_postpass(patched, plan)
+                except Exception as e_pp:  # noqa: BLE001
+                    print(f"[review-fill] hậu kỳ câu vá lỗi: {e_pp}", flush=True)
+                for r_p in patched:
+                    r_p.pop("rv", None)  # để lô REVIEW soát câu vừa vá
+                print(f"[review-fill] hậu kỳ tất định trên {len(patched)} câu vừa vá (không manual)", flush=True)
+            n_pend = 0
+            for idx in missing_indices:
+                if not (rows[idx].get("vi") or "").strip():
+                    rows[idx]["fill_pending"] = 1
+                    n_pend += 1
+            if n_pend:
+                print(f"[review-fill] ⚠️ còn {n_pend} câu trống (fill_pending=1) — cloud chưa vá được", flush=True)
         atomic_write_json(script_path, rows, fsync=False)
 
     # Trước LLM: gỡ stutter nội bộ rõ ràng (不对不对 / thuộc hạ thuộc hạ).
@@ -3126,6 +3797,8 @@ def run_review(
             sl = plan.get("style_lock")
             if isinstance(sl, dict):
                 atomic_write_json(work_dir / "style_lock.json", sl, fsync=False)
+        except _cloud_retry.CloudRetryStopped:
+            raise
         except Exception as e_p1:  # noqa: BLE001
             print(f"[review-pass1] bỏ qua (lỗi): {e_p1}", flush=True)
     print(f"[review] Model={rmodel} | soát {len(todo)}/{total} câu, lô {batch}.", flush=True)
@@ -3177,6 +3850,8 @@ def run_review(
         write_lock = threading.Lock()
         model_used = rmodel
         failed_jobs: list[dict] = []
+        # fix 2026-11-11 translate-b1 C9: 1 trạng thái fallback cho cả lượt (mọi luồng + lượt thử lại)
+        fb_state = _new_review_fallback_state()
 
         def _apply_result(job: dict, fixes: dict | None, model_u: str) -> None:
             nonlocal n_done, model_used
@@ -3195,12 +3870,21 @@ def run_review(
                     print(f"  [review] bỏ {n_out} fix ngoài lô (i không thuộc chunk ±1)", flush=True)
                 model_used = model_u or model_used
                 # Áp fix theo i trên rows gốc; chỉ rv chunk chính
+                n_manual_skip = 0
                 for r in rows:
                     ii = r.get("i")
                     if ii in allowed_ids and ii in fixes and fixes.get(ii):
-                        r["vi"] = normalize_vi_thousands(fixes[ii])
+                        if _row_is_manual(r):
+                            # fix 2026-11-11 translate-b1 C2: không ghi đè câu người sửa tay
+                            if (fixes.get(ii) or "").strip() != (r.get("vi") or "").strip():
+                                n_manual_skip += 1
+                        else:
+                            r["vi"] = normalize_vi_thousands(fixes[ii])
                     if ii in chunk_ids:
+                        # câu manual vẫn đánh rv: người đã duyệt; lô hợp lệ đã chạy qua
                         r["rv"] = 1
+                if n_manual_skip:
+                    print(f"  [review] giữ {n_manual_skip} câu sửa tay (manual) — bỏ fix LLM", flush=True)
                 n_done += len(chunk)
                 atomic_write_json(script_path, rows)
                 print(
@@ -3220,12 +3904,16 @@ def run_review(
                 m.data["stages"]["translate"] = st
                 m.save()
 
-        def _run_job(job: dict) -> tuple[dict, dict, str]:
+        def _run_job(job: dict, retry_pass: bool = False) -> tuple[dict, dict, str]:
             if (work_dir / ".stop").exists():
                 raise RuntimeError("stopped by user")
+            # translate-b2: lượt thử lại B1 sau khi cloud đã hết retry → không chờ backoff
+            # 30→240 s cho TỪNG lô nữa (chỉ 1 lần gọi/lô, nghỉ REVIEW_RETRY_BACKOFF_SEC).
+            n_cr = 0 if (retry_pass and fb_state.get("cloud_exhausted")) else None
             fixes, model_u = _review_chunk_with_fallback(
                 job["chunk_exp"], job["chunk"], plan_block, job["prev_ctx"],
                 target=target, rmodel=rmodel, plan=plan, exemplars_pool=rows,
+                fb_state=fb_state, stop_path=work_dir / ".stop", cloud_retries=n_cr,
             )
             return job, fixes, model_u
 
@@ -3272,7 +3960,7 @@ def run_review(
                     atomic_write_json(script_path, rows)
                     raise RuntimeError("stopped by user")
                 time.sleep(max(0.0, backoff))
-                _j, fixes, model_u = _run_job(job)
+                _j, fixes, model_u = _run_job(job, retry_pass=True)
                 _apply_result(_j, fixes, model_u)
             if failed_jobs:
                 n_fail = sum(len(j["chunk"]) for j in failed_jobs)
@@ -3494,6 +4182,207 @@ def clean_zh_spam(zh: str, max_rep: int = 3, max_len: int = 0) -> str:
     return t
 
 
+# fix 2026-11-11 translate-b1 T18: hàng script dựng từ hàng ASR phải GIỮ mọi trường thêm
+# (asr_conf, spk, to, pron… sau này). Bỏ: text (= nguồn của zh), mt_vi (gợi ý NMT tạm),
+# words/tokens (timestamp từng chữ, nặng), src_i (đánh dấu post-split — giữ sẽ làm resume
+# tưởng script đã cắt).
+_SEG_ROW_DROP = frozenset({"text", "mt_vi", "words", "tokens", "src_i"})
+
+
+# ───────────── fix 2026-11-12 translate-b3: gom câu cắt đôi trước khi dịch (HALFCUE_MERGE) ─────────────
+_HALFCUE_END = ("。", "！", "？", "…", "!", "?", "．")
+_HALFCUE_TRAIL = "」』”’\"')）】》 \t"
+_HALFCUE_VI_BREAK = (",", ";", ":", "—", "–", "…", ".", "!", "?")
+
+
+def _halfcue_cfg() -> dict | None:
+    """HALFCUE_MERGE=1 → {gap, max_chars, max_cues}; 0 (mặc định) → None (tắt, như cũ)."""
+    if not _cfg_flag("HALFCUE_MERGE", "0"):
+        return None
+
+    def _num(key: str, default: float) -> float:
+        try:
+            return float(_cfg_get(key, str(default)) or default)
+        except (TypeError, ValueError):
+            return default
+
+    return {
+        "gap": _num("HALFCUE_GAP", 0.35),
+        "max_chars": int(_num("HALFCUE_MAX_CHARS", 40)),
+        "max_cues": max(2, min(3, int(_num("HALFCUE_MAX_CUES", 3)))),
+    }
+
+
+def _hc_zh(s: dict) -> str:
+    return str(s.get("text") or s.get("zh") or "").strip()
+
+
+def _hc_len(zh: str) -> int:
+    return len(re.sub(r"[\s，。！？、,.!?…：:；;“”\"'《》「」（）()]+", "", zh or ""))
+
+
+def _zh_ends_sentence(zh: str) -> bool:
+    s = (zh or "").rstrip(_HALFCUE_TRAIL)
+    return (not s) or s.endswith(_HALFCUE_END)
+
+
+def halfcue_groups(segments: list[dict], gap: float = 0.35, max_chars: int = 40,
+                   max_cues: int = 3) -> dict[int, str]:
+    """i → group_id ("hc<i đầu>") cho cue thuộc nhóm ≥ 2 cue liên tiếp CÙNG một câu:
+    cue trước KHÔNG kết thúc bằng 。！？…, khoảng nghỉ ≤ gap (s), tổng ký tự ZH ≤ max_chars,
+    tối đa max_cues cue. Cue ZH rỗng không gom."""
+    out: dict[int, str] = {}
+    cur: list[dict] = []
+
+    def _flush() -> None:
+        if len(cur) >= 2:
+            gid = f"hc{cur[0]['i']}"
+            for s in cur:
+                out[s["i"]] = gid
+
+    for s in segments:
+        if not isinstance(s, dict) or "i" not in s:
+            continue
+        zh = _hc_zh(s)
+        if cur and zh:
+            prev = cur[-1]
+            try:
+                g = float(s.get("start", 0) or 0) - float(prev.get("end", 0) or 0)
+            except (TypeError, ValueError):
+                g = 1e9
+            tot = sum(_hc_len(_hc_zh(x)) for x in cur) + _hc_len(zh)
+            if (not _zh_ends_sentence(_hc_zh(prev)) and g <= gap and tot <= max_chars
+                    and len(cur) < max_cues):
+                cur.append(s)
+                continue
+        _flush()
+        cur = [s] if zh else []
+    _flush()
+    return out
+
+
+def halfcue_units(items: list[dict], groups: dict[int, str], pos_of: dict[int, int],
+                  failed: set[str] | None = None) -> list[dict]:
+    """Gom các item liên tiếp (theo thứ tự phim) cùng group_id thành 1 đơn vị dịch
+    {i: i đầu, start, end, text: ZH nối, _members: [item…], _gid}. Item lẻ giữ nguyên."""
+    failed = failed or set()
+    out: list[dict] = []
+    k = 0
+    while k < len(items):
+        s = items[k]
+        gid = groups.get(s.get("i"))
+        mem = [s]
+        if gid and gid not in failed:
+            j = k + 1
+            while (j < len(items) and groups.get(items[j].get("i")) == gid
+                   and pos_of.get(items[j].get("i"), -9) == pos_of.get(mem[-1].get("i"), -99) + 1):
+                mem.append(items[j])
+                j += 1
+        if len(mem) >= 2:
+            u = {
+                "i": mem[0]["i"], "start": mem[0].get("start", 0), "end": mem[-1].get("end", 0),
+                "text": "".join(_hc_zh(m) for m in mem), "_members": mem, "_gid": gid,
+            }
+            if all((m.get("mt_vi") or "").strip() for m in mem):
+                u["mt_vi"] = " ".join(m["mt_vi"].strip() for m in mem)
+            out.append(u)
+            k += len(mem)
+        else:
+            out.append(s)
+            k += 1
+    return out
+
+
+def halfcue_split_vi(vi: str, zh_parts: list[str]) -> list[str] | None:
+    """Chia câu VI của một nhóm về lại các cue: mỗi điểm cắt chọn ranh giới dấu câu
+    (, ; : — … . ! ?) gần vị trí tỉ lệ độ dài ZH nhất (lệch ≤ max(6, 20%) ký tự); không có
+    thì ranh giới từ gần nhất. Không chia được (ít từ hơn số cue) → None. Không phần nào rỗng."""
+    n = len(zh_parts)
+    words = (vi or "").split()
+    if n < 2 or len(words) < n:
+        return None
+    weights = [max(1, _hc_len(z)) for z in zh_parts]
+    tot = float(sum(weights))
+    ends: list[int] = []
+    pos = 0
+    for w in words:
+        pos += len(w)
+        ends.append(pos)
+        pos += 1
+    total_len = ends[-1]
+    tol = max(6.0, 0.2 * total_len)
+    cuts: list[int] = []
+    prev_cut = 0
+    for t in range(1, n):
+        target = total_len * sum(weights[:t]) / tot
+        lo, hi = prev_cut + 1, len(words) - (n - t)
+        if lo > hi:
+            return None
+
+        def _dist(b: int) -> float:
+            return abs(ends[b - 1] - target)
+
+        best = None
+        punct = [b for b in range(lo, hi + 1) if words[b - 1].rstrip("\"'”’»)").endswith(_HALFCUE_VI_BREAK)]
+        if punct:
+            b = min(punct, key=_dist)
+            if _dist(b) <= tol:
+                best = b
+        if best is None:
+            best = min(range(lo, hi + 1), key=_dist)
+        cuts.append(best)
+        prev_cut = best
+    parts: list[str] = []
+    prev = 0
+    for c in cuts + [len(words)]:
+        parts.append(" ".join(words[prev:c]))
+        prev = c
+    if any(not re.search(r"\w", p) for p in parts):
+        return None
+    return parts
+
+
+def halfcue_expand(vi_map: dict, units: list[dict], failed: set[str],
+                   assigned: dict[int, str]) -> tuple[dict, list[dict]]:
+    """vi theo đơn vị → vi theo cue gốc. Nhóm chia được: mọi cue thành viên nhận phần
+    của mình + ghi `assigned[i] = group_id`. Nhóm không chia được → thêm gid vào `failed`,
+    trả các cue thành viên trong danh sách thứ 2 để dịch lẻ (như khi tắt cờ)."""
+    out: dict = {}
+    singles: list[dict] = []
+    for u in units:
+        mem = u.get("_members")
+        if not mem:
+            if u.get("i") in vi_map:
+                out[u["i"]] = vi_map[u["i"]]
+            continue
+        vi = (vi_map.get(u["i"]) or "").strip()
+        if not vi:
+            continue  # thiếu như câu thường → vòng vá sau xử lý (gom lại nếu cờ còn bật)
+        parts = halfcue_split_vi(vi, [_hc_zh(m) for m in mem])
+        if not parts:
+            failed.add(u.get("_gid") or f"hc{u['i']}")
+            singles.extend(mem)
+            continue
+        for m, p in zip(mem, parts):
+            out[m["i"]] = p
+            assigned[m["i"]] = u.get("_gid") or f"hc{mem[0]['i']}"
+    return out, singles
+
+
+def _hc_payload(units: list[dict]) -> list[dict]:
+    return [{k: v for k, v in u.items() if k not in ("_members", "_gid")} for u in units]
+
+
+def _seg_row(s: dict, *, zh: str, vi: str, **extra) -> dict:
+    """Hàng script.json từ hàng ASR `s`: {i,start,end,zh,vi} + trường thêm của ASR."""
+    row = {"i": s["i"], "start": s["start"], "end": s["end"], "zh": zh, "vi": vi}
+    for k, v in s.items():
+        if k not in row and k not in _SEG_ROW_DROP:
+            row[k] = v
+    row.update(extra)
+    return row
+
+
 def run_translate(
     work_dir: str | Path,
     batch: int = 20,           # lô nhỏ: model nhớ glossary/tên riêng tốt hơn (tránh dịch đen)
@@ -3501,6 +4390,26 @@ def run_translate(
     force: bool = False,
     model: str | None = None,
     mode: str | None = None,   # oneshot | batch | auto (None -> TRANSLATE_MODE / auto)
+    auto_review: bool | None = None,
+) -> dict:
+    """Stage dịch — xem `_run_translate_impl`. translate-b2: bọc log VRAM đầu/cuối."""
+    _log_vram("translate:start")
+    try:
+        return _run_translate_impl(
+            work_dir, batch=batch, target=target, force=force, model=model,
+            mode=mode, auto_review=auto_review,
+        )
+    finally:
+        _log_vram("translate:end")
+
+
+def _run_translate_impl(
+    work_dir: str | Path,
+    batch: int = 20,
+    target: str = "Tiếng Việt",
+    force: bool = False,
+    model: str | None = None,
+    mode: str | None = None,
     auto_review: bool | None = None,
 ) -> dict:
     work_dir = Path(work_dir)
@@ -3561,14 +4470,38 @@ def run_translate(
 
     # Chuyển đổi model preset AI local (Lượt 1: Dịch nhanh) và chờ AI mở sẵn sàng 100%
     auto_switch = (_cfg_get("AUTO_SWITCH_PRESETS", "1") or "1").strip() in ("1", "true", "yes")
-    if auto_switch:
+    _preset_done = {"v": False}
+
+    def _ensure_translate_preset(reason: str = "") -> None:
+        """Nạp TRANSLATE_PRESET (gemma) — tối đa 1 lần / lượt dịch."""
+        if _preset_done["v"]:
+            return
+        _preset_done["v"] = True
+        if not auto_switch:
+            return
         try:
             import tools.preset_switcher as preset_switcher
             target_preset = _cfg_get("TRANSLATE_PRESET", "gemma4-12b-qat-mtp-fast")
             if target_preset:
+                if reason:
+                    print(f"[trans] nạp preset local {target_preset} ({reason})", flush=True)
                 preset_switcher.switch_preset(target_preset, max_wait_sec=180)
         except Exception as e_ps:
             print(f"[preset_switcher] Cảnh báo switch preset lượt 1: {e_ps}", flush=True)
+
+    # fix 2026-11-11 translate-b2 (Việc B): NMT HachimiMT dịch chính + REVIEW cloud →
+    # KHÔNG nạp gemma ở đầu bước dịch; câu NMT sót (rỗng/CJK) vá ngay bằng model REVIEW
+    # cloud (có retry Việc A). Cấu hình cũ (NMT tắt / review local / TRANSLATE_FILL_MODEL=local
+    # / caller truyền model) → giữ nguyên: switch preset ngay như trước.
+    fill_cloud = _cloud_fill_model(work_dir, None) if not model else None
+    if fill_cloud:
+        print(
+            f"[trans] NMT primary + REVIEW cloud → KHÔNG nạp preset local "
+            f"{_cfg_get('TRANSLATE_PRESET', 'gemma4-12b-qat-mtp-fast')}; câu NMT sót vá bằng {fill_cloud}",
+            flush=True,
+        )
+    else:
+        _ensure_translate_preset()
 
     if is_local(model or _tmodel()):
         free_gpu_vram("trước dịch")
@@ -3611,7 +4544,7 @@ def run_translate(
                       "(không gọi build_plan).")
                 # đảm bảo style_lock lexicon nếu pack cũ thiếu
                 try:
-                    from context_studio.schema import apply_style_lock_from_genre
+                    from tools.context_studio.schema import apply_style_lock_from_genre
                     plan = apply_style_lock_from_genre(plan)
                 except Exception:  # noqa: BLE001
                     pass
@@ -3640,6 +4573,10 @@ def run_translate(
                     name_hints=hints or None,
                     series_plan=series_plan,
                     work_dir=work_dir,
+                    before_local_llm=(
+                        (lambda: _ensure_translate_preset("plan sample-mode dùng LLM local"))
+                        if fill_cloud else None
+                    ),
                 )
                 atomic_write_json(plan_path, plan, fsync=False)
                 print(f"[plan] {len(plan.get('characters', []))} nhân vật, {len(plan.get('terms', []))} thuật ngữ, "
@@ -3683,6 +4620,80 @@ def run_translate(
         except Exception:  # noqa: BLE001
             pass
         plan_block = _plan_block(plan)
+
+        # translate-b2: 1 hàm dịch-lấp cho mọi đường vá trong bước dịch.
+        # fill_cloud → model REVIEW cloud + retry Việc A; cloud vẫn lỗi → để trống
+        # (fill_pending=1), không gọi cloud tiếp trong lượt này. Không thì đường cũ.
+        fill_state = {"dead": False}
+
+        def _fill_chunk(chunk: list[dict], prev_ctx: list[dict]) -> dict:
+            if not fill_cloud:
+                return _translate_safe(chunk, plan_block, prev_ctx, target, model, plan)
+            if fill_state["dead"]:
+                return {}
+            try:
+                return _cloud_fill_call(
+                    lambda: _translate_safe(chunk, plan_block, prev_ctx, target, fill_cloud, plan),
+                    fill_model=fill_cloud, label="[trans-fill]",
+                    what=f"{len(chunk)} câu NMT sót", work_dir=work_dir,
+                )
+            except _cloud_retry.CloudRetryStopped:
+                raise
+            except Exception as e_fc:  # noqa: BLE001
+                fill_state["dead"] = True
+                print(
+                    f"[trans-fill] cloud {fill_cloud} vẫn lỗi ({str(e_fc)[:160]}) — để trống + "
+                    "fill_pending=1, REVIEW bước 0 sẽ vá",
+                    flush=True,
+                )
+                return {}
+
+        def _mark_fill_pending(rows_out: list[dict]) -> None:
+            if not fill_cloud:
+                return
+            n_p = 0
+            for r_fp in rows_out:
+                if not isinstance(r_fp, dict):
+                    continue
+                if (r_fp.get("vi") or "").strip():
+                    r_fp.pop("fill_pending", None)
+                else:
+                    r_fp["fill_pending"] = 1
+                    n_p += 1
+            if n_p:
+                print(f"[trans-fill] {n_p} câu còn trống → fill_pending=1", flush=True)
+
+        # translate-b3 HALFCUE_MERGE (mặc định tắt): gom cue cắt đôi thành 1 đơn vị dịch
+        # (NMT + LLM), chia VI lại cho cue gốc (không cue nào trống, giữ start/end), ghi group_id.
+        hc_cfg = _halfcue_cfg()
+        hc_groups: dict[int, str] = halfcue_groups(segments, **hc_cfg) if hc_cfg else {}
+        hc_pos = {s["i"]: k_hc for k_hc, s in enumerate(segments)} if hc_groups else {}
+        hc_failed: set[str] = set()
+        hc_assigned: dict[int, str] = {}
+        if hc_cfg:
+            print(
+                f"[halfcue] HALFCUE_MERGE=1 · {len(set(hc_groups.values()))} nhóm / "
+                f"{len(hc_groups)} cue (gap≤{hc_cfg['gap']}s, ≤{hc_cfg['max_chars']} ký tự, "
+                f"≤{hc_cfg['max_cues']} cue)",
+                flush=True,
+            )
+
+        def _hc_extra(i_x) -> dict:
+            g_x = hc_assigned.get(i_x)
+            return {"group_id": g_x} if g_x else {}
+
+        def _fill_chunk_hc(chunk: list[dict], prev_ctx: list[dict]) -> dict:
+            if not hc_groups:
+                return _fill_chunk(chunk, prev_ctx)
+            units = halfcue_units(chunk, hc_groups, hc_pos, hc_failed)
+            if not any(u.get("_members") for u in units):
+                return _fill_chunk(chunk, prev_ctx)
+            vi_u = _fill_chunk(_hc_payload(units), prev_ctx)
+            out_hc, singles = halfcue_expand(vi_u, units, hc_failed, hc_assigned)
+            if singles:
+                print(f"[halfcue] {len(singles)} cue không chia lại được → dịch lẻ", flush=True)
+                out_hc.update(_fill_chunk(singles, prev_ctx))
+            return out_hc
 
         # --- Dịch tuần tự (để có ngữ cảnh liền trước), resume phần thiếu ---
         # QUAN TRỌNG: sau split_bilingual_rows, script có nhiều dòng hơn ASR và i bị
@@ -3735,7 +4746,7 @@ def run_translate(
                                         "zh": rows[j].get("zh", ""),
                                         "vi": rows[j].get("vi", ""),
                                     })
-                            vi_map = _translate_safe(chunk, plan_block, prev_ctx, target, model, plan)
+                            vi_map = _fill_chunk(chunk, prev_ctx)
                             for pos, s in zip(chunk_pos, chunk):
                                 vi = (vi_map.get(s["i"]) or "").strip()
                                 if _has_cjk(vi):
@@ -3749,6 +4760,7 @@ def run_translate(
                     apply_hard_term_locks(rows, plan)
                     apply_style_polish(rows, plan)
                     apply_pronoun_postpass(rows, plan)
+                    _mark_fill_pending(rows)
                     from engines.subs import to_srt
                     atomic_write_json(script_path, rows)
                     (work_dir / "sub.vi.srt").write_text(to_srt(rows, key="vi"), encoding="utf-8")
@@ -3777,10 +4789,7 @@ def run_translate(
             zh = clean_zh_spam(zh0) or zh0
             tv = _trivial_vi(zh0)
             if tv:
-                done[s["i"]] = {
-                    "i": s["i"], "start": s["start"], "end": s["end"],
-                    "zh": zh, "vi": tv,
-                }
+                done[s["i"]] = _seg_row(s, zh=zh, vi=tv)
                 n_triv += 1
         if n_triv:
             print(f"[fill] prefill {n_triv} câu cười/thán từ", flush=True)
@@ -3799,10 +4808,28 @@ def run_translate(
                     f"{len(todo)} câu · {flavor} · {mid}",
                     flush=True,
                 )
-                drafts = mt_zh_vi.draft_rows(
-                    [{"i": s["i"], "text": s.get("text") or ""} for s in todo],
-                    plan=plan,
-                )
+                if hc_groups:
+                    nmt_units = halfcue_units(todo, hc_groups, hc_pos, hc_failed)
+                    drafts_u = mt_zh_vi.draft_rows(
+                        [{"i": u["i"], "text": u.get("text") or ""} for u in nmt_units],
+                        plan=plan,
+                    )
+                    drafts, nmt_singles = halfcue_expand(drafts_u, nmt_units, hc_failed, hc_assigned)
+                    if nmt_singles:
+                        drafts.update(mt_zh_vi.draft_rows(
+                            [{"i": s["i"], "text": s.get("text") or ""} for s in nmt_singles],
+                            plan=plan,
+                        ))
+                    print(
+                        f"[halfcue] NMT: {sum(1 for u in nmt_units if u.get('_members'))} đơn vị gom · "
+                        f"{len(hc_assigned)} cue chia lại · {len(nmt_singles)} cue dịch lẻ",
+                        flush=True,
+                    )
+                else:
+                    drafts = mt_zh_vi.draft_rows(
+                        [{"i": s["i"], "text": s.get("text") or ""} for s in todo],
+                        plan=plan,
+                    )
                 if primary:
                     n_mt = 0
                     for s in todo:
@@ -3810,10 +4837,8 @@ def run_translate(
                         if not vi or _has_cjk(vi):
                             continue
                         zh = clean_zh_spam(s.get("text") or "") or (s.get("text") or "")
-                        done[s["i"]] = {
-                            "i": s["i"], "start": s["start"], "end": s["end"],
-                            "zh": zh, "vi": normalize_vi_thousands(vi), "mt": 1,
-                        }
+                        done[s["i"]] = _seg_row(s, zh=zh, vi=normalize_vi_thousands(vi), mt=1,
+                                                **_hc_extra(s["i"]))
                         n_mt += 1
                     # khóa cứng ngay trên bản NMT (tên/danh hiệu type=lock)
                     try:
@@ -3821,6 +4846,11 @@ def run_translate(
                     except Exception as e_lock:  # noqa: BLE001
                         print(f"[mt-zh-vi] hard-lock skip: {e_lock}", flush=True)
                     todo = [s for s in segments if not done.get(s["i"], {}).get("vi")]
+                    if fill_cloud and n_mt == 0 and len(todo) > 50:
+                        # translate-b2: NMT không ra câu nào → không đẩy cả phim lên cloud
+                        print("[trans] NMT không dịch được câu nào → quay về dịch local (đường cũ)", flush=True)
+                        fill_cloud = None
+                        _ensure_translate_preset("NMT rỗng")
                     print(
                         f"[mt-zh-vi] NMT chính {n_mt} câu · còn {len(todo)} câu "
                         f"LLM vá (CJK/trống) · review sau = {_rmodel()}",
@@ -3830,16 +4860,25 @@ def run_translate(
                     for s in todo:
                         if s["i"] in drafts:
                             s["mt_vi"] = drafts[s["i"]]
+                    if hc_groups:
+                        hc_assigned.clear()  # translate-b3: hint → group_id ghi khi LLM dịch xong nhóm
                     print(f"[mt-zh-vi] gắn hint {len(drafts)} câu → LLM dịch", flush=True)
         except Exception as e_mt:  # noqa: BLE001
             print(f"[mt-zh-vi] bỏ qua: {e_mt}", flush=True)
+            if fill_cloud and todo:
+                # translate-b2: NMT hỏng → không đẩy cả phim lên cloud; quay về đường cũ (gemma)
+                print("[trans] NMT lỗi → bỏ vá cloud, quay về dịch local (đường cũ)", flush=True)
+                fill_cloud = None
+                _ensure_translate_preset("NMT lỗi")
 
         # Vá câu trống: luôn batch (oneshot hay sót/CJK với gemma)
         if mode is None and todo and len(todo) <= 80:
             mode = "batch"
         tmode = _resolve_translate_mode(mode, use_model, len(todo))
+        if fill_cloud:
+            tmode = "batch"   # translate-b2: vá cloud theo lô nhỏ, không oneshot
         print(
-            f"[trans] Model={use_model or 'mặc định'} | mode={tmode} | "
+            f"[trans] Model={(fill_cloud + ' (cloud vá NMT sót)') if fill_cloud else (use_model or 'mặc định')} | mode={tmode} | "
             f"cần dịch {len(todo)}/{len(segments)} câu"
             + (f", lô {batch}" if tmode == "batch" else ""),
             flush=True,
@@ -3856,10 +4895,7 @@ def run_translate(
                 if vi:
                     vi = normalize_vi_thousands(vi)
                 zh0 = s.get("text") or ""
-                done[s["i"]] = {
-                    "i": s["i"], "start": s["start"], "end": s["end"],
-                    "zh": clean_zh_spam(zh0) or zh0, "vi": vi,
-                }
+                done[s["i"]] = _seg_row(s, zh=clean_zh_spam(zh0) or zh0, vi=vi, **_hc_extra(s["i"]))
 
         def _checkpoint() -> None:
             ordered = [done[s["i"]] for s in segments if s["i"] in done]
@@ -3873,7 +4909,13 @@ def run_translate(
 
         if todo and tmode == "oneshot":
             try:
-                vi_map = translate_oneshot(todo, plan_block, target=target, model=model, plan=plan)
+                if hc_groups:
+                    os_units = halfcue_units(todo, hc_groups, hc_pos, hc_failed)
+                    vi_map_u = translate_oneshot(_hc_payload(os_units), plan_block, target=target,
+                                                 model=model, plan=plan)
+                    vi_map, _os_singles = halfcue_expand(vi_map_u, os_units, hc_failed, hc_assigned)
+                else:
+                    vi_map = translate_oneshot(todo, plan_block, target=target, model=model, plan=plan)
                 _apply_map(vi_map, todo)
                 _checkpoint()
                 n_ok = sum(1 for s in todo if done.get(s["i"], {}).get("vi"))
@@ -3888,7 +4930,7 @@ def run_translate(
                         pos = next((idx for idx, s in enumerate(segments) if s["i"] == first_i), 0)
                         prev_ctx = [done[segments[j]["i"]] for j in range(max(0, pos - CTX_LINES), pos)
                                     if segments[j]["i"] in done]
-                        vi_map = _translate_safe(chunk, plan_block, prev_ctx, target, model, plan)
+                        vi_map = _fill_chunk_hc(chunk, prev_ctx)
                         _apply_map(vi_map, chunk)
                         _checkpoint()
                         print(f"  ...vá {min(k + len(chunk), len(miss))}/{len(miss)}", flush=True)
@@ -3911,7 +4953,7 @@ def run_translate(
                 pos = next((idx for idx, s in enumerate(segments) if s["i"] == first_i), 0)
                 prev_ctx = [done[segments[j]["i"]] for j in range(max(0, pos - CTX_LINES), pos)
                             if segments[j]["i"] in done]
-                vi_map = _translate_safe(chunk, plan_block, prev_ctx, target, model, plan)
+                vi_map = _fill_chunk_hc(chunk, prev_ctx)
                 _apply_map(vi_map, chunk)
                 _checkpoint()
                 print(f"  ...dịch {min(k + batch, len(todo))}/{len(todo)}")
@@ -3925,10 +4967,7 @@ def run_translate(
                 zh0 = s.get("text") or ""
                 zh = clean_zh_spam(zh0) or zh0
                 if s["i"] not in done:
-                    done[s["i"]] = {
-                        "i": s["i"], "start": s["start"], "end": s["end"],
-                        "zh": zh, "vi": "",
-                    }
+                    done[s["i"]] = _seg_row(s, zh=zh, vi="")
                 else:
                     # giữ vi đã có; rút spam ZH nếu chưa sửa tay
                     cur = done[s["i"]]
@@ -3980,7 +5019,7 @@ def run_translate(
                     for j in range(max(0, pos - CTX_LINES), pos)
                     if segments[j]["i"] in done and done[segments[j]["i"]].get("vi")
                 ]
-                vi_map = _translate_safe(chunk, plan_block, prev_ctx, target, model, plan)
+                vi_map = _fill_chunk_hc(chunk, prev_ctx)
                 _apply_map(vi_map, chunk)
                 _checkpoint()
                 print(f"  ...vá missing {min(k + len(chunk), len(miss))}/{len(miss)}", flush=True)
@@ -4000,6 +5039,7 @@ def run_translate(
         ordered, n_num_heal = heal_script_broken_numbers(ordered)
         if n_num_heal:
             print(f"[trans] gộp {n_num_heal} cặp số gãy (vd 31, + 000亿)", flush=True)
+        _mark_fill_pending(ordered)
         # script: sau heal số có thể ít hơn ASR vài câu (đúng — số gãy đã gộp)
         atomic_write_json(script_path, ordered)
         # CUT → display + SRT (LUÔN chạy, kể cả còn thiếu vài câu — trước đây
@@ -4029,7 +5069,8 @@ def run_translate(
                         ordered.append(hit)
                     else:
                         zh = (s.get("text") or s.get("zh") or "").strip()
-                        ordered.append({
+                        _row = {k: v for k, v in s.items() if k not in _SEG_ROW_DROP}
+                        _row.update({
                             "i": s.get("i"),
                             "start": s.get("start", 0),
                             "end": s.get("end", 0),
@@ -4038,6 +5079,7 @@ def run_translate(
                             "vi": ((hit or {}).get("vi") or "").strip(),
                             "rv": False,
                         })
+                        ordered.append(_row)
                 atomic_write_json(script_path, ordered)
             st = m.data.setdefault("stages", {}).setdefault(STAGE, {})
             n = sum(1 for s in segments if done and s["i"] in done and (done[s["i"]].get("vi") or "").strip())

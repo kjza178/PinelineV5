@@ -332,6 +332,15 @@ def queue_state() -> dict:
         }
 
 
+# fix 2026-11-13 agentS: cờ «dùng một lần» (force/skip_done…) KHÔNG lưu vào opts hàng đợi — nếu không
+# _job_queue.json giữ lại và áp lặp cho mỗi lượt / sau restart.
+_ONE_SHOT_OPTS = ("force", "skip_done", "fresh", "rerun", "reset")
+
+
+def _persistable_opts(opts: dict | None) -> dict:
+    return {k: v for k, v in dict(opts or {}).items() if k not in _ONE_SHOT_OPTS}
+
+
 def queue_add(
     job_ids: list[str],
     opts: dict | None = None,
@@ -365,11 +374,11 @@ def queue_add(
                 _q.append(jid)
                 appended.append(jid)
                 if opts is not None:
-                    _opts_by_job[jid] = dict(opts)
+                    _opts_by_job[jid] = _persistable_opts(opts)
         if appended:
             if opts is not None:
                 # fallback default cho job cũ chưa có snapshot
-                _opts = dict(opts)
+                _opts = _persistable_opts(opts)
             _stop = False
         _save()
         if appended:
@@ -508,7 +517,7 @@ def queue_update_opts(updates: dict[str, dict]) -> dict:
     with _lock:
         updated = [j for j in _q if j in updates]
         for jid in updated:
-            _opts_by_job[jid] = dict(updates[jid])
+            _opts_by_job[jid] = _persistable_opts(updates[jid])
         skipped = [j for j in updates if j not in updated]
         if updated:
             _save()

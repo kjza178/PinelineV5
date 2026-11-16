@@ -30,7 +30,51 @@ TITLE_RE = re.compile(
     r")"
 )
 
-INTIMATE_2ND_RE = re.compile(r"(?i)(?<!\w)cậu(?!\w)")
+INTIMATE_2ND_RE = re.compile(r"(?i)(?<!\w)cậu(?!\w)")  # thô: mọi «cậu» (chỉ để quét nhanh)
+
+# fix 2026-11-11 translate-b1 C3: «cậu» chỉ là ĐẠI TỪ NGÔI 2 ĐỨNG ĐỘC LẬP khi KHÔNG thuộc
+# các cụm dưới đây (ngôi 3, danh từ họ hàng, danh xưng + tên…). Không chắc → KHÔNG thay.
+#   sau «cậu»: ấy/ta/bé/nhỏ/nhóc/trai/bạn/em/chủ/ấm/ruột/họ/mợ/út/cả/hai/ba/tư/năm/sáu/
+#              bảy/tám/chín/mười/của/kia/thanh niên/học sinh/sinh viên
+#   trước «cậu»: ông/bà (ông cậu = em/anh của bà), «thằng»
+#   sau «cậu» là Tên Riêng viết hoa (cậu Lâm, Cậu Ba …)
+_CAU_NOT_2ND_AFTER = (
+    "ấy", "ta", "bé", "nhỏ", "nhóc", "trai", "bạn", "em", "chủ", "ấm", "ruột", "họ",
+    "mợ", "út", "cả", "hai", "ba", "tư", "năm", "sáu", "bảy", "tám", "chín", "mười",
+    "của", "kia", "thanh niên", "học sinh", "sinh viên",
+    # review 2026-11-11: chỉ định / danh từ đi sau «cậu» = ngôi 3 («cậu này là ai», «cậu con trai
+    # nhà họ Lâm», «cậu thiếu gia», «cậu chàng», «cậu cháu»…) — không chắc → không thay
+    "này", "đó", "nọ", "con", "chàng", "thiếu gia", "thiếu niên", "công tử", "cháu",
+)
+_CAU_NOT_2ND_BEFORE = ("ông", "bà", "thằng")
+CAU_RE = re.compile(r"(?i)(?<!\w)cậu(?!\w)")
+_CAU_AFTER_RE = re.compile(
+    r"(?i)^\s+(?:" + "|".join(re.escape(w) for w in _CAU_NOT_2ND_AFTER) + r")(?!\w)"
+)
+_CAU_BEFORE_RE = re.compile(
+    r"(?i)(?<!\w)(?:" + "|".join(re.escape(w) for w in _CAU_NOT_2ND_BEFORE) + r")\s+$"
+)
+_CAU_AFTER_PROPER_RE = re.compile(r"^\s+([^\W\d_])")
+
+
+def _is_standalone_2nd_cau(text: str, m: re.Match) -> bool:
+    """«cậu» tại m có phải đại từ ngôi 2 đứng độc lập không (xem danh sách ngoại lệ trên)."""
+    after = text[m.end():]
+    before = text[: m.start()]
+    if _CAU_AFTER_RE.match(after):
+        return False
+    if _CAU_BEFORE_RE.search(before):
+        return False
+    mp = _CAU_AFTER_PROPER_RE.match(after)
+    if mp and mp.group(1).isupper():
+        return False  # cậu + Tên riêng / danh xưng viết hoa
+    return True
+
+
+def standalone_2nd_cau_spans(text: str) -> list[tuple[int, int]]:
+    """Vị trí các «cậu» là đại từ ngôi 2 độc lập (để thay máy an toàn)."""
+    t = text or ""
+    return [(m.start(), m.end()) for m in CAU_RE.finditer(t) if _is_standalone_2nd_cau(t, m)]
 FORMAL_2ND_NGUOI_RE = re.compile(r"(?i)(?<!\w)ngươi(?!\w)")
 FORMAL_2ND_ONG_RE = re.compile(r"(?i)(?<!\w)ông(?!\w)(?!\s*ta\b)")
 
@@ -113,7 +157,8 @@ def window_has_title(texts: Iterable[str]) -> bool:
 
 
 def cue_has_intimate_2nd(vi: str) -> bool:
-    return bool(INTIMATE_2ND_RE.search(vi or ""))
+    # fix 2026-11-11 translate-b1 C3: chỉ tính «cậu» ngôi 2 độc lập (không «cậu ấy/ruột/bé»…)
+    return bool(standalone_2nd_cau_spans(vi or ""))
 
 
 def scan_title_intimate_issues(
@@ -130,6 +175,8 @@ def scan_title_intimate_issues(
         i = r.get("i")
         if i in existing_ids:
             continue
+        if r.get("manual"):
+            continue  # fix 2026-11-11 translate-b1 C2: câu sửa tay không đưa vào lô LLM
         vi = r.get("vi") or ""
         if not cue_has_intimate_2nd(vi):
             continue
@@ -160,9 +207,22 @@ def mechanical_cau_to_formal(vi: str, preferred: str) -> str:
     if not vi or not preferred:
         return vi
     out = vi
-    # Các cậu / các Cậu
-    out = re.sub(rf"(?i)\bcác\s+cậu\b", f"Các {preferred}", out)
-    out = re.sub(rf"(?i)(?<!\w)cậu(?!\w)", preferred, out)
+    # fix 2026-11-11 translate-b1 C3: chỉ thay «cậu» ngôi 2 ĐỘC LẬP; «cậu ấy/ta/ruột/bé»,
+    # «ông cậu», «cậu Lâm»… giữ nguyên. Thay từ phải sang trái để không lệch vị trí.
+    spans = standalone_2nd_cau_spans(out)
+    for a, b in reversed(spans):
+        pre = out[:a]
+        mc = re.search(r"(?i)(?<!\w)các\s+$", pre)
+        if mc:
+            # «các cậu» → «các {preferred}»; viết hoa «Các» khi bản gốc viết hoa hoặc ở đầu câu
+            # (review 2026-11-11: trước đây luôn «Các» → «Tôi bảo Các ngươi» giữa câu)
+            head = pre[: mc.start()]
+            cap = pre[mc.start()].isupper() or not head.strip() or bool(
+                re.search(r"[.!?…:\n]\s*$", head)
+            )
+            out = head + ("Các " if cap else "các ") + preferred + out[b:]
+        else:
+            out = pre + preferred + out[b:]
     # capital first if whole-sentence start
     if out and out[0].islower() and (vi[:1].isupper() if vi else False):
         out = out[0].upper() + out[1:]
@@ -192,6 +252,8 @@ def normalize_ong_nguoi_in_title_window(
         texts = [(x.get("vi") or "") + " " + (x.get("zh") or "") for x in win]
         if not window_has_title(texts):
             continue
+        if rows[j].get("manual"):
+            continue  # fix 2026-11-11 translate-b1 C2
         vi = rows[j].get("vi") or ""
         if preferred == "ngươi" and FORMAL_2ND_ONG_RE.search(vi) and not re.search(
             r"(?i)\bông\s+ta\b", vi
@@ -220,6 +282,8 @@ def enforce_remaining_cau(
     """Sau cùng: còn cậu trong title window → máy đổi (không chờ LLM)."""
     changes = []
     for idx, r in enumerate(rows):
+        if not isinstance(r, dict) or r.get("manual"):
+            continue  # fix 2026-11-11 translate-b1 C2/C3: không thay máy câu sửa tay
         vi = r.get("vi") or ""
         if not cue_has_intimate_2nd(vi):
             continue

@@ -49,6 +49,8 @@ def find_issues(rows: list[dict], plan: dict) -> list[dict]:
     names = _names(plan)
     issues = []
     for r in rows:
+        if not isinstance(r, dict) or r.get("manual"):
+            continue  # fix 2026-11-11 translate-b1 C2: câu sửa tay không đưa vào lô LLM
         zh, vi = r.get("zh") or "", r.get("vi") or ""
         if not zh or not vi:
             continue
@@ -113,6 +115,8 @@ def run_name_pass(work_dir: str | Path, model: str | None = None) -> dict:
             print(f"[names] lô {k // BATCH} lỗi, bỏ qua: {e}", flush=True)
             fixes = {}
         for i, vi in fixes.items():
+            if i in pos and rows[pos[i]].get("manual"):
+                continue  # fix 2026-11-11 translate-b1 C2: không ghi đè câu sửa tay
             if i in pos and vi and vi != rows[pos[i]].get("vi"):
                 if len(sample) < 15:
                     sample.append({"i": i, "before": rows[pos[i]].get("vi"), "after": vi})

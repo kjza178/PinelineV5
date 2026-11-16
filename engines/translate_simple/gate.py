@@ -12,7 +12,7 @@ from . import cfg
 
 
 def decide(*, n_rows: int, n_asr: int, coverage_gap: int, n_missing: int, n_unreviewed: int,
-           flags: dict[int, list[dict]]) -> dict:
+           flags: dict[int, list[dict]], plan_failed: bool = False) -> dict:
     n_cjk = sum(1 for fl in flags.values() if any(f["code"] == "cjk" for f in fl))
     soft = {i: fl for i, fl in flags.items() if not any(f["code"] in ("empty", "cjk") for f in fl)}
     by_kind: dict[str, int] = {}
@@ -33,6 +33,10 @@ def decide(*, n_rows: int, n_asr: int, coverage_gap: int, n_missing: int, n_unre
         reasons.append(f"còn {n_cjk} câu có chữ Hán")
     if reasons:
         status = "park"
+    elif plan_failed:
+        # R1.2: lập plan lỗi / không bảng xưng hô → HOLD (không done lặng)
+        status = "hold"
+        reasons.append("lập plan thất bại — thiếu bảng nhân vật/xưng hô, cần Dịch LẠI hoặc plan tay")
     elif len(soft) > limit:
         status = "hold"
         reasons.append(f"còn {len(soft)} câu bị cờ (> {limit}): "
@@ -42,4 +46,4 @@ def decide(*, n_rows: int, n_asr: int, coverage_gap: int, n_missing: int, n_unre
     return {"status": status, "reasons": reasons, "n_rows": n_rows, "n_asr": n_asr,
             "coverage_gap": coverage_gap, "n_missing": n_missing, "n_unreviewed": n_unreviewed,
             "n_flagged": len(flags), "n_flag_soft": len(soft), "flag_limit": limit, "flags_by_kind": by_kind,
-            "flagged_i": sorted(flags)[:200]}
+            "flagged_i": sorted(flags)[:200], "plan_failed": bool(plan_failed)}

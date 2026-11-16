@@ -375,38 +375,41 @@ def _hardlink_alias(primary: Path, alias: Path) -> bool:
         return False
 
 
-def merge_parts_to_full(part_videos: list[str | Path], out_full_mp4: str | Path) -> Path:
-    """
-    Nối danh sách các part đã render hoàn chỉnh thành 1 file full (lossless copy 30s).
-    """
-    out_full_mp4 = Path(out_full_mp4)
-    out_full_mp4.parent.mkdir(parents=True, exist_ok=True)
-    valid_parts = [Path(p) for p in part_videos if Path(p).is_file()]
-    if not valid_parts:
-        raise ValueError("Không có file part hợp lệ để nối")
+# fix 2026-11-13 agentS: Full 60892cc63cb7 ghép `-c copy` hỏng NAL chỉ phát hiện SAU (người xem).
+# Nay ghép xong → giải mã thử ±30 s quanh MỖI mối nối (+ đếm cảnh báo DTS); lỗi → ghép lại «regen»
+# (genpts + SPS/PPS trong luồng); vẫn lỗi → báo lỗi rõ, KHÔNG thay Full cũ.
+MERGE_JOINT_WINDOW_SEC = 30.0
+_DECODE_ERR_RE = re.compile(
+    r"invalid nal|error while decoding|non-existing pps|decode_slice_header|no frame!|concealing|"
+    r"missing reference|corrupt|illegal|invalid data found|error at mb|damaged|"
+    r"sps_id|pps_id|top block unavailable|left block unavailable",
+    re.I,
+)
+_DTS_WARN_RE = re.compile(r"non[- ]monoton", re.I)
 
+
+def _concat_run(valid_parts: list[Path], out_full_mp4: Path, mode: str = "copy") -> tuple[int, str]:
+    """mode=copy: concat demuxer -c copy (cũ). mode=regen: +genpts, SPS/PPS trong luồng, make_zero."""
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
         list_file = f.name
         for p in valid_parts:
-            esc = str(p.resolve()).replace("\\", "/").replace("'", "'\\''")
+            esc = str(Path(p).resolve()).replace("\\", "/").replace("'", "'\\''")
             f.write(f"file '{esc}'\n")
-
     try:
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "concat", "-safe", "0",
-            "-i", list_file,
-            "-c", "copy",
-            "-movflags", "+faststart",
-            str(out_full_mp4)
-        ]
-        print(f"[split_parts] Đang ghép {len(valid_parts)} part -> {out_full_mp4.name} (concat copy)...", flush=True)
+        cmd = ["ffmpeg", "-y", "-hide_banner", "-nostdin", "-loglevel", "warning"]
+        if mode == "regen":
+            cmd += ["-fflags", "+genpts"]
+        cmd += ["-f", "concat", "-safe", "0", "-i", list_file, "-map", "0", "-c", "copy"]
+        if mode == "regen":
+            vcodec = _probe_vcodec(valid_parts[0])
+            if vcodec in ("h264", "hevc"):
+                cmd += ["-bsf:v", f"{vcodec}_mp4toannexb"]
+            cmd += ["-avoid_negative_ts", "make_zero"]
+        cmd += ["-movflags", "+faststart", str(out_full_mp4)]
+        print(f"[split_parts] Đang ghép {len(valid_parts)} part -> {out_full_mp4.name} (concat {mode})...", flush=True)
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=flags)
-        if r.returncode != 0 or not out_full_mp4.exists():
-            raise RuntimeError(f"Ghép concat thất bại: {r.stderr}")
-        print(f"[split_parts] Ghép thành công: {out_full_mp4.name} ({out_full_mp4.stat().st_size/1e6:.1f} MB)", flush=True)
-        return out_full_mp4
+        return r.returncode, (r.stderr or "")
     finally:
         try:
             os.unlink(list_file)
@@ -414,7 +417,192 @@ def merge_parts_to_full(part_videos: list[str | Path], out_full_mp4: str | Path)
             pass
 
 
-def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS, work_root: str | Path = "work") -> dict:
+def _probe_vcodec(path: str | Path) -> str:
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name",
+             "-of", "csv=p=0", str(path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=flags,
+        )
+        return (r.stdout or "").strip().splitlines()[0].strip() if (r.stdout or "").strip() else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _decode_window(full_mp4: Path, t0: float, dur: float) -> tuple[int, str]:
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    cmd = [
+        "ffmpeg", "-nostdin", "-hide_banner", "-v", "warning",
+        "-ss", f"{max(0.0, t0):.3f}", "-i", str(full_mp4), "-t", f"{dur:.3f}",
+        "-map", "0:v:0?", "-map", "0:a:0?", "-f", "null", "-",
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=flags)
+    return r.returncode, (r.stderr or "")
+
+
+def check_merge_joints(full_mp4: str | Path, joints: list[float],
+                       window: float = MERGE_JOINT_WINDOW_SEC) -> dict:
+    """Giải mã thử [t-window, t+window] quanh mỗi mối nối. ok=False nếu có lỗi giải mã (DTS chỉ cảnh báo)."""
+    full_mp4 = Path(full_mp4)
+    out = {"ok": True, "joints": [], "decode_errors": 0, "dts_warnings": 0}
+    for t in joints:
+        rc, err = _decode_window(full_mp4, float(t) - window, 2.0 * window)
+        lines = [ln.strip() for ln in err.splitlines() if ln.strip()]
+        dts = [ln for ln in lines if _DTS_WARN_RE.search(ln)]
+        errs = [ln for ln in lines if _DECODE_ERR_RE.search(ln) and not _DTS_WARN_RE.search(ln)]
+        ok = rc == 0 and not errs
+        out["joints"].append({
+            "t": round(float(t), 3), "ok": ok, "rc": rc,
+            "n_errors": len(errs), "dts_warnings": len(dts), "errors": errs[:5],
+        })
+        out["decode_errors"] += len(errs)
+        out["dts_warnings"] += len(dts)
+        if not ok:
+            out["ok"] = False
+    return out
+
+
+def merge_parts_checked(part_videos: list[str | Path], out_full_mp4: str | Path, *,
+                        verify: bool = True, window: float = MERGE_JOINT_WINDOW_SEC) -> dict:
+    """Ghép + kiểm mối nối. Trả {"ok", "mode", "joints", "attempts", "message"}; ok=False → đã xoá out."""
+    out_full_mp4 = Path(out_full_mp4)
+    out_full_mp4.parent.mkdir(parents=True, exist_ok=True)
+    valid_parts = [Path(p) for p in part_videos if Path(p).is_file()]
+    if not valid_parts:
+        raise ValueError("Không có file part hợp lệ để nối")
+    joints: list[float] = []
+    acc = 0.0
+    for p in valid_parts[:-1]:
+        acc += probe_duration(p)
+        joints.append(round(acc, 3))
+    attempts: list[dict] = []
+    for mode in ("copy", "regen"):
+        _unlink_quiet(out_full_mp4)
+        rc, err = _concat_run(valid_parts, out_full_mp4, mode)
+        n_dts = sum(1 for ln in err.splitlines() if _DTS_WARN_RE.search(ln))
+        if rc != 0 or not out_full_mp4.exists() or out_full_mp4.stat().st_size < 1000:
+            attempts.append({"mode": mode, "ok": False, "rc": rc, "error": err.strip()[-400:]})
+            print(f"[split_parts] Ghép ({mode}) thất bại rc={rc}: {err.strip()[-300:]}", flush=True)
+            continue
+        chk = check_merge_joints(out_full_mp4, joints, window) if verify else {"ok": True, "joints": []}
+        attempts.append({"mode": mode, "ok": bool(chk["ok"]), "concat_dts_warnings": n_dts,
+                         "joints": chk.get("joints") or []})
+        if chk["ok"]:
+            if n_dts or any(j.get("dts_warnings") for j in chk.get("joints") or []):
+                print(f"[split_parts] CẢNH BÁO: {n_dts} dòng DTS không tăng đơn điệu lúc ghép ({mode}) — "
+                      f"giải mã mối nối vẫn OK", flush=True)
+            print(f"[split_parts] Ghép thành công ({mode}): {out_full_mp4.name} "
+                  f"({out_full_mp4.stat().st_size/1e6:.1f} MB), {len(joints)} mối nối giải mã OK", flush=True)
+            return {"ok": True, "mode": mode, "joints": chk.get("joints") or [],
+                    "concat_dts_warnings": n_dts, "attempts": attempts, "output": str(out_full_mp4)}
+        bad = [j["t"] for j in chk["joints"] if not j["ok"]]
+        print(f"[split_parts] Mối nối LỖI giải mã ({mode}) tại {bad}s — "
+              + ("thử ghép lại an toàn (regen pts + SPS/PPS)" if mode == "copy" else "bỏ"), flush=True)
+    _unlink_quiet(out_full_mp4)
+    bad_all = sorted({j["t"] for a in attempts for j in (a.get("joints") or []) if not j.get("ok")})
+    return {
+        "ok": False, "mode": None, "attempts": attempts, "joints": [],
+        "message": ("Ghép Full LỖI: mối nối giải mã hỏng" + (f" tại {bad_all}s" if bad_all else "")
+                    + " sau cả concat copy và regen — không thay Full cũ; cần render lại part "
+                      "hoặc re-encode đoạn quanh mối nối (xem split_info.merge_check)"),
+    }
+
+
+def merge_parts_to_full(part_videos: list[str | Path], out_full_mp4: str | Path) -> Path:
+    """
+    Nối danh sách các part đã render hoàn chỉnh thành 1 file full (concat copy) + kiểm mối nối.
+    """
+    out_full_mp4 = Path(out_full_mp4)
+    rep = merge_parts_checked(part_videos, out_full_mp4)
+    if not rep.get("ok"):
+        raise RuntimeError(rep.get("message") or "Ghép concat thất bại")
+    return out_full_mp4
+
+
+def _merge_check_summary(rep: dict) -> dict:
+    return {
+        "ok": bool(rep.get("ok")),
+        "mode": rep.get("mode"),
+        "concat_dts_warnings": int(rep.get("concat_dts_warnings") or 0),
+        "joints": [{k: j.get(k) for k in ("t", "ok", "n_errors", "dts_warnings")} for j in rep.get("joints") or []],
+        "attempts": [a.get("mode") for a in rep.get("attempts") or []],
+        "checked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def _source_sig(video: Path, dur: float) -> dict:
+    try:
+        st = Path(video).stat()
+        return {"size": int(st.st_size), "mtime": int(st.st_mtime), "duration": round(float(dur), 3)}
+    except OSError:
+        return {"duration": round(float(dur), 3)}
+
+
+def _sig_match(a: dict | None, b: dict | None) -> bool:
+    if not a or not b:
+        return False
+    if a.get("size") and b.get("size") and int(a["size"]) != int(b["size"]):
+        return False
+    return abs(float(a.get("duration") or 0) - float(b.get("duration") or 0)) <= 1.0
+
+
+def _part_dur_tol(d: float) -> float:
+    # cắt -c copy lệch theo keyframe (vài giây); kế hoạch khác (điểm lặng khác) lệch xa hơn nhiều
+    return max(10.0, 0.002 * float(d or 0))
+
+
+def find_reusable_parts(job_id: str, work_root: Path, video: Path, dur: float,
+                        target_hours: float = DEFAULT_TARGET_HOURS) -> list[dict] | None:
+    """agentS 2026-11-13: part đã cắt đúng kế hoạch (cùng nguồn/độ dài) → trả parts_info để DÙNG LẠI.
+    Nguồn kế hoạch: split_info cũ (nếu cùng nguồn) hoặc tính lại smart plan khi split_info bị xoá.
+    None = phải cắt mới."""
+    from core.manifest import Manifest
+
+    work_root = Path(work_root)
+    if not (work_root / f"{job_id}_p01").is_dir():
+        return None
+    try:
+        si = Manifest(work_root / job_id).data.get("split_info") or {}
+    except Exception:  # noqa: BLE001
+        si = {}
+    sig_now = _source_sig(video, dur)
+    plan = None
+    if si.get("parts") and (not si.get("source_sig") or _sig_match(si.get("source_sig"), sig_now)):
+        plan = [{k: p.get(k) for k in ("part", "total_parts", "start", "end", "duration", "smart_cut")}
+                for p in si["parts"]]
+    if plan is None:
+        try:
+            plan = compute_smart_plan(video, target_hours=target_hours)
+        except Exception as e:  # noqa: BLE001
+            print(f"[split_parts] {job_id}: không tính lại được kế hoạch để dùng lại part: {e}", flush=True)
+            return None
+    if len(plan) < 2 or abs(float(plan[-1].get("end") or 0) - float(dur)) > 2.0:
+        return None
+    out = []
+    for item in plan:
+        k, n = int(item["part"]), int(item["total_parts"])
+        sub_dir = work_root / f"{job_id}_p{k:02d}"
+        f = sub_dir / f"{job_id}_part_{k:02d}_of_{n:02d}.mp4"
+        if not f.is_file() or f.stat().st_size < 1000:
+            return None
+        try:
+            req = Manifest(sub_dir).data.get("request") or {} if (sub_dir / "manifest.json").is_file() else {}
+        except Exception:  # noqa: BLE001
+            req = {}
+        if req.get("parent_job_id") and req.get("parent_job_id") != job_id:
+            return None
+        d_part = probe_duration(f)
+        if d_part <= 0 or abs(d_part - float(item["duration"])) > _part_dur_tol(item["duration"]):
+            print(f"[split_parts] {job_id}: part {k} lệch kế hoạch ({d_part:.1f}s vs {item['duration']}s) "
+                  f"— cắt lại", flush=True)
+            return None
+        out.append({**item, "file": str(f), "size_mb": round(f.stat().st_size / 1e6, 1), "reused": True})
+    return out
+
+
+def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS, work_root: str | Path = "work",
+                         reset_parts: bool = False) -> dict:
     """
     Tự động chia một job video dài thành các sub-jobs (Part 1, Part 2...).
     Mỗi sub-job kế thừa thiết lập của job cha và có file video riêng.
@@ -446,8 +634,17 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
     parent_opts = m_parent.data.get("opts") or {}
 
     parts_dir = work_dir / "_split_parts"
+    old_si = dict(m_parent.data.get("split_info") or {})
+    # agentS: split_info bị xoá / lệnh ASR parent → part đã có đúng kế hoạch thì DÙNG LẠI (không cắt 10 GB,
+    # không reset stage part). reset_parts=True (force rõ ràng) → cắt mới như cũ.
+    reused = None if reset_parts else find_reusable_parts(job_id, work_root, video, dur, target_hours)
     try:
-        parts_info = split_video_to_parts(video, parts_dir, target_hours=target_hours, prefix=f"{job_id}_part")
+        if reused:
+            print(f"[split_parts] {job_id}: DÙNG LẠI {len(reused)} part đã cắt đúng kế hoạch (không cắt lại)",
+                  flush=True)
+            parts_info = reused
+        else:
+            parts_info = split_video_to_parts(video, parts_dir, target_hours=target_hours, prefix=f"{job_id}_part")
     except Exception as e:
         # split_video_to_parts đã rmtree partial; ghi rõ ENOSPC vào message
         if isinstance(e, DiskFullError) or _is_disk_full_text(str(e)):
@@ -468,7 +665,9 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
         # Ưu tiên move (tránh nhân đôi dung lượng); fallback copy
         part_src = Path(item["file"])
         part_dest = sub_dir / part_src.name
-        if not part_dest.exists() or part_dest.stat().st_size < 1000:
+        if item.get("reused"):
+            pass
+        elif not part_dest.exists() or part_dest.stat().st_size < 1000:
             try:
                 shutil.move(str(part_src), str(part_dest))
             except Exception:
@@ -504,6 +703,10 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
 
         # Tạo manifest cho sub-job
         m_sub = Manifest(sub_dir)
+        _old_st = m_sub.data.get("stages") or {}
+        # agentS: part dùng lại + đã có kết quả → GIỮ stage (download/tts…), chỉ bổ sung khoá thiếu
+        keep_results = bool(item.get("reused")) and not reset_parts and any(
+            (_old_st.get(s) or {}).get("status") == "done" for s in ("asr", "translate", "tts", "mux"))
         m_sub.data["request"] = {
             "local": True,
             "url": None,
@@ -552,18 +755,36 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
             tts_seed["tts_engine"] = eng
             tts_seed["engine"] = eng
         stages = m_sub.data.setdefault("stages", {})
-        stages["download"] = {
-            "status": "done",
-            "video_path": str(part_dest),
-            "duration_sec": item["duration"],
-            "finished_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        try:   # agentK 2026-11-12: part cắt từ nguồn đã kiểm/chuẩn hoá → kế thừa; không thì chờ kiểm
-            from engines.source_preflight import inherit_payload
-            stages["download"].update(inherit_payload(m_parent.stage("download") or {}, job_id))
-        except Exception:  # noqa: BLE001
-            pass
-        if voice or speed_f or eng:
+        _old_dl = stages.get("download") or {}
+        if not (keep_results and _old_dl.get("status") == "done"
+                and Path(str(_old_dl.get("video_path") or "")).name == part_dest.name):
+            stages["download"] = {
+                "status": "done",
+                "video_path": str(part_dest),
+                "duration_sec": item["duration"],
+                "finished_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            try:   # agentK 2026-11-12: part cắt từ nguồn đã kiểm/chuẩn hoá → kế thừa; không thì chờ kiểm
+                from engines.source_preflight import inherit_payload
+                stages["download"].update(inherit_payload(m_parent.stage("download") or {}, job_id))
+            except Exception:  # noqa: BLE001
+                pass
+        if keep_results and (voice or speed_f or eng):
+            _tts_old = dict(stages.get("tts") or {})
+            for _k, _v in tts_seed.items():
+                if _k not in ("status", "cur_text"):
+                    _tts_old.setdefault(_k, _v)
+            _tts_old.setdefault("status", "pending")
+            stages["tts"] = _tts_old
+            if not (sub_dir / "tts_config.json").is_file():
+                try:
+                    cfg = {k: tts_seed[k] for k in ("voice", "speed", "tts_engine", "engine") if k in tts_seed}
+                    (sub_dir / "tts_config.json").write_text(
+                        json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8",
+                    )
+                except OSError:
+                    pass
+        elif voice or speed_f or eng:
             stages["tts"] = tts_seed
             try:
                 cfg = {k: tts_seed[k] for k in ("voice", "speed", "tts_engine", "engine") if k in tts_seed}
@@ -577,13 +798,21 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
 
     # Đánh dấu job cha
     m_parent.data.setdefault("split_info", {})
-    m_parent.data["split_info"] = {
+    new_si = {
         "status": "split_done",
         "total_parts": total_parts,
         "sub_job_ids": sub_job_ids,
         "parts": parts_info,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "source_sig": _source_sig(video, dur),
     }
+    if reused:
+        new_si["reused_parts"] = True
+        # đã ghép Full trước đó (cùng part) → giữ dấu merged, không làm parent «chưa ghép»
+        for k_keep in ("status", "merged_at", "output_path", "merge_check"):
+            if old_si.get("status") == "merged" and k_keep in old_si:
+                new_si[k_keep] = old_si[k_keep]
+    m_parent.data["split_info"] = new_si
     m_parent.save()
 
     print(f"[split_parts] Job {job_id} đã được chia thành {total_parts} sub-jobs: {', '.join(sub_job_ids)}", flush=True)
@@ -594,10 +823,11 @@ def split_job_to_subjobs(job_id: str, target_hours: float = DEFAULT_TARGET_HOURS
         "parent_job_id": job_id,
         "sub_job_ids": sub_job_ids,
         "parts": parts_info,
+        "reused": bool(reused),
     }
 
 
-def merge_job_parts(job_id: str, work_root: str | Path = "work") -> dict:
+def merge_job_parts(job_id: str, work_root: str | Path = "work", force: bool = False) -> dict:
     """
     Kiểm tra các sub-job của job_id, nếu tất cả đã render xong thì ghép thành output_full.mp4.
     """
@@ -646,13 +876,47 @@ def merge_job_parts(job_id: str, work_root: str | Path = "work") -> dict:
     # Một lần ghi → output.mp4; output_full.mp4 chỉ hardlink (KHÔNG copy2 nhân đôi GB)
     parent_output = work_dir / "output.mp4"
     full_alias = work_dir / "output_full.mp4"
-    for p in (parent_output, full_alias):
-        if p.exists() or p.is_symlink():
-            try:
-                p.unlink()
-            except OSError as e:
-                print(f"[split_parts] không xoá {p.name} cũ: {e}", flush=True)
-    merge_parts_to_full(rendered_parts, parent_output)
+
+    # agentS: đã ghép + không part nào render lại sau Full → KHÔNG ghép đè (chống vòng chạy lại đè Full)
+    existing_full = full_alias if full_alias.is_file() else parent_output
+    if (not force and str(split_info.get("status") or "").lower() == "merged"
+            and existing_full.is_file() and existing_full.stat().st_size > 1_000_000):
+        try:
+            full_mt = existing_full.stat().st_mtime
+            newer = [p.parent.name for p in rendered_parts if p.stat().st_mtime > full_mt]
+        except OSError:
+            newer = ["?"]
+        if not newer:
+            print(f"[split_parts] {job_id}: Full đã ghép, part không đổi — KHÔNG ghép lại", flush=True)
+            return {
+                "ok": True, "ready": True, "skipped": "already_merged",
+                "output_path": str(existing_full), "output_full_path": str(existing_full),
+                "size_mb": round(existing_full.stat().st_size / 1e6, 1), "n_parts": len(rendered_parts),
+            }
+
+    # agentS: ghép ra file TẠM + kiểm mối nối; chỉ thay Full cũ khi bản mới đạt
+    tmp_out = work_dir / "output.merging.mp4"
+    rep_merge = merge_parts_checked(rendered_parts, tmp_out)
+    if not rep_merge.get("ok"):
+        try:
+            info_f = m_parent.data.setdefault("split_info", {})
+            info_f["merge_check"] = _merge_check_summary(rep_merge)
+            m_parent.save()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "ready": True, "message": rep_merge.get("message"),
+                "merge_check": _merge_check_summary(rep_merge)}
+    if full_alias.exists() or full_alias.is_symlink():
+        try:
+            full_alias.unlink()
+        except OSError as e:
+            print(f"[split_parts] không xoá {full_alias.name} cũ: {e}", flush=True)
+    try:
+        os.replace(str(tmp_out), str(parent_output))
+    except OSError as e:
+        return {"ok": False, "ready": True,
+                "message": f"Ghép xong ({tmp_out.name}) nhưng không thay được {parent_output.name}: {e}",
+                "merge_check": _merge_check_summary(rep_merge)}
     linked = _hardlink_alias(parent_output, full_alias)
     final = parent_output if parent_output.exists() else full_alias
     full_for_manifest = full_alias if linked and full_alias.exists() else final
@@ -685,6 +949,8 @@ def merge_job_parts(job_id: str, work_root: str | Path = "work") -> dict:
     info["status"] = "merged"
     info["merged_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     info["output_path"] = str(final)
+    info["merge_check"] = _merge_check_summary(rep_merge)
+    stages["mux"]["merge_check"] = info["merge_check"]
     m_parent.save()
 
     # Dọn cắt tạm — không còn cần sau merge
@@ -700,6 +966,7 @@ def merge_job_parts(job_id: str, work_root: str | Path = "work") -> dict:
         "hardlink_alias": bool(linked),
         "size_mb": round(final.stat().st_size / 1e6, 1),
         "n_parts": len(rendered_parts),
+        "merge_check": info["merge_check"],
     }
 
 

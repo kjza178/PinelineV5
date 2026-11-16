@@ -156,6 +156,8 @@ class PlanView:
     def header_lines(self) -> list[str]:
         p = self.plan
         out = []
+        if p.get("summary"):
+            out.append("TÓM TẮT PHIM: " + str(p.get("summary")).strip()[:600])
         g = " | ".join(x for x in (
             f"thể loại: {p.get('genre')}" if p.get("genre") else "",
             f"văn phong: {p.get('tone')}" if p.get("tone") else "",

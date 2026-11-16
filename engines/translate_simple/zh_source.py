@@ -276,16 +276,23 @@ def prepare(work_dir: str | Path, segments: list[dict], *, detect_fn=None, cues_
         segs = [dict(s) for s in segments if isinstance(s, dict)]
         for s in segs:
             s["zh_src"] = "asr"
-        if det.get("has_hardsub"):
+        cues = None
+        if det.get("has_hardsub") and cues_fn is None and cfg.zh_ocr_mode() == "targeted":
+            # 2026-11-14: OCR CÓ CHỌN LỌC (lượt A) — 1 khung giữa câu có 他/她/它, tên, số (không OCR cả phim)
+            from . import zh_ocr_target
+            segs, rep["ocr_a"] = zh_ocr_target.pass_a(wd, segs, profile_names(wd))
+        elif det.get("has_hardsub"):
             import engines.asr.hardsub_asr as H
-            cues_p = wd / "hardsub_cues.json"
             if cues_fn is not None:
                 cues = cues_fn(wd)
-            elif cues_p.is_file():
-                cues = json.loads(cues_p.read_text(encoding="utf-8"))
             else:
-                cues = H.extract_hardsub_cues(wd)
-                cues_p.write_text(json.dumps(cues, ensure_ascii=False, indent=1), encoding="utf-8")
+                # fix 2026-11-14: OCR nhanh (1 khung/s, GPU, chạy NỀN song song ASR — hs_ocr_fast).
+                # Chưa xong sau SIMPLE_ZH_WAIT_SEC → None → dịch bằng ASR (không treo cả buổi như bản cũ).
+                import engines.hs_ocr_fast as hs_ocr_fast
+                cues = hs_ocr_fast.get_cues(wd)
+                if cues is None:
+                    rep["ocr_pending"] = True
+        if det.get("has_hardsub") and cues is not None:
             merged, st = H.merge_hardsub_into_asr(segs, cues)
             st["guard_reverted"] = _guard_ocr(merged, H)
             for m in merged:
