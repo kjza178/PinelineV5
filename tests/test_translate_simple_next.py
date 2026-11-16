@@ -37,7 +37,7 @@ def test_lexicon_entries_have_src():
     data = json.loads((ROOT / "data" / "lexicon" / "idioms_zh_vi.json").read_text(encoding="utf-8"))
     srcs = {e.get("src") for e in data["entries"]}
     assert srcs <= {"translate_rules", "golden_derived", "expert"} and None not in srcs
-    tsrc = (ROOT / "translate.py").read_text(encoding="utf-8")
+    tsrc = (ROOT / "engines" / "translate.py").read_text(encoding="utf-8")
     for e in data["entries"]:   # translate_rules = THẬT SỰ có trong luật translate.py
         assert (e["src"] == "translate_rules") == (e["zh"] in tsrc), e["zh"]
     assert all(e["src"] for e in lexicon.load())
@@ -448,8 +448,13 @@ def test_pipeline_zh_source_flag(tmp_path, monkeypatch):
     asr_before = (wd / "asr.json").read_bytes()
     monkeypatch.setattr(zh_source, "detect", lambda wd: {"has_hardsub": True, "method": "fake"})
     import engines.asr.hardsub_asr as hardsub_asr
-    monkeypatch.setattr(hardsub_asr, "extract_hardsub_cues",
-                        lambda wd, **k: [{"start": 0.0, "end": 1.5, "zh": "苏晴，我等你很久了。"}])
+    import engines.hs_ocr_fast as hs_ocr_fast
+    _cues_fake = [{"start": 0.0, "end": 1.5, "zh": "苏晴，我等你很久了。"}]
+    def _fake_cues(wd, **k):
+        (Path(wd) / "hardsub_cues.json").write_text(json.dumps(_cues_fake, ensure_ascii=False), encoding="utf-8")
+        return _cues_fake
+    monkeypatch.setattr(hardsub_asr, "extract_hardsub_cues", _fake_cues)
+    monkeypatch.setattr(hs_ocr_fast, "get_cues", _fake_cues)
     _nmt(monkeypatch)
     fake = FakeLLM("good")
     monkeypatch.setattr(llm, "chat", fake)
@@ -496,7 +501,7 @@ def _orig_pipeline(tmp_path) -> object:
     bk = _backup_dir()
     base = tmp_path / "orig_pkg"
     pkg = base / "translate_simple_orig"
-    shutil.copytree(ROOT / "translate_simple", pkg, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(ROOT / "engines" / "translate_simple", pkg, ignore=shutil.ignore_patterns("__pycache__"))
     for f in (bk / "translate_simple").glob("*.py"):
         shutil.copyfile(f, pkg / f.name)
     (base / "data" / "lexicon").mkdir(parents=True)

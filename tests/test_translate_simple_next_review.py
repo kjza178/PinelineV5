@@ -65,6 +65,7 @@ def test_post_vi_heal_rows_whose_asr_had_stutter(tmp_path):
 
 def test_zh_source_sync_does_not_undo_stutter_heal(tmp_path, monkeypatch):
     monkeypatch.setenv("SIMPLE_ZH_SOURCE", "1")
+    monkeypatch.setenv("SIMPLE_ZH_OCR_MODE", "full")   # 2026-11-16: test đường OCR cả phim (mặc định nay là targeted)
     monkeypatch.setenv("SIMPLE_ZH_NAMEFIX", "0")
     segs = [dict(s) for s in SEGS]
     segs[2] = {"i": 2, "start": 3.0, "end": 4.5, "text": "不对不队"}             # ASR sai 1 chữ, OCR đúng nhưng lặp
@@ -72,6 +73,9 @@ def test_zh_source_sync_does_not_undo_stutter_heal(tmp_path, monkeypatch):
     monkeypatch.setattr(zh_source, "detect", lambda wd: {"has_hardsub": True, "method": "fake"})
     import engines.asr.hardsub_asr as hardsub_asr
     monkeypatch.setattr(hardsub_asr, "extract_hardsub_cues",
+                        lambda wd, **k: [{"start": 3.0, "end": 4.5, "zh": "不对不对"}])
+    import engines.hs_ocr_fast as hs_ocr_fast
+    monkeypatch.setattr(hs_ocr_fast, "get_cues",
                         lambda wd, **k: [{"start": 3.0, "end": 4.5, "zh": "不对不对"}])
     _nmt(monkeypatch)
     monkeypatch.setattr(llm, "chat", FakeLLM("good"))

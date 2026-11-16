@@ -11,7 +11,7 @@ Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần resta
 - Sửa tay sau ghép: `llm._chatgpt_settings` (bases từ machine-config + xếp base chết xuống cuối).
 - Backup: `.backup_port_20261116\\` (giữ đường dẫn). Test mới chép từ V2.
 - CHƯA chạy pytest / chưa chạy server (máy kiểm không có pytest). Trước khi push/restart: `python -m pytest -q tests` (AGENT_BRAIN=0) + `python scripts\\tree_audit.py`.
-- Chưa port: `films_ui.html` / static, `rvc_bridge`, docs brain. Lỗi A7 lấy mẫu (giới hạn 26.000 ký tự không có tác dụng) còn nguyên như V2.
+- Chưa port: `films_ui.html` / static, `rvc_bridge`, docs brain. A7 lấy mẫu ≤ 26.000 ký tự: V2 đã sửa 16/11, bản port đã gồm (kiểm: 76.491 → 25.996 ký tự). Cỡ lô tự động + `DEEPSEEK_CONCURRENCY` cũng đã gồm.
 
 ## 2026-11-13
 

@@ -22,7 +22,7 @@ def test_other_seat_busy(monkeypatch):
             return {"current": "seatjob"}
 
     import sys
-    monkeypatch.setitem(sys.modules, "job_queue", _JQ)
+    monkeypatch.setitem(sys.modules, "core.job_queue", _JQ)
     assert ah.other_seat_busy("seatjob") is None
     assert ah.other_seat_busy("seatjob_p02") is None
     assert ah.other_seat_busy("other") == "queue.current=seatjob"
@@ -35,7 +35,7 @@ def test_other_seat_busy(monkeypatch):
         def queue_state():
             return {"current": None}
 
-    monkeypatch.setitem(sys.modules, "job_queue", _JQ2)
+    monkeypatch.setitem(sys.modules, "core.job_queue", _JQ2)
     assert ah.other_seat_busy("other") is None
 
 
@@ -48,7 +48,7 @@ def test_heal_skips_translate_fill_when_other_seat(tmp_path, monkeypatch):
             return {"current": "busyjob"}
 
     import sys
-    monkeypatch.setitem(sys.modules, "job_queue", _JQ)
+    monkeypatch.setitem(sys.modules, "core.job_queue", _JQ)
 
     jid = "waitingjob"
     wd = tmp_path / jid

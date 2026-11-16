@@ -66,7 +66,7 @@ def test_build_full_movie_plan_sampling(tmp_path: Path):
     # Test khi số ký tự > 26000 thì hàm tự lấy mẫu dày đều
     long_segs = [{"i": idx, "text": f"Đây là câu thoại dài số {idx} với rất nhiều chữ Hán 测试中文"} for idx in range(1000)]
     
-    with patch("llm.chat") as mock_chat:
+    with patch("engines.llm.chat") as mock_chat:
         mock_chat.return_value = json.dumps({
             "summary": "Phim võ hiệp tu tiên",
             "characters": [{"zh": "林凡", "vi": "Lâm Phàm", "role": "Nhân vật chính"}],

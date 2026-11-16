@@ -65,7 +65,7 @@ def test_r12_failed_plan_not_written_as_glossary(tmp_path, monkeypatch):
     def _fail(*a, **k):
         raise RuntimeError("plan upload failed")
 
-    monkeypatch.setattr("translate.build_plan", _fail, raising=False)
+    monkeypatch.setattr("engines.translate.build_plan", _fail, raising=False)
     import engines.translate as T
     monkeypatch.setattr(T, "build_plan", _fail)
     monkeypatch.setattr(T, "ensure_hard_terms", lambda p: p)

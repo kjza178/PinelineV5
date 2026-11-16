@@ -638,7 +638,7 @@ def test_old_config_identical_to_pre_b2(tmp_path):
     (old_dir / "translate.py").write_bytes((_BACKUP / "translate.py").read_bytes())
     new_dir = tmp_path / "new"
     new_dir.mkdir()
-    (new_dir / "translate.py").write_bytes((ROOT / "translate.py").read_bytes())
+    (new_dir / "translate.py").write_bytes((ROOT / "engines" / "translate.py").read_bytes())
     old = _diff_run(old_dir, tmp_path)
     new = _diff_run(new_dir, tmp_path)
     assert set(old) == set(new)

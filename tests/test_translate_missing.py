@@ -20,7 +20,7 @@ def test_translate_batch_raises_on_dropped_lines():
     # LLM drops items 2, 3, 4, 5 and only returns item 1
     fake_llm_out = json.dumps({"items": [{"i": 1, "vi": "Xin chào"}]})
     
-    with patch("translate.chat", return_value=fake_llm_out):
+    with patch("engines.translate.chat", return_value=fake_llm_out):
         with pytest.raises(ValueError, match="LLM bỏ sót"):
             translate.translate_batch(rows, plan_block="", prev_ctx=[])
 
@@ -49,7 +49,7 @@ def test_translate_safe_splits_and_recovers_when_dropped():
             return json.dumps({"items": [{"i": 3, "vi": "Tạm biệt"}, {"i": 4, "vi": "Hẹn gặp lại mai"}]})
         return "{}"
 
-    with patch("translate.chat", side_effect=mock_chat):
+    with patch("engines.translate.chat", side_effect=mock_chat):
         res = translate._translate_safe(rows, plan_block="", prev_ctx=[], target="Tiếng Việt", model=None)
         assert len(res) == 4
         assert res[1] == "Xin chào"
@@ -72,9 +72,9 @@ def test_run_review_auto_fills_missing_before_review(tmp_path):
     manifest_file = tmp_path / "manifest.json"
     manifest_file.write_text(json.dumps({"stages": {"translate": {"status": "done"}}}, ensure_ascii=False), encoding="utf-8")
 
-    with patch("translate._cfg_get", return_value="0"), \
-         patch("translate._translate_safe", return_value={1: "Thế giới"}), \
-         patch("translate.review_batch", return_value={}):
+    with patch("engines.translate._cfg_get", return_value="0"), \
+         patch("engines.translate._translate_safe", return_value={1: "Thế giới"}), \
+         patch("engines.translate.review_batch", return_value={}):
 
         res = translate.run_review(tmp_path, batch=20)
         updated_rows = json.loads(script_file.read_text(encoding="utf-8"))

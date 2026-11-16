@@ -23,7 +23,7 @@ def test_format_youtube_title():
 
 def test_generate_youtube_titles_fallback():
     # When LLM fails, fallbacks follow Premise + «Ta …» formula
-    with patch("meta_studio._call_chatgpt", side_effect=RuntimeError("LLM down")):
+    with patch("agents.meta_studio._call_chatgpt", side_effect=RuntimeError("LLM down")):
         res = meta_studio.generate_youtube_titles(
             series_name="Thiên Đạo Chi Nữ",
             season=1,
@@ -51,7 +51,7 @@ def test_generate_youtube_titles_success():
         "best": "Con Gái Thiên Đạo Chuyển Sinh, Nổi Giận Gọi Sấm Sét Vạch Trần Mẹ Kế Phần 1",
         "reason": "Giữ đúng từ khóa Chuyển Sinh, số Phần 1 và hai hook cụ thể là thân phận con gái Thiên Đạo cùng màn gọi sấm sét vạch trần mẹ kế."
     }
-    with patch("meta_studio._call_chatgpt", return_value=json.dumps(fake_json)):
+    with patch("agents.meta_studio._call_chatgpt", return_value=json.dumps(fake_json)):
         res = meta_studio.generate_youtube_titles(
             series_name="Con Gái Cưng Của Thiên Đạo",
             season=1,
@@ -124,24 +124,24 @@ def test_auto_publisher_no_fallback_thumb_on_ai_failure(tmp_path):
     mock_db_con = MagicMock()
     mock_db_con.__enter__.return_value = MagicMock()
 
-    with patch("auto_publisher.load_config", return_value={"enabled": True, "privacy": "unlisted", "generate_ai_thumb": True}), \
-         patch("auto_publisher.film_db.get", return_value=row), \
-         patch("auto_publisher.film_db.query", return_value=[row]), \
-         patch("auto_publisher.film_db.sync_one"), \
-         patch("auto_publisher.film_db.connect", return_value=mock_db_con), \
-         patch("auto_publisher.update_auto_state"), \
-         patch("auto_publisher._sync_queue_state_badge"), \
-         patch("auto_publisher.touch_active_locks"), \
-         patch("meta_studio.get_series_key", return_value=("test_series", "Phim Test")), \
-         patch("meta_studio.get_series_meta", return_value=None), \
-         patch("meta_studio.get_series_thumbnail", return_value=None), \
-         patch("meta_studio.generate_metadata", return_value={"ok": True, "titles": ["Phim Test - Tình Huống Kịch Tính"], "ai_image_prompt": "prompt", "description": "desc", "tags": [], "hook_texts": ["PHIM TEST", "CAO TRÀO"]}), \
-         patch("meta_studio.generate_ai_image", return_value=None), \
-         patch("meta_studio.create_thumbnail") as mock_create_thumb, \
-         patch("meta_studio.save_series_thumbnail") as mock_save_thumb, \
-         patch("meta_studio.save_series_meta"), \
-         patch("agent_tele_cmd._fetch_poster_bytes", return_value=None), \
-         patch("auto_publisher.upload_to_youtube", return_value={"ok": True, "yt_url": "https://youtu.be/dummy", "video_id": "dummy"}) as mock_upload:
+    with patch("agents.auto_publisher.load_config", return_value={"enabled": True, "privacy": "unlisted", "generate_ai_thumb": True}), \
+         patch("agents.auto_publisher.film_db.get", return_value=row), \
+         patch("agents.auto_publisher.film_db.query", return_value=[row]), \
+         patch("agents.auto_publisher.film_db.sync_one"), \
+         patch("agents.auto_publisher.film_db.connect", return_value=mock_db_con), \
+         patch("agents.auto_publisher.update_auto_state"), \
+         patch("agents.auto_publisher._sync_queue_state_badge"), \
+         patch("agents.auto_publisher.touch_active_locks"), \
+         patch("agents.meta_studio.get_series_key", return_value=("test_series", "Phim Test")), \
+         patch("agents.meta_studio.get_series_meta", return_value=None), \
+         patch("agents.meta_studio.get_series_thumbnail", return_value=None), \
+         patch("agents.meta_studio.generate_metadata", return_value={"ok": True, "titles": ["Phim Test - Tình Huống Kịch Tính"], "ai_image_prompt": "prompt", "description": "desc", "tags": [], "hook_texts": ["PHIM TEST", "CAO TRÀO"]}), \
+         patch("agents.meta_studio.generate_ai_image", return_value=None), \
+         patch("agents.meta_studio.create_thumbnail") as mock_create_thumb, \
+         patch("agents.meta_studio.save_series_thumbnail") as mock_save_thumb, \
+         patch("agents.meta_studio.save_series_meta"), \
+         patch("agents.agent_tele_cmd._fetch_poster_bytes", return_value=None), \
+         patch("agents.auto_publisher.upload_to_youtube", return_value={"ok": True, "yt_url": "https://youtu.be/dummy", "video_id": "dummy"}) as mock_upload:
 
         res = auto_publisher._publish_job_internal("test_job_meta_thumb", privacy="unlisted", force=True)
 

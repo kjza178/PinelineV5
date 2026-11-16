@@ -552,7 +552,7 @@ def test_default_identical_to_pre_b3(tmp_path, cfg):
     (old_dir / "translate.py").write_bytes((_BACKUP / "translate.py").read_bytes())
     new_dir = tmp_path / "new"
     new_dir.mkdir()
-    (new_dir / "translate.py").write_bytes((ROOT / "translate.py").read_bytes())
+    (new_dir / "translate.py").write_bytes((ROOT / "engines" / "translate.py").read_bytes())
     old = _char_run(old_dir, tmp_path, cfg)
     new = _char_run(new_dir, tmp_path, cfg)
     assert set(old) == set(new)
@@ -574,7 +574,7 @@ def test_flags_on_actually_change_something(tmp_path):
     (old_dir / "translate.py").write_bytes((_BACKUP / "translate.py").read_bytes())
     new_dir = tmp_path / "new"
     new_dir.mkdir()
-    (new_dir / "translate.py").write_bytes((ROOT / "translate.py").read_bytes())
+    (new_dir / "translate.py").write_bytes((ROOT / "engines" / "translate.py").read_bytes())
     old = _char_run(old_dir, tmp_path, cfg)
     new = _char_run(new_dir, tmp_path, cfg)
     assert new["post_mixed"] != old["post_mixed"]

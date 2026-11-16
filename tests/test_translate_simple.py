@@ -514,6 +514,7 @@ def test_review_batches_and_context(tmp_path, monkeypatch):
     wd = _job(tmp_path, segs=segs)
     _nmt(monkeypatch, table={k: f"Câu {k}." for k in range(70)})
     monkeypatch.setenv("SIMPLE_WORKERS", "4")
+    monkeypatch.setenv("SIMPLE_BATCH", "30")
     fake = FakeLLM("echo")
     monkeypatch.setattr(llm, "chat", fake)
     res = pipeline.run(wd, "Tiếng Việt")
