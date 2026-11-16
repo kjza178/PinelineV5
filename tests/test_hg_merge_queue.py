@@ -76,7 +76,7 @@ def test_finish_counts_batch(state, monkeypatch):
 
 
 def test_phase_visible_in_state(state, monkeypatch):
-    monkeypatch.setattr(hg, "merge_status", lambda base: {"running": False})
+    monkeypatch.setattr(hg, "merge_status", lambda base: {"running": False}, raising=False)
     hg._set_phase("A", "chuẩn hoá", 42.0)
     st = hg.merge_queue_state("http://x")
     assert st["phase"]["name"] == "A" and st["phase"]["pct"] == 42.0

@@ -24,8 +24,6 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 # Hongguo 2.x: 1 helper Pineline (stdio) — giống WinUI giữ 1 engine; không đụng WinUI.exe.
 os.environ.setdefault("HG_HELPER_SINGLETON", "1")
-# Mặc định auto: Hongguo2 ép RPC qua header X-HG-UI:2; Hongguo1 dùng http_first (:8000 → RPC).
-os.environ.setdefault("HG_BACKEND", "auto")
 
 # Nạp config -> env TRƯỚC khi import llm/translate (chúng đọc env lúc import; tiến trình con kế thừa).
 import core.config as _config_boot  # noqa: E402
@@ -7195,33 +7193,18 @@ for _opt_router in ("routes_films", "routes_uploader_settings"):
 
 @app.middleware("http")
 async def _hg1_hg2_split(request, call_next):
-    """Tách hoàn toàn Hongguo1 / Hongguo2.
-
-    - `/api/hg2/*` → rewrite thành `/api/hg/*` (hoặc `/api/disk`) + ép RPC
-    - `/api/hg/*`  → ép HTTP Downloader :8000 (classic, không license)
-    """
-    import agents.hg_ui_ctx as ctx
+    """`/api/hg2/*` là alias của `/api/hg/*` (`/api/hg2/disk` → `/api/disk`). Classic đã xoá — chỉ RPC."""
     path = request.scope.get("path") or ""
+    new_path = None
     if path == "/api/hg2/disk" or path.startswith("/api/hg2/disk/"):
-        request.state.hg_ui = "2"
-        ctx.force("rpc")
         new_path = "/api/disk" + path[len("/api/hg2/disk"):]
-        request.scope["path"] = new_path
-        request.scope["raw_path"] = new_path.encode("utf-8")
     elif path.startswith("/api/hg2/"):
-        request.state.hg_ui = "2"
-        ctx.force("rpc")
         new_path = "/api/hg/" + path[len("/api/hg2/"):]
+    elif path == "/api/hg2":
+        new_path = "/api/hg"
+    if new_path:
         request.scope["path"] = new_path
         request.scope["raw_path"] = new_path.encode("utf-8")
-    elif path == "/api/hg2":
-        request.state.hg_ui = "2"
-        ctx.force("rpc")
-        request.scope["path"] = "/api/hg"
-        request.scope["raw_path"] = b"/api/hg"
-    elif path.startswith("/api/hg/") or path == "/api/hg":
-        request.state.hg_ui = "1"
-        ctx.force("http")
     return await call_next(request)
 
 

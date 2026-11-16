@@ -8,9 +8,9 @@ Tách từ server.py (đợt 7). Chỉ được nạp từ cuối server.py (sau
 from __future__ import annotations
 
 from pathlib import Path
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 router = APIRouter()
 
@@ -75,9 +75,10 @@ def ui4():
 
 @router.get("/hongguo", response_class=HTMLResponse)
 @router.get("/ui-hg", response_class=HTMLResponse)
-def ui_hongguo():
-    """UI riêng — điều khiển Hongguo Downloader (search/tải/merge)."""
-    return _html_file("hongguo.html")
+def ui_hongguo(request: Request):
+    """Hongguo classic đã xoá (2026-11-17) → luôn chuyển sang /hongguo2 (giữ query)."""
+    q = request.url.query
+    return RedirectResponse("/hongguo2" + (("?" + q) if q else ""), status_code=307)
 
 
 @router.get("/hongguo2", response_class=HTMLResponse)

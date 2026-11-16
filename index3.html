@@ -375,7 +375,7 @@
     <a href="/" style="padding:3px 10px;border-radius:999px;border:1px solid var(--line2);color:var(--text2);text-decoration:none">UI0</a>
     <a href="/ui3" style="padding:3px 10px;border-radius:999px;background:var(--ok);color:#0c1a0c;border-color:transparent;font-weight:650;text-decoration:none">UI3</a>
     <a href="/ui4" style="padding:3px 10px;border-radius:999px;border:1px solid var(--accent-line);color:var(--accent);text-decoration:none;font-weight:650">UI4 Ops</a>
-    <a href="/hongguo" style="padding:3px 10px;border-radius:999px;border:1px solid var(--line2);color:var(--text2);text-decoration:none">HG</a>
+    <a href="/hongguo2" style="padding:3px 10px;border-radius:999px;border:1px solid var(--line2);color:var(--text2);text-decoration:none">HG</a>
     <a href="http://127.0.0.1:8802/films/ui?tab=seasons" style="padding:3px 10px;border-radius:999px;border:1px solid var(--accent-line);color:var(--accent);text-decoration:none;font-weight:650" title="Films UI · Mùa mới">🎬 Phim</a>
     <button type="button" id="btn-agent" onclick="toggleAgent()" title="Pineline V2 Agent" style="padding:3px 10px;border-radius:999px;border:1px solid var(--accent-line);background:var(--accent-dim);color:var(--accent);font-weight:650;cursor:pointer;font-family:inherit;font-size:12px">Agent</button>
   </div>
@@ -443,12 +443,12 @@
       <div class="brand"><i>V2</i> Pineline V2</div>
       <button type="button" class="side-add" onclick="showCompose()">+ Thêm video</button>
       <div class="side-row2">
-        <a class="side-hg" href="/hongguo">Hongguo</a>
+        <a class="side-hg" href="/hongguo2">Hongguo</a>
         <a class="side-hg" href="http://127.0.0.1:8802/films/ui?tab=seasons" title="Films UI · Mùa mới" style="border-color:var(--accent);color:var(--accent)">🎬 Phim</a>
         <button type="button" class="btn" title="Enqueue merge mọi series Hongguo chưa DONE" onclick="mergeAllSeries()">Merge all series</button>
       </div>
       <div class="ckbox" id="cookie-box"></div>
-      <div class="slabel" id="qty">Hàng chờ · <a href="/" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI0</a>/<a href="/ui3" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI3</a>/<a href="/ui4" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI4</a>/<a href="/hongguo" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">HG</a>/<a href="http://127.0.0.1:8802/films/ui?tab=seasons" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">Phim</a></div>
+      <div class="slabel" id="qty">Hàng chờ · <a href="/" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI0</a>/<a href="/ui3" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI3</a>/<a href="/ui4" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">UI4</a>/<a href="/hongguo2" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">HG</a>/<a href="http://127.0.0.1:8802/films/ui?tab=seasons" style="color:var(--accent);text-transform:none;letter-spacing:0;font-weight:600">Phim</a></div>
       <div class="queue" id="list"></div>
       <div class="side-foot"><span class="dg"></span> GPU · gemma4 · chạy lần lượt</div>
     </aside>
@@ -1059,7 +1059,7 @@ async function mergeAllSeries(){
     const skip=(d.skipped_done||[]).length;
     alert('Đã xếp '+((d.queue||pending).length)+' series vào hàng merge'
       +(skip?` · bỏ qua ${skip} đã done`:'')
-      +'\nXem tiến độ tại /hongguo');
+      +'\nXem tiến độ tại /hongguo2');
   }catch(e){ alert('Lỗi merge: '+e+'\n(Hongguo Downloader đang chạy?)'); }
 }
 

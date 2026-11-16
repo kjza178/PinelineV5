@@ -3,6 +3,33 @@
 Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần restart gì. Chi tiết bug: docs/fixes/. Nhật ký phiên: docs/worklog/.
 
 
+
+## 2026-11-17 — Port từ V2: xoá Hongguo classic + gộp tập có kiểm tra
+
+- **Xoá hẳn Hongguo classic (Downloader 1.x HTTP :8000) — chỉ còn hongguo2 (RPC)**:
+  - `hongguo_bridge.py`: bỏ toàn bộ nhánh HTTP (`_req`, `/dl/*`, token UI, `_use_rpc`, `merge_one/merge_status`, proxy ảnh :8000). `rank_episodes` dùng RPC `series.detail`; `seasons_decline` lưu cục bộ `hg_seasons_declined.json` (có `undo`); `library()` ẩn mùa đã từ chối khỏi `newSeasons`; `open_library` mở thư mục cục bộ.
+  - `routes_hg.py` (bỏ `_bind_hg_ui_backend`, `api_disk` luôn RPC, `/library/seasons/decline` nhận `undo`), `server.py` (middleware chỉ alias `/api/hg2/*` → `/api/hg/*`; bỏ `HG_BACKEND`), `hongguo_rpc._ensure_licensed_quiet` (bỏ chặn classic), `routes_ui` (`/hongguo` luôn 307 → `/hongguo2`).
+  - Chuyển vào `_to_delete/hg_classic_20261117/`: `hg_ui_ctx.py`, `_read_hg_ui_token.py`, `tests/test_hg_classic_removed.py`. Cờ `HG_CLASSIC` / `HG_BACKEND` không còn tác dụng (mục 2026-11-16 về rollback đã hết hiệu lực).
+- **Gộp tập có kiểm tra + chuẩn hoá đầu vào** — `agents/hg_merge_check.py` (mới), `_merge_worker` gọi `run_merge`:
+  - Trước gộp: ffprobe + đọc packet + giải mã (toàn bộ tiếng, 3s đầu/cuối hình; `HG_MERGE_CHECK=deep` = giải mã cả hình) từng tập, song song `HG_MERGE_CHECK_WORKERS` (4).
+  - Hỏng nặng (thiếu moov, < 20 KB, không có hình, tải cụt: đọc được < khai báo) → mặc định DỪNG series, không ra file thiếu (`HG_MERGE_ON_BAD=skip` = bỏ tập hỏng). Báo thiếu số tập.
+  - Lệch nhẹ (thiếu tiếng, lệch dài tiếng/hình, pix_fmt ≠ yuv420p, lỗi packet/giải mã, khác res/fps/codec) → chuẩn hoá về số đông (scale/pad/fps, aac 48k-stereo, `aresample=async`, `anullsrc` nếu không có tiếng) rồi ghép.
+  - Sau gộp: kiểm tổng thời lượng + giải mã ±2s quanh mỗi mối nối; copy hỏng → tự chuyển chuẩn hoá. Báo cáo `merge_check.json` trong thư mục series.
+- **hongguo2.html**: Library thêm tab «Gộp tập» (hàng đợi + tiến độ + lịch sử, gộp tất cả, xoá hàng đợi), «Tra mùa mới» (quét, Tải/Không tải/Bỏ từ chối, Cập nhật tất cả qua Hongguo), nút «Gộp tập» / «Thêm job Pineline» (+ «chạy luôn») khi Select, nút hover trên thẻ; Link thêm «Tra Baike» / «Tìm web»; thẻ New seasons có nút «Không tải».
+- Tests: `tests/test_hg_merge_check.py` (mới), `tests/test_hg_merge_queue.py` (`merge_status` raising=False).
+- **Cần restart server :8805** (sidecar không cần). Chi tiết: `docs/fixes/2026-11-17-hg-classic-removed-merge-check.md`.
+
+## 2026-11-16 — Bỏ Hongguo classic, mọi thứ chạy hongguo2 (RPC)
+
+- `routes_ui`: `/hongguo`, `/ui-hg` → 307 sang `/hongguo2` (giữ query). `hongguo.html` → `_to_delete/`.
+- `hg_ui_ctx`: `classic_enabled()` (HG_CLASSIC, mặc định tắt); `force("http")` / `apply` classic → `rpc` ⇒ `/api/hg/*` cũng chạy RPC.
+- `server.py`: `HG_BACKEND` mặc định `rpc` (trước `auto`); `hongguo_bridge._hg_backend_pref` mặc định `rpc` ⇒ agent/feeder/Telegram không còn rơi về :8000.
+- Link trong `index*.html`, `films_ui.html`, `v5-map.html`, `static/app.js` → `/hongguo2`.
+- CÒN gọi thẳng app Downloader 1.x :8000 (chưa có nhánh RPC): `rank_episodes`, `seasons_decline`, `merge_one`/`merge_status`, `open_library`, `fetch_poster` (có fallback file local), `_ingest_one`, `_hongguo_match_version`.
+- Mất giao diện (chỉ trang cũ có): gộp tập/merge-queue, cập nhật mùa mới + từ chối mùa, baike, web-search, thêm job Pineline từ thư viện — dùng Films UI / agent thay.
+- Quay lại: `HG_CLASSIC=1` + `HG_BACKEND=auto` trong pineline.config.json, chép `_to_delete/hongguo.html` về gốc, restart.
+- Test mới `tests/test_hg_classic_removed.py`. **Restart server.** Backup `.backup_hg2_20261116\\`. Chưa chạy pytest / chưa chạy server thật.
+
 ## 2026-11-16 — Port từ V2 (phiên Claude, ghép theo khúc — giữ lớp machine-config/cổng riêng của cây)
 
 - Nguồn: `Z:\\PinelineV2` trạng thái 16/11. Công cụ + bản ghép: `Z:\\PinelineV6\\scratch\\port_1116\\` (`portmerge.py`, `run_v4.py`, `run_v5.py`).

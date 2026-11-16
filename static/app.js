@@ -446,7 +446,7 @@ async function mergeAllSeries(){
     const skip=(d.skipped_done||[]).length;
     alert('Đã xếp '+((d.queue||pending).length)+' series vào hàng merge'
       +(skip?` · bỏ qua ${skip} đã done`:'')
-      +'\nXem tiến độ tại /hongguo');
+      +'\nXem tiến độ tại /hongguo2');
   }catch(e){ alert('Lỗi merge: '+e+'\n(Hongguo Downloader đang chạy?)'); }
 }
 

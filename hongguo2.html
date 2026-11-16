@@ -410,6 +410,16 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
 
 /* Library WinUI */
 .lib-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+/* 2026-11-17: gộp tập / mùa mới / tra cứu / job Pineline */
+.lib-st{position:absolute;left:8px;top:8px;font-size:11px;font-weight:650;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.65);color:#fff}
+.lib-st.ok{background:#1f7a3f}.lib-st.frag{background:#8a5a12}.lib-st.q{background:#3b4fa8}
+.mq-row{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.mq-row .n{font-weight:600;min-width:180px}.mq-row.error .s{color:#e5484d}.mq-row.done .s{color:#30a46c}
+.mq-bar{height:6px;border-radius:4px;background:var(--raise);overflow:hidden;margin:8px 0}.mq-bar i{display:block;height:100%;background:#e8633a}
+.sn-grp{margin:14px 0 6px;font-weight:650}.sn-grp small{color:var(--muted);font-weight:400}
+.mini{font-size:12px;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:var(--raise);color:var(--text);cursor:pointer}
+.mini:hover{filter:brightness(1.15)}
+#libPanel:empty{display:none}#libPanel{margin-bottom:14px}
 .lib-actions .ghost-btn{
   border:0;background:transparent;color:var(--muted);
   padding:8px 10px;border-radius:10px;font-size:13px;font-weight:600;
@@ -539,6 +549,16 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
         </div>
         <div id="linkResult" style="margin-top:14px"></div>
       </div>
+      <div class="panel" style="margin-top:14px">
+        <div class="sub" style="margin-bottom:8px">Tra Baike (duanjubaike → khớp Hongguo) · Tìm trên web (hongguoduanju.com — khi API sót mùa)</div>
+        <div class="row">
+          <input class="field" id="lookupQ" type="text" placeholder="Tên phim tiếng Trung…" style="flex:1;max-width:none"/>
+          <button class="btn" id="btnBaike">Tra Baike</button>
+          <button class="btn secondary" id="btnWeb">Tìm web</button>
+        </div>
+        <p class="muted" id="lookupMsg" style="margin-top:10px"></p>
+        <div class="grid" id="lookupGrid" style="margin-top:10px"></div>
+      </div>
     </section>
 
     <section id="view-downloads" class="hidden">
@@ -572,10 +592,14 @@ body.light .detail-tags span{color:var(--text);background:rgba(0,0,0,.06);border
             Open folder
           </button>
           <button type="button" class="btn secondary hidden" id="btnLibDownloadNew" style="padding:8px 12px">Download new seasons</button>
+          <button type="button" class="btn secondary hidden" id="btnLibMerge" style="padding:8px 12px" title="Kiểm tra từng tập → chuẩn hoá nếu lệch → gộp → kiểm tra mối nối">Gộp tập</button>
+          <button type="button" class="btn secondary hidden" id="btnLibAddJob" style="padding:8px 12px" title="Tạo job Pineline từ file đã gộp">Thêm job Pineline</button>
+          <label class="muted hidden" id="lblJobAutorun" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="jobAutorun"/> chạy luôn</label>
           <button type="button" class="btn secondary hidden" id="btnLibDelete" style="padding:8px 12px">Delete</button>
         </div>
       </div>
       <div class="chips" id="libFilters" style="margin-bottom:14px"></div>
+      <div id="libPanel"></div>
       <div class="grid" id="libGrid"></div>
     </section>
 
@@ -1650,7 +1674,10 @@ function libCardHTML(it, opts={}){
       <span class="check">✓</span>
       ${cov?`<img loading="lazy" src="${cov}" alt=""/>`:''}
       ${eps?`<span class="badge">${eps} eps</span>`:''}
+      ${libStBadge(it)}
       <div class="hov">
+        <button type="button" data-act="merge" title="Gộp tập (có kiểm tra)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 4v6a6 6 0 0 0 6 6h6M14 12l4 4-4 4"/></svg></button>
+        ${it.merged_file?`<button type="button" data-act="job" title="Thêm job Pineline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg></button>`:''}
         <button type="button" data-act="folder" title="Open folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg></button>
         <button type="button" data-act="play" title="Play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
       </div>
@@ -1672,6 +1699,7 @@ function libNewCardHTML(it){
       ${cov?`<img loading="lazy" src="${cov}" alt=""/>`:''}
       ${eps?`<span class="badge">${eps} eps</span>`:''}
       <div class="hov">
+        <button type="button" data-act="decline" title="Không tải mùa này"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         <button type="button" data-act="dlnew" title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v10M8 10l4 4 4-4M5 19h14"/></svg></button>
       </div>
     </div>
@@ -1688,6 +1716,8 @@ function renderLibFilters(){
   const tabs = [
     ['all', `All downloads (${nAll})`],
     ['new', `New seasons (${nNew})`],
+    ['merge', `Gộp tập${mqCount()?` (${mqCount()})`:''}`],
+    ['seasons', `Tra mùa mới${state.snBoard?` (${(state.snBoard.seasons?.held||[]).length})`:''}`],
     ['root', short],
   ];
   $('libFilters').innerHTML = tabs.map(([id,lab])=>
@@ -1698,6 +1728,14 @@ function renderLibrary(){
   renderLibFilters();
   $('btnLibDownloadNew').classList.toggle('hidden', state.libFilter!=='new');
   $('btnLibDelete').classList.toggle('hidden', !(state.libSelect && state.libFilter==='all'));
+  const selAll = !!(state.libSelect && state.libFilter==='all');
+  $('btnLibMerge').classList.toggle('hidden', !selAll);
+  $('btnLibAddJob').classList.toggle('hidden', !selAll);
+  $('lblJobAutorun').classList.toggle('hidden', !(selAll || state.libFilter==='merge'));
+  if(state.libFilter!=='merge') stopMqPoll();
+  $('libPanel').innerHTML = '';
+  if(state.libFilter==='merge'){ $('libGrid').innerHTML=''; renderMergePanel(); startMqPoll(); return; }
+  if(state.libFilter==='seasons'){ $('libGrid').innerHTML=''; renderSeasonsBoard(); return; }
   $('btnLibSelect').classList.toggle('on', !!state.libSelect);
   if(state.libFilter==='new'){
     const rows = state.libNewSeasons||[];
@@ -1738,6 +1776,13 @@ function bindLibGrid(){
         window.open(`/api/hg2/library/preview?name=${encodeURIComponent(name)}`, '_blank');
         return;
       }
+      if(act==='merge'){ await mergeNames([name]); return; }
+      if(act==='job'){ await addJobs([name]); return; }
+      if(act==='decline'){
+        await jpost('/api/hg2/library/seasons/decline', {series_ids:[sid]});
+        state.libNewSeasons = (state.libNewSeasons||[]).filter(x=>(x.seriesId||x.series_id)!==sid);
+        toast('Đã từ chối mùa này (bỏ được ở «Tra mùa mới»)'); renderLibrary(); return;
+      }
       if(act==='dlnew'){
         if(!(await ensureLicensedOrSettings())) return;
         await jpost('/api/hg2/submit', {series_ids:[sid], quality: state.quality||undefined});
@@ -1749,8 +1794,199 @@ function bindLibGrid(){
     }catch(err){ toast(err.message||'Action failed'); }
   };
 }
-async function loadLibrary(){
-  $('libGrid').innerHTML = '<p class="muted">Loading…</p>';
+// ===== 2026-11-17: gộp tập (kiểm tra + chuẩn hoá) · mùa mới · tra cứu · job Pineline =====
+state.mq = null; state.snBoard = null; state.mqTimer = null;
+function mqCount(){ const d=state.mq; return d ? (d.queue||[]).length + (d.current?1:0) : 0; }
+function libStBadge(it){
+  const n = it.name||'';
+  const d = state.mq||{};
+  if(d.current===n || (d.queue||[]).includes(n)) return '<span class="lib-st q">đang gộp</span>';
+  if(it.merged_file && !it.fragments) return '<span class="lib-st ok">đã gộp</span>';
+  if(it.merged_file) return `<span class="lib-st ok">đã gộp · ${it.fragments} mảnh</span>`;
+  if(it.fragments) return `<span class="lib-st frag">${it.fragments} tập rời</span>`;
+  return '';
+}
+function libSelectedNames(){
+  return (state.libItems||[]).filter(it=>state.libPicked.has(it.name)||state.libPicked.has(it.series_id||it.seriesId||'')).map(it=>it.name).filter(Boolean);
+}
+async function mergeNames(names, force){
+  names=(names||[]).filter(Boolean);
+  if(!names.length){ toast('Chưa chọn series'); return; }
+  const r = await jpost('/api/hg2/merge', {names, force:!!force});
+  const sk = (r.skipped_done||[]).length;
+  toast(`Đã xếp hàng gộp ${(r.queued||[]).length}${sk?` · bỏ qua ${sk} (đã gộp xong — chọn lại để ép gộp)`:''}`);
+  if(!(r.queued||[]).length && sk && confirm(`${sk} series đã gộp xong. Gộp lại (ép)?`)) return mergeNames(names, true);
+  await refreshMq();
+  state.libFilter='merge'; renderLibrary();
+}
+async function refreshMq(){
+  try{ state.mq = await jget('/api/hg2/merge-queue'); }catch(e){ state.mq = state.mq||null; }
+  return state.mq;
+}
+function stopMqPoll(){ if(state.mqTimer){ clearInterval(state.mqTimer); state.mqTimer=null; } }
+function startMqPoll(){
+  if(state.mqTimer) return;
+  state.mqTimer = setInterval(async ()=>{
+    if(state.nav!=='library' || state.libFilter!=='merge'){ stopMqPoll(); return; }
+    const before = JSON.stringify((state.mq||{}).history||[]).length;
+    await refreshMq(); renderMergePanel();
+    if(JSON.stringify((state.mq||{}).history||[]).length!==before) loadLibrary(true);
+  }, 2000);
+}
+function renderMergePanel(){
+  const d = state.mq||{};
+  const ph = d.phase||{}, b = d.batch||{};
+  const pending = (state.libItems||[]).filter(x=>x.fragments>0).map(x=>x.name);
+  const pct = ph.pct!=null ? ph.pct : 0;
+  const hist = (d.history||[]).slice().reverse();
+  $('libPanel').innerHTML = `<div class="panel">
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <b>Hàng đợi gộp</b>
+      <span class="muted">${d.worker?'đang chạy':'nghỉ'} · đợt: ${b.finished||0}/${b.total||0}${b.errors?` · lỗi ${b.errors}`:''}</span>
+      <span style="flex:1"></span>
+      <button class="mini" id="mqAll" ${pending.length?'':'disabled'}>Gộp tất cả còn tập rời (${pending.length})</button>
+      <button class="mini" id="mqClear">Xoá hàng đợi</button>
+      <button class="mini" id="mqJobs">Thêm job cho series đã gộp…</button>
+    </div>
+    ${d.current?`<div style="margin-top:10px"><b>${escapeHtml(d.current)}</b> — ${escapeHtml(ph.phase||'…')}${ph.pct!=null?` · ${pct}%`:''}</div>
+      <div class="mq-bar"><i style="width:${Math.max(2,Math.min(100,pct))}%"></i></div>`:''}
+    ${(d.queue||[]).length?`<div class="muted" style="margin-top:6px">Chờ: ${(d.queue||[]).map(escapeHtml).join(' · ')}</div>`:''}
+    <p class="muted" style="margin-top:8px">Trước khi gộp: kiểm tra từng tập (thiếu moov, tải cụt, lỗi giải mã, lệch tiếng/hình, khác độ phân giải/fps). Tập hỏng nặng → dừng series, không gộp ra file thiếu; lệch nhẹ → chuẩn hoá lại. Sau gộp: kiểm tra thời lượng + giải mã quanh mỗi mối nối. Báo cáo: <code>merge_check.json</code> trong thư mục series.</p>
+    <div style="margin-top:8px">${hist.map(h=>`<div class="mq-row ${escapeHtml(h.status||'')}"><span class="n">${escapeHtml(h.name||'')}</span><span class="s">${escapeHtml(h.status||'')}</span><span class="muted">${escapeHtml(h.detail||'')}</span></div>`).join('') || '<p class="muted">Chưa có lịch sử.</p>'}</div>
+  </div>`;
+  $('mqAll').onclick = ()=>{ if(confirm(`Gộp ${pending.length} series còn tập rời?`)) mergeNames(pending).catch(e=>toast(e.message)); };
+  $('mqClear').onclick = async ()=>{ try{ await jpost('/api/hg2/merge-queue/clear',{}); await refreshMq(); renderMergePanel(); }catch(e){ toast(e.message); } };
+  $('mqJobs').onclick = ()=>{
+    const ready = (state.libItems||[]).filter(x=>x.merged_file && !x.fragments).map(x=>x.name);
+    if(!ready.length){ toast('Chưa có series nào gộp xong'); return; }
+    if(confirm(`Tạo job Pineline cho ${ready.length} series đã gộp xong?\n(series đã có job sẽ hỏi lại)`)) addJobs(ready);
+  };
+}
+function libFilePath(it){
+  const root = (state.libFolder||'').replace(/[\\\/]+$/,'');
+  return it && it.merged_file && root ? `${root}\\${it.name}\\${it.merged_file}` : '';
+}
+async function addJobs(names){
+  const items = (names||[]).map(n=>(state.libItems||[]).find(x=>x.name===n)).filter(Boolean);
+  if(!items.length){ toast('Chưa chọn series'); return; }
+  const d = state.mq||{};
+  const busy = it => d.current===it.name || (d.queue||[]).includes(it.name);
+  const noFile = items.filter(it=>!it.merged_file).map(it=>it.name);
+  let ok = items.filter(it=>it.merged_file && !busy(it));
+  const byPath = {};
+  try{
+    const jobs = await jget('/api/jobs');
+    (Array.isArray(jobs)?jobs:(jobs.jobs||[])).forEach(j=>{
+      const vp = ((j.stages||{}).download||{}).video_path || j.video_path;
+      if(vp) byPath[String(vp).replace(/\//g,'\\').toLowerCase()] = j.job_id||j.id;
+    });
+  }catch(e){}
+  const dupOf = it => byPath[libFilePath(it).toLowerCase()];
+  const dup = ok.filter(dupOf);
+  if(dup.length && !confirm(`${dup.length} series đã có job:\n${dup.map(it=>`· ${it.name} → ${dupOf(it)}`).join('\n')}\n\nOK = vẫn tạo job mới · Huỷ = bỏ qua các series này`)) ok = ok.filter(it=>!dupOf(it));
+  const ids = [], errs = [];
+  for(const it of ok){
+    try{
+      const r = await jpost('/api/jobs/local-path', {path: libFilePath(it), title: it.name, move:false});
+      const id = r.job_id || (r.job_ids||[])[0];
+      if(id) ids.push(id);
+    }catch(e){ errs.push(`${it.name}: ${e.message}`); }
+  }
+  if(ids.length && $('jobAutorun')?.checked){
+    try{ await jpost('/api/queue/jobs', {job_ids: ids, skip_done:false}); }
+    catch(e){ errs.push('xếp hàng chạy: '+e.message); }
+  }
+  const skipped = [...noFile.map(n=>`${n} (chưa gộp)`), ...items.filter(it=>it.merged_file && busy(it)).map(it=>`${it.name} (đang gộp)`)];
+  toast(`Đã tạo ${ids.length} job${skipped.length?` · bỏ qua ${skipped.length}`:''}${errs.length?` · lỗi ${errs.length}`:''}`);
+  if(skipped.length || errs.length) console.warn('[addJobs]', {skipped, errs});
+  if(errs.length) alert('Lỗi tạo job:\n'+errs.join('\n'));
+  if(ids.length===1 && confirm(`Đã tạo job ${ids[0]}. Mở trên UI3?`)) window.open('/ui3?job='+encodeURIComponent(ids[0]), '_blank');
+}
+function snCard(it, kind){
+  const btns = kind==='declined'
+    ? `<button class="mini" data-sn="undo" data-sid="${escapeHtml(it.sid)}">Bỏ từ chối</button>`
+    : `<button class="mini" data-sn="dl" data-sid="${escapeHtml(it.sid)}">Tải</button> <button class="mini" data-sn="decline" data-sid="${escapeHtml(it.sid)}">Không tải</button>`;
+  return `<div class="mq-row"><span class="n" title="${escapeHtml(it.sid)}">${escapeHtml(it.title||it.sid)}</span>
+    <span class="muted">${it.season?`mùa ${it.season}`:''}${it.max_known?` · đã có tới ${it.max_known}`:''}${it.eps?` · ${it.eps} tập`:''}${it.score?` · ★${escapeHtml(it.score)}`:''}</span>
+    <span style="flex:1"></span>${btns} <button class="mini" data-sn="info" data-sid="${escapeHtml(it.sid)}">Chi tiết</button></div>`;
+}
+function renderSeasonsBoard(){
+  const b = state.snBoard;
+  const s = (b&&b.seasons)||{};
+  const sec = (lab, rows, kind) => rows&&rows.length ? `<div class="sn-grp">${lab} <small>(${rows.length})</small></div>${rows.map(r=>snCard(r,kind)).join('')}` : '';
+  $('libPanel').innerHTML = `<div class="panel">
+    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+      <b>Mùa mới</b><span class="muted">theo thư viện + films.db + watchlist — chỉ tìm, không tự tải</span>
+      <span style="flex:1"></span>
+      <label class="muted"><input type="checkbox" id="snExpand"/> mở rộng (web)</label>
+      <button class="mini" id="snScan">${b?'Quét lại':'Quét mùa mới'}</button>
+      <button class="mini" id="snUpdateAll" title="Hongguo library.downloadNewSeasons — tải mọi mùa mới RPC tìm được">Cập nhật tất cả (Hongguo)</button>
+      ${(s.held||[]).length?`<button class="mini" id="snDlAll">Tải tất cả mùa mới (${s.held.length})</button>`:''}
+    </div>
+    <p class="muted" id="snMsg" style="margin-top:8px">${b?escapeHtml(b.hint||''):'Bấm «Quét mùa mới».'}</p>
+    ${sec('Mới hơn mùa đã có', s.held, 'held')}
+    ${sec('Cũ hơn / trùng số mùa', s.older, 'older')}
+    ${sec('Liên quan (khác franchise?)', s.related, 'related')}
+    ${sec('Đã từ chối', s.declined, 'declined')}
+  </div>`;
+  $('snScan').onclick = async ()=>{
+    $('snMsg').textContent = 'Đang quét… (có thể mất 1–2 phút)';
+    try{ state.snBoard = await jpost('/api/hg2/library/seasons/discover', {expand: $('snExpand').checked}); renderLibrary(); }
+    catch(e){ $('snMsg').textContent = e.message||'Quét lỗi'; }
+  };
+  $('snUpdateAll').onclick = async ()=>{
+    if(!(await ensureLicensedOrSettings())) return;
+    try{ const r = await jpost('/api/hg2/library/update', {}); toast(r.message||'Đã gửi cập nhật mùa mới'); }catch(e){ toast(e.message); }
+  };
+  if($('snDlAll')) $('snDlAll').onclick = ()=> snDownload((s.held||[]).map(x=>x.sid));
+  $('libPanel').querySelectorAll('[data-sn]').forEach(el=>{
+    el.onclick = async ()=>{
+      const sid = el.dataset.sid, act = el.dataset.sn;
+      try{
+        if(act==='dl') return snDownload([sid]);
+        if(act==='info') return openDetail(sid);
+        await jpost('/api/hg2/library/seasons/decline', {series_ids:[sid], undo: act==='undo'});
+        const S = state.snBoard.seasons;
+        if(act==='decline'){
+          for(const k of ['held','older']){ const i=(S[k]||[]).findIndex(x=>x.sid===sid); if(i>=0){ (S.declined=S.declined||[]).push(S[k][i]); S[k].splice(i,1); } }
+        }else{
+          const i=(S.declined||[]).findIndex(x=>x.sid===sid); if(i>=0){ (S.held=S.held||[]).push(S.declined[i]); S.declined.splice(i,1); }
+        }
+        renderLibrary();
+      }catch(e){ toast(e.message||'Lỗi'); }
+    };
+  });
+}
+async function snDownload(ids){
+  ids=(ids||[]).filter(Boolean); if(!ids.length) return;
+  if(!(await ensureLicensedOrSettings())) return;
+  await submitIds(ids, `Đã xếp tải ${ids.length} mùa mới`);
+}
+async function doLookup(mode){
+  const q = ($('lookupQ').value||'').trim();
+  if(!q){ toast('Nhập tên phim'); return; }
+  $('lookupMsg').textContent = mode==='baike' ? 'Đang tra Baike…' : 'Đang tìm trên web…';
+  $('lookupGrid').innerHTML = '';
+  try{
+    if(mode==='baike'){
+      const d = await jget('/api/hg2/baike-search?q='+encodeURIComponent(q));
+      const bk = d.baike||{};
+      const rows = d.matched||[];
+      $('lookupMsg').textContent = `Baike: ${bk.picked?.title||'—'} · ${bk.n_versions||0} phiên bản · khớp Hongguo ${rows.length}${d.n_rejected?` · loại ${d.n_rejected}`:''}${bk.error?` · lỗi: ${bk.error}`:''}`;
+      $('lookupGrid').innerHTML = rows.map(it=>cardHTML(it)).join('') || '<p class="muted">Không khớp bản nào trên Hongguo.</p>';
+    }else{
+      const d = await jget('/api/hg2/web-search?q='+encodeURIComponent(q));
+      const rows = d.results||[];
+      $('lookupMsg').textContent = `Web: ${rows.length} kết quả · core «${d.core||''}»`;
+      $('lookupGrid').innerHTML = rows.map(it=>cardHTML(it)).join('') || '<p class="muted">Không thấy.</p>';
+    }
+    bindCards($('lookupGrid')); applyTitleVi($('lookupGrid'));
+  }catch(e){ $('lookupMsg').textContent = e.message||'Lỗi tra cứu'; }
+}
+
+async function loadLibrary(quiet){
+  if(!quiet) $('libGrid').innerHTML = '<p class="muted">Loading…</p>';
+  refreshMq().catch(()=>{});
   try{
     const d = await jget('/api/hg2/library');
     state.libItems = d.items || [];
@@ -2418,6 +2654,17 @@ refreshDisk();
 loadHgSettings().catch(()=>{});
 loadLibrary().catch(()=>{});
 setNav('browse');
+</script>
+<script>
+// 2026-11-17: nút gộp / job / tra cứu
+(function(){
+  const on=(id,f)=>{ const el=document.getElementById(id); if(el) el.addEventListener('click', ()=>Promise.resolve(f()).catch(e=>toast(e.message||'Lỗi'))); };
+  on('btnLibMerge', ()=>mergeNames(libSelectedNames()));
+  on('btnLibAddJob', ()=>addJobs(libSelectedNames()));
+  on('btnBaike', ()=>doLookup('baike'));
+  on('btnWeb', ()=>doLookup('web'));
+  const q=document.getElementById('lookupQ'); if(q) q.addEventListener('keydown', e=>{ if(e.key==='Enter') doLookup('baike'); });
+})();
 </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-"""Cầu nối Hongguo Downloader (local :8000): /api/hg/*.
+"""Cầu nối Hongguo 2.x (helper RPC stdio): /api/hg/* (= /api/hg2/*).
 
 Tách từ server.py (đợt 7). Chỉ được nạp từ cuối server.py (sau khi mọi hàm/model lõi đã
 định nghĩa): truy cập server qua `S.<tên>` để patch `server.<tên>` trong test vẫn có tác dụng."""
@@ -15,32 +15,12 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 
 import server as S
 
 
-async def _bind_hg_ui_backend(request: Request) -> None:
-    """Backend theo namespace (middleware gắn request.state.hg_ui) — fallback header.
-
-    Phải async: Depends sync chạy threadpool → ContextVar không tới endpoint.
-    /api/hg  = classic HTTP only · /api/hg2 = RPC (WinUI) — tách hoàn toàn.
-    """
-    import agents.hg_ui_ctx as ctx
-    forced = getattr(request.state, "hg_ui", None)
-    if forced in ("1", "classic", "http"):
-        ctx.force("http")
-        return
-    if forced in ("2", "hg2", "rpc"):
-        ctx.force("rpc")
-        return
-    ctx.apply(
-        request.headers.get("x-hg-ui") or request.query_params.get("hg_ui"),
-        request.headers.get("referer"),
-    )
-
-
-router = APIRouter(dependencies=[Depends(_bind_hg_ui_backend)])
+router = APIRouter()
 
 __all__ = [
     "HgRankEpsIn",
@@ -99,9 +79,8 @@ def api_disk(base: str | None = None):
     hg = importlib.reload(hg)
     folder = ""
     try:
-        if hg._use_rpc():
-            st = hg._rpc_mod().settings_get() or {}
-            folder = str(st.get("saveFolder") or "")
+        st = hg._rpc_mod().settings_get() or {}
+        folder = str(st.get("saveFolder") or "")
     except Exception:  # noqa: BLE001
         folder = ""
     if not folder:
@@ -815,7 +794,8 @@ def hg_seasons_decline(body: dict | None = None):
     body = body or {}
     series_ids = list(body.get("series_ids") or [])
     try:
-        return hg.seasons_decline(series_ids, _hg_base(body.get("base")))
+        return hg.seasons_decline(series_ids, _hg_base(body.get("base")),
+                                  undo=bool(body.get("undo")))
     except Exception as e:  # noqa: BLE001
         return _hg_err(e)
 
