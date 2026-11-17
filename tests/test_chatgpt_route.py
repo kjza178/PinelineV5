@@ -37,6 +37,8 @@ def test_is_alibaba_prefix():
 
 def test_chatgpt_chat_fallback_on_conn_refused_and_retry_400_pool(monkeypatch):
     import requests
+    # 2026-11-17: không còn IP LAN mặc định (AURORA_FALLBACK_URLS=off) — test tự đặt 1 fallback giả
+    monkeypatch.setenv("AURORA_FALLBACK_URLS", "http://10.255.0.9:5005/v1")
     llm._DEAD_BASES.clear()
     calls = []
 
@@ -57,7 +59,7 @@ def test_chatgpt_chat_fallback_on_conn_refused_and_retry_400_pool(monkeypatch):
         calls.append(url)
         if "127.0.0.1:3377" in url:
             raise requests.ConnectionError("[WinError 10061] Actively refused")
-        if len([u for u in calls if "192.168.31.247" in u]) == 1:
+        if len([u for u in calls if "10.255.0.9" in u]) == 1:
             return FakeResp(400, '{"error":{"message":"no available account of the requested type"}}')
         return FakeResp(200, "", {"choices": [{"message": {"content": '{"lines":[]}'}}]})
 
@@ -67,7 +69,7 @@ def test_chatgpt_chat_fallback_on_conn_refused_and_retry_400_pool(monkeypatch):
     assert out == '{"lines":[]}'
     # :3377 chỉ bị gọi đúng 1 lần rồi chuyển ngay sang .247 (không tốn 3 lần retry trên port đóng)
     assert calls.count("http://127.0.0.1:3377/v1/chat/completions") == 1
-    assert calls.count("http://192.168.31.247:5005/v1/chat/completions") == 2
+    assert calls.count("http://10.255.0.9:5005/v1/chat/completions") == 2
 
 
 def test_decode_aurora_image_rejects_echoed_ref():

@@ -6,6 +6,25 @@ Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần resta
 
 ## 2026-11-17 — Port từ V2: xoá Hongguo classic + gộp tập có kiểm tra
 
+- **Brain tự xử lý + tự thử lại** (yêu cầu: brain phải xử lý được, fail thì tự retry):
+  - `agent_qa_fix.py` (mới): cờ QA **high khác hang** (name_echo, calque, vi_pattern, empty_vi, nonsense_shape…) → LLM (`QA_FIX_MODEL` → HANG_FIX_MODEL → PRONOUN_MODEL) xét từng câu trong cửa sổ ZH/VI: báo sai → `row.qa_ack=[kind]` (scan_script bỏ qua), lỗi thật → ghi VI mới (giữ `vi_before_qa_fix`). Tối đa `QA_FIX_MAX_TRIES`=2 lượt/câu; LLM lỗi không tính lượt. Audit `qa_fix_trace.json`. Gọi trong `agent_quality.scan_and_heal_job` (cả trước TTS lẫn brain tick). Tắt: `BRAIN_QA_FIX=0`.
+  - `agent_retry.py` (mới): stage **failed** → đặt lại pending (GIỮ artifact: clip TTS, script…; chỉ xoá output.partial.mp4) + xếp lại hàng đợi (hook `resume`). Backoff `RETRY_BACKOFF_MIN`=5,15,45 phút, tối đa `RETRY_MAX`=3 lần/(job, stage), quá → Telegram «cần người xem». Lỗi notify_only (thiếu giọng, đầy đĩa, source hỏng, user dừng) → chỉ báo 1 lần. Bỏ qua job đang chạy / trong hàng đợi / `.stop` / đang HOLD. Chạy MỌI tick kể cả khi hàng đợi bận (trước: L1 heal bị bỏ 100% tick vì «tick busy»). Tắt: `AGENT_RETRY=0`.
+  - Test `tests/test_brain_qa_fix_retry.py`. Backup `.backup_brainretry_20261117/`. Cần restart server.
+
+- **Brain kẹt HOLD QA vô hạn** (ff8e66b475a7 kẹt ~10h trước khi chạy tay TTS) — `agent_brain.py`, `routes_agent.py`:
+  - `_qa_pipeline_phase`: job đang HOLD QA mà manifest còn `tts=running` mồ côi → không còn coi là `post_tts` (trước: brain tưởng TTS đang chạy, heal bị chặn vì queue.current).
+  - CLEAR HOLD (high=0) giờ gọi hook `resume` (= «Chạy tiếp»: xếp job lại đầu hàng) — trước chỉ gỡ cờ, không ai chạy tiếp.
+  - HOLD QA quá `QA_HOLD_MAX_MIN` phút (mặc định 60; 0 = tắt) với cùng bộ cờ high: nếu mọi cờ là loại mềm (name_echo/hang/stutter/calque) → tự chạy tiếp + Telegram; loại cứng (empty_vi, CJK…) → chỉ Telegram nhắc người duyệt (1 lần/giờ).
+  - Test `tests/test_brain_qa_hold_timeout.py`. Backup `.backup_qahold_20261117/`. Cần restart server.
+
+- **QA Brain `name_echo` báo sai → job HOLD treo** (job ff8e66b475a7, i=380 «đường … cũng là … đường», i=2483 «Không ngờ … tinh không»): `agent_quality.scan_script` bỏ `(?i)` + lớp `[A-ZÀ-Ỹ]` (dải À–Ỹ gồm cả chữ thường đ/ư…); danh xưng phải viết hoa mọi từ và lặp đúng hoa/thường. Test `test_name_echo_no_false_positive_lowercase`. Cần restart server.
+
+- **Bỏ hết IP LAN 192.168.31.244 / .247** (9router :20128, Aurora :5005) khỏi code + config:
+  - `LLM_BASE_URL` mặc định → `http://127.0.0.1:8083/v1` (llama-server local) — config.py, llm.py, machine.py (V4/V5), pineline.config(.example).json.
+  - `CLOUD_LLM_BASE_URL` mặc định rỗng; model `ollama/...-cloud` không có base → báo lỗi `LLMUnavailable` rõ ràng thay vì gọi IP LAN.
+  - `AURORA_FALLBACK_URLS` mặc định `off` (V4/V5). `tests/test_chatgpt_route.py` đặt fallback giả 10.255.0.9.
+  - Backup `.backup_noip_20261117/`. Cần restart server + sidecar.
+
 - **Xoá hẳn Hongguo classic (Downloader 1.x HTTP :8000) — chỉ còn hongguo2 (RPC)**:
   - `hongguo_bridge.py`: bỏ toàn bộ nhánh HTTP (`_req`, `/dl/*`, token UI, `_use_rpc`, `merge_one/merge_status`, proxy ảnh :8000). `rank_episodes` dùng RPC `series.detail`; `seasons_decline` lưu cục bộ `hg_seasons_declined.json` (có `undo`); `library()` ẩn mùa đã từ chối khỏi `newSeasons`; `open_library` mở thư mục cục bộ.
   - `routes_hg.py` (bỏ `_bind_hg_ui_backend`, `api_disk` luôn RPC, `/library/seasons/decline` nhận `undo`), `server.py` (middleware chỉ alias `/api/hg2/*` → `/api/hg/*`; bỏ `HG_BACKEND`), `hongguo_rpc._ensure_licensed_quiet` (bỏ chặn classic), `routes_ui` (`/hongguo` luôn 307 → `/hongguo2`).

@@ -2,7 +2,7 @@
 llm.py — Gọi LLM qua 9router API (tương thích chuẩn OpenAI).
 
 Cấu hình qua config.json / pineline.config.json (LLM_* / TRANSLATE_MODEL / REVIEW_MODEL: file config thắng env):
-    LLM_BASE_URL   mặc định http://192.168.31.247:20128/v1
+    LLM_BASE_URL   mặc định http://127.0.0.1:8083/v1 (llama-server local)
     LLM_API_KEY    (chỉ đặt trong pineline.config.json — không ghi key vào code/.bat)
     LLM_MODEL      ollama/gemma4:31b-cloud
     TRANSLATE_MODEL ollama/gemma4:31b-cloud
@@ -41,7 +41,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-BASE_URL = os.getenv("LLM_BASE_URL", "http://192.168.31.247:20128/v1").rstrip("/")
+BASE_URL = os.getenv("LLM_BASE_URL", "http://127.0.0.1:8083/v1").rstrip("/")
 API_KEY = os.getenv("LLM_API_KEY", "")
 MODEL = os.getenv("LLM_MODEL", "ollama/gemma4:31b-cloud")
 
@@ -175,7 +175,7 @@ DEEPSEEK_PREFIXES = ("deepseek/", "deepseek-")
 DEFAULT_DEEPSEEK_BASE = "https://api.deepseek.com/v1"
 
 # Cooldown tạm thời (60s) cho base URL bị từ chối kết nối (vd 127.0.0.1:3377 tắt)
-# để chuyển thẳng sang 192.168.31.247:5005 / 192.168.31.244:5005 không mất 1s+2s+4s mỗi câu.
+# để chuyển thẳng sang base kế tiếp (AURORA_FALLBACK_URLS nếu đặt) không mất 1s+2s+4s mỗi câu.
 _DEAD_BASES: dict[str, float] = {}
 _DEAD_BASE_TTL_SEC = 60.0
 
@@ -912,6 +912,10 @@ def chat(
                 raise LLMUnavailable(
                     "REVIEW/cloud model cần CLOUD_LLM_API_KEY (9router) trong pineline.config.json"
                 )
+        if not cloud_base:
+            raise LLMUnavailable(
+                f"model cloud {m} cần CLOUD_LLM_BASE_URL (+ CLOUD_LLM_API_KEY) trong pineline.config.json"
+            )
         target_base, target_key = cloud_base, cloud_key
         print(f"[llm] cloud {m} via {target_base}", flush=True)
 

@@ -441,6 +441,8 @@ _HEAL_HOOKS = {
     "stop_job": _agent_stop_job,
     "run_stage": lambda jid, st: _agent_run_stage(jid, st, {}),
     "reset_state": _agent_reset_state,
+    # 2026-11-17: brain xếp lại job sau CLEAR HOLD / HOLD QA quá hạn
+    "resume": _agent_resume,
     # fix 2026-11-12 agentH (C): heal bỏ qua job đang chạy thật (engine sống / claim stage)
     "job_active": lambda jid: ("engine" if S._job_proc_alive(jid) else None) or S._job_lineage_busy(jid),
 }

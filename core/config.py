@@ -130,7 +130,7 @@ def get(key: str, default: str | None = None) -> str | None:
 def llm_settings() -> dict:
     """LLM cho job (dịch/review) — đọc lúc gọi để sửa pineline.config.json có hiệu lực không cần restart."""
     return {
-        "base": (get("LLM_BASE_URL") or "http://192.168.31.247:20128/v1").rstrip("/"),
+        "base": (get("LLM_BASE_URL") or "http://127.0.0.1:8083/v1").rstrip("/"),
         "key": get("LLM_API_KEY") or "",
         "model": get("LLM_MODEL") or "ollama/gemma4:31b-cloud",
         "translate_model": get("TRANSLATE_MODEL") or None,

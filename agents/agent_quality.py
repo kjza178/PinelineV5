@@ -111,12 +111,16 @@ def scan_script(rows: list[dict]) -> list[dict]:
                 "i": i, "sev": sev, "kind": "hang", "note": "đuôi treo / nửa câu",
                 "zh": zh, "vi": vi, "rv": rv, "mt": mt,
             })
+        # 2026-11-17: bỏ (?i) + lớp [A-ZÀ-Ỹ] (dải À–Ỹ chứa cả chữ thường: đ, ư…) → báo sai
+        # «đường … cũng là … đường», «Không ngờ … cũng là … tinh không». Danh xưng = MỌI từ viết hoa, lặp đúng hoa/thường.
         for m_ne in re.finditer(
-            r"(?i)\b([A-ZÀ-Ỹ][\wÀ-ỹ]{3,}(?:\s+[A-ZÀ-Ỹ][\wÀ-ỹ]{2,})?)\b"
+            r"\b([^\W\d_]{4,}(?:\s+[^\W\d_]{3,})?)\b"
             r".{0,30}\bcũng là\b.{0,16}\b\1\b",
             vi,
         ):
             name = m_ne.group(1).strip()
+            if not all(w[:1].isupper() for w in name.split()):
+                continue
             first = name.split()[0].lower()
             if name.lower() in NAME_ECHO_STOP or first in NAME_ECHO_STOP:
                 continue
@@ -161,9 +165,19 @@ def scan_script(rows: list[dict]) -> list[dict]:
                         "note": "cấu trúc «chưa X không Y» khả nghi",
                         "zh": zh, "vi": vi, "rv": rv, "mt": mt,
                     })
+    # 2026-11-17: Brain/LLM đã xét cờ là báo sai → row["qa_ack"] = [kind,…] (agent_qa_fix)
+    acks: dict[int, set] = {}
+    for r in rows:
+        if isinstance(r, dict) and r.get("qa_ack") and "i" in r:
+            try:
+                acks[int(r["i"])] = {str(x) for x in (r.get("qa_ack") or [])}
+            except (TypeError, ValueError):
+                pass
     seen: set[tuple] = set()
     out: list[dict] = []
     for f in flags:
+        if f.get("kind") in acks.get(int(f.get("i", -1)), ()):
+            continue
         k = (f["i"], f["kind"], f["note"])
         if k in seen:
             continue
@@ -281,6 +295,25 @@ def scan_and_heal_job(work_dir: Path, *, write: bool = True) -> dict:
 
     healed = apply_safe_heals(rows)
     flags = scan_script(rows)
+    # 2026-11-17: high KHÁC hang (name_echo/calque/vi_pattern/empty_vi/…) → LLM xét + sửa hoặc ack báo sai.
+    # Trước: chỉ hang có đường xử lý → high loại khác = HOLD mãi (ff8e66b475a7).
+    if write and any(f.get("sev") == "high" and f.get("kind") != "hang" for f in flags):
+        try:
+            from agents.agent_qa_fix import fix_qa_job, enabled as qa_fix_enabled
+            if qa_fix_enabled():
+                if healed:
+                    try:
+                        from core.fileio import atomic_write_json
+                        atomic_write_json(sp, rows, fsync=False)
+                    except Exception:  # noqa: BLE001
+                        sp.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+                qf = fix_qa_job(work_dir)
+                if qf.get("n_fixed") or qf.get("n_ack"):
+                    rows = json.loads(sp.read_text(encoding="utf-8"))
+                    healed += int(qf.get("n_fixed") or 0)
+                    flags = scan_script(rows)
+        except Exception as e:  # noqa: BLE001
+            print(f"[qa_fix] {work_dir.name}: {e}", flush=True)
     hang_high = [
         f for f in flags
         if isinstance(f, dict) and f.get("kind") == "hang" and f.get("sev") == "high"
