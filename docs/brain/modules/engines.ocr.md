@@ -2,15 +2,15 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/ocr.py` · **Lớp:** `asr` · **273 dòng** (225 code) · **8 hàm**, **0 class** · sha1 `1ac59f8eb0`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/ocr.py` · **Lớp:** `asr` · **273 dòng** (224 code) · **8 hàm**, **0 class** · sha1 `d1160f64aa`
 
 > ocr.py — STAGE OCR: đọc chữ TRÊN HÌNH (tên nhân vật / địa danh / caption / thẻ) mà KHÔNG nằm trong phụ đề thoại, rồi dịch sang tiếng Việt. Đầu vào : work/<job>/source.mp4 + asr.json (để trừ chữ trùng thoại)
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [core.manifest](./core.manifest.md), [engines.llm](./engines.llm.md), [engines.translate](./engines.translate.md), [engines.vram](./engines.vram.md)
-- **Được dùng bởi:** [engines.render](./engines.render.md), [render](./render.md)
+- **Gọi tới (import nội bộ):** [core.manifest](./core.manifest.md), [engines.llm](./engines.llm.md), [engines.source_preflight](./engines.source_preflight.md), [engines.translate](./engines.translate.md), [engines.vram](./engines.vram.md)
+- **Được dùng bởi:** [engines.render](./engines.render.md), [engines.translate_simple.zh_source](./engines.translate_simple.zh_source.md), [server](./server.md)
 - **Được nhắc tên file `.py` (subprocess/script) bởi:** [server](./server.md)
 - **Test:** `tests/test_layout_paths.py`
 - **Thư viện ngoài:** `rapidocr_onnxruntime`
@@ -19,9 +19,11 @@
 flowchart LR
   engines_ocr[[engines.ocr]]
   engines_render[engines.render] --> engines_ocr
-  render[render] --> engines_ocr
+  engines_translate_simple_zh_source[engines.translate_simple.zh_source] --> engines_ocr
+  server[server] --> engines_ocr
   engines_ocr --> core_manifest[core.manifest]
   engines_ocr --> engines_llm[engines.llm]
+  engines_ocr --> engines_source_preflight[engines.source_preflight]
   engines_ocr --> engines_translate[engines.translate]
   engines_ocr --> engines_vram[engines.vram]
 ```
@@ -30,8 +32,8 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_meaningful` | 39 | 8 | `t` | Giữ chữ CÓ NGHĨA: ≥2 chữ Hán, hoặc số ≥3 chữ số (ID). Bỏ rác latin / 1 chữ đơn. |
-| `_find_video` | 54 | 9 | `work_dir` |  |
+| `_meaningful` | 44 | 8 | `t` | Giữ chữ CÓ NGHĨA: ≥2 chữ Hán, hoặc số ≥3 chữ số (ID). Bỏ rác latin / 1 chữ đơn. |
+| `_find_video` | 59 | 4 | `work_dir` |  |
 | `_probe_size` | 65 | 10 | `video` |  |
 | `extract_keyframes` | 77 | 34 | `video, out_dir, dur, stride` | Trích KEYFRAME + mốc giờ. Giải mã chỉ I-frame nên nhanh. stride: lấy cách quãng. |
 | `_classify_zone` | 113 | 13 | `cx, cy, text` | Trả 'wm' (watermark), 'sub' (hardsub thoại), hoặc 'cand' (ứng viên). |
@@ -45,9 +47,10 @@ flowchart LR
 
 ### Lịch sử (từ docs/)
 
-- Fix logs: —
+- **Fix logs (1):**
+  - [Port V2→V5: preflight/chuẩn hoá video nguồn + extract_pcm bền + FireRed slice khoảng lặng + câu rác «None.» / ](../../fixes/2026-11-13-port-preflight-slice-junk.md)
 - **Reviews:** [_atoms_engines](../../reviews/_atoms_engines.md), [2026-11-06-v5-part-atoms](../../reviews/2026-11-06-v5-part-atoms.md), [2026-11-06-v5-func-catalog](../../reviews/2026-11-06-v5-func-catalog.md), [2026-10-06-code-review](../../reviews/2026-10-06-code-review.md)
-- Nhắc trong CHANGELOG: **0** lần · DECISIONS: **0** lần
+- Nhắc trong CHANGELOG: **1** lần · DECISIONS: **0** lần
 
 <!-- AUTO:END -->
 

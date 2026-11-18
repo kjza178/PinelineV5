@@ -210,7 +210,7 @@ def _review_missing(store: ScriptStore, pv: PlanView, plan: dict, flags: dict, *
     if not left:
         return None, flags
     st = stage_review.run(store, pv, model=model, stop_check=stop_check, progress=progress,
-                          batch=cfg.missing_batch())
+                          batch=cfg.missing_batch_for(len(left)))
     got = [r for r in store.rows if r.get("i") is not None and int(r["i"]) in left and r.get("rv")]
     if got:
         post.apply(store, plan, got)

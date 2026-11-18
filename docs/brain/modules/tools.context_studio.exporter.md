@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `tools/context_studio/exporter.py` · **Lớp:** `misc` · **73 dòng** (62 code) · **1 hàm**, **0 class** · sha1 `7692ad940f`
 
 > 05 — Export context pack vào thư mục job Pineline (hoặc out/).

@@ -2,17 +2,17 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/clone_tts.py` · **Lớp:** `tts` · **1115 dòng** (968 code) · **38 hàm**, **0 class** · sha1 `5705cadb28`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/clone_tts.py` · **Lớp:** `tts` · **1115 dòng** (968 code) · **38 hàm**, **0 class** · sha1 `727b99d8ef`
 
 > clone_tts.py — STAGE Lồng tiếng bằng TTS zero-shot clone tiếng Việt. Hai engine, cùng registry giọng (voices/f5_voices.json: name -> {ref, text}): - "vieneu"    : VieNeu-TTS v3-Turbo (G2P tiếng Việt riêng, chạy CPU/ONNX)
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [core.config](./core.config.md), [core.manifest](./core.manifest.md), [engines.assemble](./engines.assemble.md), [engines.vram](./engines.vram.md)
-- **Được dùng bởi:** [agents.agent_hongguo](./agents.agent_hongguo.md), [scripts.check_batch4](./scripts.check_batch4.md)
+- **Được dùng bởi:** [agents.agent_hongguo](./agents.agent_hongguo.md), [scripts.check_batch4](./scripts.check_batch4.md), [server](./server.md)
 - **Được nhắc tên file `.py` (subprocess/script) bởi:** [restart_server](./restart_server.md), [scripts._tmp_extract_sigs_batch2](./scripts._tmp_extract_sigs_batch2.md), [scripts.check_batch4](./scripts.check_batch4.md), [server](./server.md)
-- **Test:** `tests/test_layout_paths.py`
+- **Test:** `tests/test_layout_paths.py`, `tests/test_simple_junk_park.py`
 - **Thư viện ngoài:** `faster_whisper`, `numpy`, `soundfile`
 
 ```mermaid
@@ -20,6 +20,7 @@ flowchart LR
   engines_clone_tts[[engines.clone_tts]]
   agents_agent_hongguo[agents.agent_hongguo] --> engines_clone_tts
   scripts_check_batch4[scripts.check_batch4] --> engines_clone_tts
+  server[server] --> engines_clone_tts
   engines_clone_tts --> core_config[core.config]
   engines_clone_tts --> core_manifest[core.manifest]
   engines_clone_tts --> engines_assemble[engines.assemble]

@@ -9,10 +9,6 @@ Hỗ trợ 4 nhóm chức năng:
 
 from __future__ import annotations
 
-try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
-    from core import machine as _machine
-except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
 import json
 import os
 import re
@@ -659,7 +655,7 @@ def tool_hg_library(query: str = "") -> str:
             })
         return json.dumps({
             "ok": True,
-            "output_dir": lib.get("output_dir", str(_machine.library_dir())),
+            "output_dir": lib.get("output_dir", r"D:\Lib"),
             "total_series": len(items),
             "series": summary,
         }, ensure_ascii=False, indent=2)
@@ -701,7 +697,7 @@ def tool_hg_clean(folder_name: str) -> str:
 
     try:
         lib = hg.library()
-        root = Path(lib.get("output_dir") or str(_machine.library_dir()))
+        root = Path(lib.get("output_dir") or r"D:\Lib")
         target_dir = root / fn
         if not target_dir.is_dir():
             it, ambiguous = _pick_lib_item(lib.get("items") or [], fn)
@@ -944,7 +940,7 @@ def tool_hg_auto_flow(
     ensure_hongguo_running()
 
     lib = hg.library()
-    root = Path(lib.get("output_dir") or str(_machine.library_dir()))
+    root = Path(lib.get("output_dir") or r"D:\Lib")
     items = lib.get("items") or []
     existing_titles = _get_existing_pineline_titles(rt)
 

@@ -1,10 +1,6 @@
 """System snapshot cho Second Brain LLM — toàn hệ, không chỉ 1 job."""
 from __future__ import annotations
 
-try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
-    from core import machine as _machine
-except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
 import json
 import shutil
 import urllib.error
@@ -217,15 +213,15 @@ def build_system_snapshot(work_root: Path, *, max_jobs: int = 25) -> dict[str, A
     infra = {
         "server_8801": _ping(_self_base() + "/api/agent/status"),
         "sidecar_8802": _ping("http://127.0.0.1:8802/api/agent/status"),
-        "llama_8083": _ping(_machine.llama_base_url() + "/models"),
-        "chatgpt_3377": _ping(_machine.aurora_base_url() + "/models"),
-        "hongguo_8000": _ping(_machine.hongguo_base_url() + "/"),
+        "llama_8083": _ping("http://127.0.0.1:8083/v1/models"),
+        "chatgpt_3377": _ping("http://127.0.0.1:3377/v1/models"),
+        "hongguo_8000": _ping("http://127.0.0.1:8000/"),
     }
 
     # active llama preset
     active = {}
     try:
-        ap = _machine.presets_active_json()
+        ap = Path(r"E:\models\presets\active.json")
         if ap.is_file():
             active = json.loads(ap.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001

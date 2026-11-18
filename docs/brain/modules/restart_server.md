@@ -2,8 +2,8 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `restart_server.py` · **Lớp:** `control` · **250 dòng** (216 code) · **8 hàm**, **0 class** · sha1 `dc953f8128`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `restart_server.py` · **Lớp:** `control` · **263 dòng** (226 code) · **9 hàm**, **0 class** · sha1 `dbc3fcaacf`
 
 > Restart server Pineline (giữ sidecar), khôi phục hàng đợi + Auto-pilot. Port mặc định V5: 8805 (env PORT / PINELINE_BASE). Legacy 8804/8801 nếu đặt env. --after-current: rút job chờ, đợi job đang chạy xong rồi mới restar
 
@@ -11,7 +11,7 @@
 
 - **Gọi tới (import nội bộ):** [agents.agent_autopilot](./agents.agent_autopilot.md), [agents.agent_watch](./agents.agent_watch.md), [tools.migrate_work](./tools.migrate_work.md)
 - **Được dùng bởi:** —
-- **Được nhắc tên file `.py` (subprocess/script) bởi:** [agent_tele_cmd](./agent_tele_cmd.md), [agents.agent_tele_cmd](./agents.agent_tele_cmd.md)
+- **Được nhắc tên file `.py` (subprocess/script) bởi:** [agents.agent_tele_cmd](./agents.agent_tele_cmd.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ```mermaid
@@ -30,10 +30,11 @@ flowchart LR
 | `_tg` | 69 | 7 | `msg` |  |
 | `_proc_env` | 78 | 7 | `pattern` |  |
 | `_precheck` | 87 | 11 | `` | '' nếu code mới compile + import được; ngược lại là lỗi (không restart). |
-| `_requeue` | 100 | 13 | `order, opts` |  |
-| `_start_server` | 115 | 19 | `clean_env, env` |  |
-| `_restart_sidecar` | 136 | 7 | `env` |  |
-| `main` | 145 | 96 | `` |  |
+| `_job_parked` | 100 | 7 | `job_id` |  |
+| `_requeue` | 109 | 13 | `order, opts` |  |
+| `_start_server` | 124 | 19 | `clean_env, env` |  |
+| `_restart_sidecar` | 145 | 7 | `env` |  |
+| `main` | 154 | 100 | `` |  |
 
 ### Config / env keys (2)
 
@@ -43,11 +44,12 @@ flowchart LR
 
 **File/artifact nhắc tới:** `manifest.json`, `restart_pending.json`
 
-**Tín hiệu rủi ro (đếm tĩnh):** broad_except=5 · file_writes=1 · sleep=5 · subprocess=5
+**Tín hiệu rủi ro (đếm tĩnh):** broad_except=6 · file_writes=1 · sleep=5 · subprocess=5
 
 ### Lịch sử (từ docs/)
 
-- **Fix logs (7):**
+- **Fix logs (8):**
+  - [V5 không khởi động được → chuyển về bố cục package bằng sync_from_v2](../../fixes/2026-11-11-v5-package-sync.md)
   - [Hongguo "Merge all": không thấy đang chạy gì, 16 series rất lâu mới ra 1](../../fixes/2026-10-07-hg-merge-queue.md)
   - [Restart hẹn giờ chết giữa chừng, server :8801 nằm chết](../../fixes/2026-10-06-restart-killed-itself.md)
   - [Đợt 7: gỡ UI cũ, tách server.py](../../fixes/2026-10-06-batch7-ui-split.md)

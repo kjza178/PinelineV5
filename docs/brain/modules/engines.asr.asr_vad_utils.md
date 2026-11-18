@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `engines/asr/asr_vad_utils.py` · **Lớp:** `asr` · **158 dòng** (137 code) · **5 hàm**, **0 class** · sha1 `c031df59e1`
 
 > asr_vad_utils.py — VAD kwargs FunASR thật + pad/overlap khi cắt đoạn. FunASR fsmn-vad (1.4.x) dùng tên khác Silero/Whisper: max_end_silence_time, max_start_silence_time,

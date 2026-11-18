@@ -18,10 +18,6 @@ Telegram: AGENT_BRAIN_TELEGRAM=events|minimal|report|all|off
 """
 from __future__ import annotations
 
-try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
-    from core import machine as _machine
-except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
 import hashlib
 import json
 import os
@@ -288,8 +284,8 @@ def _ping(url: str, timeout: float = 2.5) -> tuple[bool, str]:
 def sense_infra() -> list[dict]:
     out: list[dict] = []
     checks = [
-        ("llama_8083", _machine.llama_base_url() + "/models"),
-        ("chatgpt_3377", _machine.aurora_base_url() + "/models"),
+        ("llama_8083", "http://127.0.0.1:8083/v1/models"),
+        ("chatgpt_3377", "http://127.0.0.1:3377/v1/models"),
         ("sidecar_8802", "http://127.0.0.1:8802/api/agent/status"),
     ]
     for name, url in checks:
@@ -361,6 +357,83 @@ def sense_jobs(work_root: Path, *, max_jobs: int = 40) -> list[dict]:
     return incidents
 
 
+# 2026-11-17b: cờ running GIẢ khi HOLD — queue mark_running bước kế rồi pipeline dừng ở HOLD
+# (ff8e66b475a7: mux «running» 40', không dub/partial/output) → brain tưởng post_tts, chờ mãi.
+_GHOST_FILES = {
+    "tts": ("tts.json", "tts"),
+    "mux": ("output.partial.mp4", "dub_fit.wav", "dub_tts.wav", "mixed_audio.wav",
+            "mixed_audio.partial.wav", "_filter_complex.txt", "_hstrack"),
+}
+
+
+def _ts_any(v: Any) -> float:
+    if v in (None, ""):
+        return 0.0
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def _ghost_running(work_dir: Path, name: str, st: dict, now: float | None = None) -> bool:
+    """running nhưng KHÔNG có dấu hiệu sống trong GHOST_RUN_MIN phút (updated_at/started_at, file tạm)."""
+    if not isinstance(st, dict) or str(st.get("status") or "").lower() != "running":
+        return False
+    try:
+        win = float(_cfg("GHOST_RUN_MIN", "10") or "10") * 60.0
+    except ValueError:
+        win = 600.0
+    now = now or time.time()
+    last = max(_ts_any(st.get("updated_at")), _ts_any(st.get("started_at")))
+    if last and now - last < win:
+        return False
+    for fn in _GHOST_FILES.get(name, ()):
+        p = Path(work_dir) / fn
+        try:
+            if p.exists() and now - p.stat().st_mtime < win:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _reset_ghost_running(work_root: Path, wd: Path, jid: str, names: list) -> list[str]:
+    """Job đang HOLD + stage running giả → pending (Manifest.update), để gỡ HOLD/chạy lại được."""
+    done: list[str] = []
+    try:
+        from core.manifest import Manifest
+
+        def _fn(d: dict):
+            ag = d.get("agent") or {}
+            if not (ag.get("qa_blocked") or ag.get("held_at") or ag.get("hold_after_translate")):
+                return False
+            stg = d.get("stages") or {}
+            for nm in names:
+                st = stg.get(nm)
+                if isinstance(st, dict) and _ghost_running(wd, nm, st):
+                    st = dict(st)
+                    st["status"] = "pending"
+                    st["cur_text"] = "chờ — brain bỏ cờ running giả (job đang HOLD)"
+                    st.pop("started_at", None)
+                    st["ghost_reset_at"] = time.time()
+                    stg[nm] = st
+                    done.append(nm)
+            return None if done else False
+
+        Manifest(wd).update(_fn)
+    except Exception as e:  # noqa: BLE001
+        log_line(work_root, f"ghost reset {jid} lỗi: {e}")
+        return done
+    if done:
+        log_line(work_root, f"GHOST {jid}: {done} running giả khi HOLD → pending")
+        _emit(jid, "ghost_running_reset", level="action", stages=",".join(done))
+    return done
+
+
 def _qa_pipeline_phase(work_dir: Path) -> dict:
     """Perceive: job đang ở đâu — mid_review | pre_tts | post_tts | idle.
 
@@ -399,11 +472,28 @@ def _qa_pipeline_phase(work_dir: Path) -> dict:
         # 2026-11-17: job đang HOLD QA mà manifest còn tts=running (mồ côi) → KHÔNG phải post_tts.
         # Trước: brain tưởng «TTS đang chạy», heal bị chặn vì queue.current → kẹt ~10h (ff8e66b475a7).
         ag_h = m.data.get("agent") or {}
-        held_qa = bool(ag_h.get("qa_blocked") or ag_h.get("held_at") in ("qa_brain", "after_translate"))
+        held_qa = bool(ag_h.get("qa_blocked") or ag_h.get("held_at") in ("qa_brain", "qa_gate", "after_translate"))
         out["held"] = held_qa
-        if held_qa and tts_st == "running" and mux_st not in ("done", "ok", "completed", "running"):
+        ghost = []
+        if held_qa:
+            for nm, st_ in (("tts", tts), ("mux", mux)):
+                if _ghost_running(work_dir, nm, st_):
+                    ghost.append(nm)
+        out["ghost"] = ghost
+        if "mux" in ghost:
+            mux_st = "stale_running_held"
+            out["mux_status"] = mux_st
+        if held_qa and tts_st == "running" and (
+            "tts" in ghost or mux_st not in ("done", "ok", "completed", "running")
+        ):
             tts_st = "stale_running_held"
             out["tts_status"] = tts_st
+        if held_qa and tts_st in ("done", "ok", "completed") and mux_st not in (
+            "done", "ok", "completed", "running",
+        ):
+            # HOLD sau TTS mà không gì chạy → vẫn xét gỡ HOLD (không sửa script: giọng đã đọc)
+            out["phase"] = "held_post_tts"
+            return out
         if tts_st in ("done", "ok", "completed", "running") or mux_st in (
             "done", "ok", "completed", "running",
         ):
@@ -908,6 +998,14 @@ def apply_actions(
                     )
                     results.append({"ok": True, "action": act, "skipped": "post_tts", "phase": phase})
                     continue
+                # 2026-11-18: chưa dịch xong (phase idle, không HOLD) → KHÔNG quét QA. Trước: script mới có ZH,
+                # VI trống → mọi câu là cờ empty_vi (b138b16bef8f_p01 high=2514) → spam log/phiếu LLM và
+                # agent_qa_fix có thể dịch lẻ 40 câu/tick trước bước dịch chính.
+                if phase["phase"] == "idle" and not phase.get("held"):
+                    results.append({"ok": True, "action": act, "skipped": "not_translated", "phase": phase})
+                    continue
+                if phase.get("ghost"):
+                    _reset_ghost_running(work_root, wd, jid, list(phase["ghost"]))
 
                 # 2) Act — sửa/ack khi được đụng script
                 from agents.agent_quality import scan_and_heal_job
@@ -957,6 +1055,7 @@ def apply_actions(
                             if set_hold:
                                 set_hold(jid, False)
                             log_line(work_root, f"CLEAR HOLD {jid} (qa clean → pipeline)")
+                            _qa_ask_close(wd, "qa_clean")
                             _qa_resume(hooks, work_root, jid, "qa_clean")
                             _emit(jid, "hold_cleared", level="action", why="qa_clean")
                     except Exception as e:  # noqa: BLE001
@@ -1002,7 +1101,7 @@ def apply_actions(
                         f"(không auto-HOLD)",
                     )
                     _qa_hold_timeout(state, hooks, work_root, wd, jid, r)
-                    if _cooldown_ok(state, f"needllm:{jid}:{high}", 600):
+                    if not _qa_ask_active(wd) and _cooldown_ok(state, f"needllm:{jid}:{high}", 600):
                         _mark_fp(state, f"needllm:{jid}:{high}", "pending")
                         _telegram(
                             f"Brain NEED-LLM {jid}: high={high} phase={phase['phase']} "
@@ -1979,38 +2078,124 @@ def _qa_resume(hooks: dict, work_root: Path, jid: str, why: str) -> None:
         log_line(work_root, f"resume {jid} ({why}) lỗi: {e}")
 
 
-def _qa_hold_timeout(state: dict, hooks: dict, work_root: Path, wd: Path, jid: str, r: dict) -> None:
+def _qa_ask():
+    import agents.agent_qa_ask as agent_qa_ask
+    return agent_qa_ask
+
+
+def _qa_ask_close(wd: Path, why: str) -> None:
+    """Job hết HOLD (người/brain gỡ) → đóng câu hỏi đang mở để lần HOLD sau hỏi lại từ đầu."""
     try:
-        max_min = float(_cfg("QA_HOLD_MAX_MIN", "60") or "60")
+        qa = _qa_ask()
+        ask = qa.load_ask(wd)
+        if ask and ask.get("status") in ("open", "deferred"):
+            ask["status"] = "closed"
+            ask["closed_why"] = why
+            qa.save_ask(wd, ask)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _qa_ask_active(wd: Path) -> bool:
+    try:
+        ask = _qa_ask().load_ask(wd)
+        return bool(ask and ask.get("status") in ("open", "deferred"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _qa_defer(hooks: dict, work_root: Path, jid: str) -> list[str]:
+    fn = (hooks or {}).get("defer")
+    if not fn:
+        return [jid]
+    try:
+        r = fn(jid) or {}
+        log_line(work_root, f"defer {jid} → {json.dumps(r, ensure_ascii=False)[:200]}")
+        return list(r.get("ids") or [jid])
+    except Exception as e:  # noqa: BLE001
+        log_line(work_root, f"defer {jid} lỗi: {e}")
+        return [jid]
+
+
+def _qa_hold_timeout(state: dict, hooks: dict, work_root: Path, wd: Path, jid: str, r: dict) -> None:
+    """2026-11-17 qaask: HOLD QA → hỏi người qua Telegram (chi tiết + đề xuất + nút); quá QA_HOLD_MAX_MIN
+    không ai trả lời → mềm: áp đề xuất; cứng chắc: áp + báo; cứng còn lại: GÁC job (nhường ghế) + nhắc."""
+    try:
+        max_min = float(_cfg("QA_HOLD_MAX_MIN", "10") or "10")
     except ValueError:
-        max_min = 60.0
+        max_min = 10.0
     track = state.setdefault("qa_hold", {})
     try:
         from core.manifest import Manifest
         ag = Manifest(wd).data.get("agent") or {}
     except Exception:  # noqa: BLE001
         return
-    held = bool(ag.get("qa_blocked") or ag.get("held_at") == "qa_brain")
+    held = bool(ag.get("qa_blocked") or ag.get("held_at") in ("qa_brain", "qa_gate"))
     if not held or max_min <= 0:
-        track.pop(jid, None)
+        if track.pop(jid, None) is not None:
+            _qa_ask_close(wd, "not_held")
         return
     sig = ",".join(str(i) for i in sorted(r.get("high_i") or []))
     cur = track.get(jid) or {}
     if cur.get("sig") != sig:
-        track[jid] = {"since": time.time(), "sig": sig}
+        cur = track[jid] = {"since": time.time(), "sig": sig}
+    try:
+        qa = _qa_ask()
+    except Exception as e:  # noqa: BLE001
+        log_line(work_root, f"qa_ask import lỗi: {e}")
         return
+    ask = qa.load_ask(wd)
+
+    # 1) Hỏi người — 1 lần / sig (LLM đề xuất + tin Telegram có nút)
+    if not ask or ask.get("sig") != sig or ask.get("status") not in ("open", "deferred"):
+        if not _cooldown_ok(state, f"qaask:{jid}:{sig}", 600):
+            return
+        _mark_fp(state, f"qaask:{jid}:{sig}", "ask")
+        try:
+            ask = qa.create_ask(wd, jid, sig, fallback_flags=r.get("high_sample"))
+        except Exception as e:  # noqa: BLE001
+            log_line(work_root, f"QA ask {jid} tạo lỗi: {e}")
+            return
+        n_items = len(qa.open_items(ask))
+        n_sent = qa.send(work_root, wd, ask, qa.render_text(ask)) if n_items else 0
+        log_line(work_root, f"QA ask {jid}: sig={sig} items={n_items} sent={n_sent} "
+                            f"errors={len(ask.get('errors') or [])}")
+        return
+    if not ask.get("msgs") and _cooldown_ok(state, f"qaask_send:{jid}:{sig}", 600):
+        _mark_fp(state, f"qaask_send:{jid}:{sig}", "resend")
+        qa.send(work_root, wd, ask, qa.render_text(ask))
+
+    # 2) Đã gác → chỉ nhắc định kỳ (nút vẫn dùng được)
+    if ask.get("status") == "deferred":
+        if time.time() - float(ask.get("reminded_at") or 0) >= qa.remind_min() * 60:
+            ask["reminded_at"] = time.time()
+            qa.save_ask(wd, ask)
+            n = len(qa.open_items(ask))
+            qa.send(work_root, wd, ask, qa.render_text(
+                ask, title=f"🔔 Nhắc: {jid} đang GÁC ({qa.MARK}) — {n} câu cờ cứng chờ bạn trả lời"))
+        return
+
+    # 3) Quá hạn không ai trả lời
     age_min = (time.time() - float(cur.get("since") or time.time())) / 60.0
     if age_min < max_min:
         return
-    kinds = {str(f.get("kind") or "") for f in (r.get("high_sample") or []) if f.get("sev") == "high"}
-    if kinds and kinds <= _QA_SOFT_KINDS:
-        log_line(work_root, f"QA HOLD timeout {jid}: {age_min:.0f}' high={sig} kinds={sorted(kinds)} → chạy tiếp (qa_override)")
-        _telegram(f"Brain: {jid} HOLD QA {age_min:.0f} phút, cờ high {sig} ({', '.join(sorted(kinds))}) "
-                  f"không ai xử lý → tự cho chạy tiếp TTS. Kiểm lại các câu đó sau.", level="hold")
+    res = qa.auto_resolve(wd, ask)
+    did = (f"mềm {res['soft']} tự áp đề xuất" if res["soft"] else "") + \
+          ("; " if res["soft"] and res["sure"] else "") + \
+          (f"cứng chắc {res['sure']} áp đề xuất" if res["sure"] else "")
+    if not res["left_items"]:
+        log_line(work_root, f"QA HOLD timeout {jid}: {age_min:.0f}' high={sig} {did} → chạy tiếp")
+        _telegram(f"Brain: {jid} HOLD QA {age_min:.0f} phút không ai trả lời → {did or 'không có câu cần sửa'} "
+                  f"({qa.summary_line(res)}). Chạy tiếp TTS.", level="hold")
         _emit(jid, "hold_cleared", level="action", why="qa_hold_timeout", high_i=sig)
         track.pop(jid, None)
         _qa_resume(hooks, work_root, jid, "qa_hold_timeout")
-    elif _cooldown_ok(state, f"qahold_stuck:{jid}:{sig}", 3600):
-        log_line(work_root, f"QA HOLD timeout {jid}: {age_min:.0f}' kinds={sorted(kinds)} — loại cứng, cần người duyệt")
-        _telegram(f"Brain: {jid} HOLD QA {age_min:.0f} phút, cờ high {sig} ({', '.join(sorted(kinds))}) "
-                  f"cần người duyệt/sửa script rồi bấm Chạy tiếp.", level="hold")
+        return
+    ids = _qa_defer(hooks, work_root, jid)
+    qa.mark_deferred(wd, ask, ids)
+    left = ", ".join(f"#{i}" for i in res["left_items"])
+    log_line(work_root, f"QA HOLD timeout {jid}: {age_min:.0f}' {did} — còn cứng {left} → GÁC {ids}")
+    _telegram(f"Brain: {jid} HOLD QA {age_min:.0f} phút không ai trả lời. "
+              + (f"Đã {did} ({qa.summary_line(res)}). " if did else "")
+              + f"Còn {len(res['left_items'])} câu cờ cứng chưa chắc ({left}) → GÁC job, hàng đợi chạy job sau. "
+              f"Trả lời tin «{qa.MARK}» (nút hoặc reply) lúc nào job cũng tự xếp lại đầu hàng.", level="hold")

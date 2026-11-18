@@ -22,6 +22,7 @@ __all__ = [
     "AgentAvSyncHealReq",
     "AgentAvSyncScanReq",
     "AgentHealBatchReq",
+    "AgentQaAnswerReq",
     "AgentQaGateReq",
     "_AV_SYNC_HOOKS",
     "_HEAL_HOOKS",
@@ -58,7 +59,9 @@ __all__ = [
     "api_agent_confirm",
     "api_agent_heal_failed",
     "api_agent_pending",
+    "api_agent_qa_answer",
     "api_agent_qa_gate",
+    "api_agent_qa_show",
     "api_agent_reset_state",
     "api_agent_resume",
     "api_agent_review",
@@ -315,8 +318,13 @@ def _agent_resume(job_id: str) -> dict:
     work_dir = S.WORK_ROOT / job_id
     if not (work_dir / "manifest.json").exists():
         return {"ok": False, "error": "job không tồn tại"}
-    if _job_in_pipeline(job_id):
+    # 2026-11-17b: job PARK (HOLD) vẫn là queue.current nhưng không chạy gì — gỡ HOLD là hàng đợi
+    # tự chạy lại cùng job. Trước: trả «đang chạy rồi» → Brain/UI không gỡ được HOLD của job đó.
+    with S._STAGE_BUSY_LOCK:
+        busy_stage = any(j == job_id for j, _ in S._STAGE_BUSY)
+    if busy_stage:
         return {"ok": False, "error": "job đang chạy rồi — không cần chạy tiếp"}
+    parked = S.job_queue.queue_state().get("current") == job_id
     m = Manifest(work_dir)
     agent = dict(m.data.get("agent") or {})
     agent["hold_after_translate"] = False
@@ -330,6 +338,10 @@ def _agent_resume(job_id: str) -> dict:
     m.data["agent"] = agent
     m.save()
     S._job_cache.pop(str(work_dir), None)
+    if parked:
+        return {"ok": True, "job_id": job_id, "parked": True,
+                "queue": S.job_queue.queue_state()["queue"],
+                "message": "Đã bỏ chặn — job đang giữ ghế hàng đợi, tự chạy tiếp lồng tiếng + render."}
     try:
         qo = m.data.get("queue_opts") or {}
         opts = batch_config.resolve_job_opts(qo, fill_voice=not qo)
@@ -350,6 +362,81 @@ def api_agent_review(job_id: str, body: dict | None = None):
 @router.post("/api/agent/resume/{job_id}")
 def api_agent_resume(job_id: str):
     return _agent_resume(job_id)
+
+
+# 2026-11-17 qaask: HOLD QA quá hạn còn cờ cứng → GÁC job (bỏ khỏi hàng đợi → ghế park nhường job sau).
+def _agent_defer(job_id: str) -> dict:
+    ids = [job_id]
+    try:
+        from agents.agent_hold import _PART_RE
+        m = _PART_RE.match(job_id)
+        if m:
+            ids.append(m.group(1))          # part HOLD → job cha đang giữ ghế (chờ part) cũng phải nhường
+    except Exception:  # noqa: BLE001
+        pass
+    r = S.job_queue.queue_remove(ids)
+    return {"ok": True, "ids": ids, "removed": r.get("removed"), "current": r.get("current")}
+
+
+def _qa_release(job_id: str, deferred_ids: list | None) -> dict:
+    """Người trả lời xong câu hỏi QA → gỡ HOLD + xếp lại. Part đã gác cùng job cha → xếp lại job cha."""
+    others = [x for x in (deferred_ids or []) if x and x != job_id]
+    try:
+        import agents.agent_hold as agent_hold
+        ag = Manifest(S.WORK_ROOT / job_id).data.get("agent") or {}
+        if not (agent_hold.is_held(ag) or ag.get("qa_deferred") or others):
+            return {"ok": True, "skipped": "not_held",
+                    "message": "job không HOLD — chỉ ghi script, không xếp lại"}
+    except Exception:  # noqa: BLE001
+        pass
+    if others:
+        import agents.agent_qa_ask as agent_qa_ask
+        agent_qa_ask.clear_hold(S.WORK_ROOT / job_id)
+        S._job_cache.pop(str(S.WORK_ROOT / job_id), None)
+        return {"ok": True, "parents": [_agent_resume(x) for x in others]}
+    return _agent_resume(job_id)
+
+
+class AgentQaAnswerReq(BaseModel):
+    job_id: str | None = None
+    action: str = ""            # apply | skip | go  (nút Telegram)
+    text: str = ""              # reply câu VI mới
+    chat_id: str = ""
+    reply_to: int | None = None
+    by: str = "telegram"
+
+
+class AgentQaShowReq(BaseModel):
+    job_id: str
+
+
+@router.post("/api/agent/qa-show")
+def api_agent_qa_show(req: AgentQaShowReq):
+    """/qa <job> trên Telegram: hiện lại câu bị cờ + đề xuất + nút (tạo câu hỏi nếu chưa có)."""
+    import agents.agent_qa_ask as agent_qa_ask
+    try:
+        return agent_qa_ask.show(S.WORK_ROOT, req.job_id)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/agent/qa-answer")
+def api_agent_qa_answer(req: AgentQaAnswerReq):
+    """Trả lời câu hỏi HOLD QA (nút ✅/⏭/▶️ hoặc reply câu VI) → ghi script → hết cờ thì chạy tiếp."""
+    import agents.agent_qa_ask as agent_qa_ask
+    try:
+        res = agent_qa_ask.answer(S.WORK_ROOT, job_id=req.job_id, action=req.action, text=req.text,
+                                  chat_id=req.chat_id, reply_to=req.reply_to, by=req.by)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    if res.get("release"):
+        jid = res["job_id"]
+        try:
+            res["resume"] = _qa_release(jid, res.get("deferred_ids"))
+        except Exception as e:  # noqa: BLE001
+            res["resume"] = {"ok": False, "error": str(e)}
+        S._job_cache.pop(str(S.WORK_ROOT / jid), None)
+    return res
 
 
 def _agent_script_review_legacy(job_id: str, review_model: str | None):
@@ -443,6 +530,10 @@ _HEAL_HOOKS = {
     "reset_state": _agent_reset_state,
     # 2026-11-17: brain xếp lại job sau CLEAR HOLD / HOLD QA quá hạn
     "resume": _agent_resume,
+    # 2026-11-17 qaask: gác job HOLD QA cứng quá hạn (nhường ghế hàng đợi)
+    "defer": _agent_defer,
+    # 2026-11-17 qaask2: agent sửa câu xong hết câu hỏi QA → gỡ HOLD + xếp lại
+    "qa_release": _qa_release,
     # fix 2026-11-12 agentH (C): heal bỏ qua job đang chạy thật (engine sống / claim stage)
     "job_active": lambda jid: ("engine" if S._job_proc_alive(jid) else None) or S._job_lineage_busy(jid),
 }

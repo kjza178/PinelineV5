@@ -2,10 +2,10 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `tools/pick_dirs_dialog.py` · **Lớp:** `ops` · **204 dòng** (169 code) · **4 hàm**, **0 class** · sha1 `9a9157ba1d`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `tools/pick_dirs_dialog.py` · **Lớp:** `ops` · **209 dòng** (174 code) · **4 hàm**, **0 class** · sha1 `495ec0bbb9`
 
-> Hộp thoại chọn NHIỀU folder cùng lúc (Listbox multi-select). Chạy: python tools/pick_dirs_dialog.py [initial_dir] Stdout: mỗi path 1 dòng (UTF-8). Rỗng = hủy.
+> Hộp thoại chọn NHIỀU folder cùng lúc (Listbox multi-select). Chạy: python pick_dirs_dialog.py [initial_dir] Stdout: mỗi path 1 dòng (UTF-8). Rỗng = hủy.
 
 ### Phụ thuộc
 
@@ -18,12 +18,12 @@
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_nat_key` | 14 | 3 | `name` |  |
-| `_count_videos` | 19 | 14 | `folder, limit` |  |
-| `_list_children` | 35 | 10 | `root` |  |
-| `main` | 47 | 154 ⚠️ | `` |  |
+| `_nat_key` | 19 | 3 | `name` |  |
+| `_count_videos` | 24 | 14 | `folder, limit` |  |
+| `_list_children` | 40 | 10 | `root` |  |
+| `main` | 52 | 154 ⚠️ | `` |  |
 
-**Hàm dài ≥120 dòng:** `main` (154, L47)
+**Hàm dài ≥120 dòng:** `main` (154, L52)
 
 ### Lịch sử (từ docs/)
 

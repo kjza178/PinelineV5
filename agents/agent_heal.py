@@ -55,7 +55,7 @@ def other_seat_busy(job_id: str) -> str | None:
     jid = str(job_id or "")
     if not jid:
         return None
-    jq = sys.modules.get("core.job_queue") or sys.modules.get("job_queue")   # V5: core/job_queue
+    jq = sys.modules.get("job_queue")
     if jq is None:
         return None
     try:
@@ -86,7 +86,7 @@ def job_active(job_id: str, hooks: dict | None = None) -> str | None:
                 return str(r)
         except Exception:  # noqa: BLE001
             pass
-    jq = sys.modules.get("core.job_queue") or sys.modules.get("job_queue")   # V5: core/job_queue
+    jq = sys.modules.get("job_queue")
     if jq is not None:
         try:
             cur = getattr(jq, "_current", None)

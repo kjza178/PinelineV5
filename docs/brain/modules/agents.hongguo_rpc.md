@@ -2,16 +2,15 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `agents/hongguo_rpc.py` · **Lớp:** `source` · **1449 dòng** (1260 code) · **57 hàm**, **1 class** · sha1 `cc227608a3`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `agents/hongguo_rpc.py` · **Lớp:** `source` · **1435 dòng** (1247 code) · **57 hàm**, **1 class** · sha1 `a992415ee5`
 
 > hongguo_rpc.py — JSON-RPC stdio client cho Hongguo WinUI 2.x helper.jar. Không dùng HTTP :8000 (bản 1.x). Spawn engine local: …/HongguoWinUI/current/engine/runtime/bin/java.exe
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [hg_ui_ctx](./hg_ui_ctx.md), [hongguo_license_ensure](./hongguo_license_ensure.md)
-- **Được dùng bởi:** [agents.hongguo_bridge](./agents.hongguo_bridge.md), [hongguo_bridge](./hongguo_bridge.md)
-- **Được nhắc tên file `.py` (subprocess/script) bởi:** [hongguo_rpc](./hongguo_rpc.md)
+- **Gọi tới (import nội bộ):** [agents.hongguo_license_ensure](./agents.hongguo_license_ensure.md)
+- **Được dùng bởi:** [agents.hongguo_bridge](./agents.hongguo_bridge.md), [agents.hongguo_license_ensure](./agents.hongguo_license_ensure.md)
 - **Test:** ❌ chưa có test import trực tiếp
 - **Thư viện ngoài:** `psutil`
 
@@ -19,9 +18,8 @@
 flowchart LR
   agents_hongguo_rpc[[agents.hongguo_rpc]]
   agents_hongguo_bridge[agents.hongguo_bridge] --> agents_hongguo_rpc
-  hongguo_bridge[hongguo_bridge] --> agents_hongguo_rpc
-  agents_hongguo_rpc --> hg_ui_ctx[hg_ui_ctx]
-  agents_hongguo_rpc --> hongguo_license_ensure[hongguo_license_ensure]
+  agents_hongguo_license_ensure[agents.hongguo_license_ensure] --> agents_hongguo_rpc
+  agents_hongguo_rpc --> agents_hongguo_license_ensure[agents.hongguo_license_ensure]
 ```
 
 ### Hàm & class top-level
@@ -65,27 +63,27 @@ flowchart LR
 | `cancel_download` | 828 | 52 | `series_id` | Stop 1 series. |
 | `remove_download` | 882 | 12 | `series_id` | Xóa khỏi danh sách. Đang tải → stop (cancel) thay vì báo lỗi under way. |
 | `retry_download` | 896 | 23 | `series_id` | Thử lại job failed — cần license giống downloads.add. |
-| `_ensure_licensed_quiet` | 921 | 31 | `` |  |
-| `submit` | 954 | 35 | `series_ids, scores, quality` |  |
-| `library_download_new_seasons` | 991 | 13 | `` |  |
-| `resolve_link` | 1006 | 2 | `text` |  |
-| `_play_cache_key` | 1030 | 2 | `series_id, episode, quality` |  |
-| `_play_cache_load` | 1034 | 11 | `` |  |
-| `_play_cache_save` | 1047 | 9 | `` |  |
-| `_preview_quality` | 1058 | 6 | `quality` |  |
-| `_play_path_allowed` | 1066 | 13 | `p` |  |
-| `playback_stop` | 1081 | 20 | `session` | Dừng session playback (best-effort). |
-| `playback_prepare` | 1103 | 92 | `series_id, episode, quality, timeout, force` | Chuẩn bị tập xem thử qua helper (tải về hongguo-player/*.mp4). |
-| `playback_prepare_start` | 1197 | 107 | `series_id, episode, quality, force` | Chạy prepare nền — UI poll ``playback_job`` để hiện %. |
-| `playback_job` | 1306 | 16 | `ticket` |  |
-| `playback_session_path` | 1324 | 13 | `session` |  |
-| `series_detail` | 1340 | 25 | `series_id` |  |
-| `series_seasons` | 1367 | 16 | `series_id` |  |
-| `series_qualities` | 1392 | 16 | `series_id` | Quality ladder mặc định. |
-| `settings_get` | 1411 | 2 | `` |  |
-| `settings_update` | 1415 | 6 | `patch` | WinUI settings.update — params = {patch: {...}}. |
-| `_idle_watch` | 1423 | 15 | `` |  |
-| `cleanup_machine_orphans` | 1440 | 6 | `` | CLI/ops: kill mọi MainKt Pineline (không đụng WinUI). |
+| `_ensure_licensed_quiet` | 921 | 17 | `` |  |
+| `submit` | 940 | 35 | `series_ids, scores, quality` |  |
+| `library_download_new_seasons` | 977 | 13 | `` |  |
+| `resolve_link` | 992 | 2 | `text` |  |
+| `_play_cache_key` | 1016 | 2 | `series_id, episode, quality` |  |
+| `_play_cache_load` | 1020 | 11 | `` |  |
+| `_play_cache_save` | 1033 | 9 | `` |  |
+| `_preview_quality` | 1044 | 6 | `quality` |  |
+| `_play_path_allowed` | 1052 | 13 | `p` |  |
+| `playback_stop` | 1067 | 20 | `session` | Dừng session playback (best-effort). |
+| `playback_prepare` | 1089 | 92 | `series_id, episode, quality, timeout, force` | Chuẩn bị tập xem thử qua helper (tải về hongguo-player/*.mp4). |
+| `playback_prepare_start` | 1183 | 107 | `series_id, episode, quality, force` | Chạy prepare nền — UI poll ``playback_job`` để hiện %. |
+| `playback_job` | 1292 | 16 | `ticket` |  |
+| `playback_session_path` | 1310 | 13 | `session` |  |
+| `series_detail` | 1326 | 25 | `series_id` |  |
+| `series_seasons` | 1353 | 16 | `series_id` |  |
+| `series_qualities` | 1378 | 16 | `series_id` | Quality ladder mặc định. |
+| `settings_get` | 1397 | 2 | `` |  |
+| `settings_update` | 1401 | 6 | `patch` | WinUI settings.update — params = {patch: {...}}. |
+| `_idle_watch` | 1409 | 15 | `` |  |
+| `cleanup_machine_orphans` | 1426 | 6 | `` | CLI/ops: kill mọi MainKt Pineline (không đụng WinUI). |
 
 ### Config / env keys (8)
 
@@ -93,7 +91,7 @@ flowchart LR
 
 **File/artifact nhắc tới:** `hongguo_play_cache.json`
 
-**Tín hiệu rủi ro (đếm tĩnh):** broad_except=22 · file_writes=2 · global_stmt=6 · sleep=6 · subprocess=1 · swallow_except=9 · threads=5
+**Tín hiệu rủi ro (đếm tĩnh):** broad_except=21 · file_writes=2 · global_stmt=6 · sleep=6 · subprocess=1 · swallow_except=8 · threads=5
 
 ### Lịch sử (từ docs/)
 
@@ -109,7 +107,7 @@ flowchart LR
   - [Hongguo2 Browse chỉ hiện ~20 phim](../../fixes/2026-11-08-hongguo2-browse-pagesize.md)
   - [Helper Pineline leak / lệch WinUI (spawn riêng)](../../fixes/2026-11-08-helper-singleton-winui-parity.md)
 - **Reviews:** [2026-11-07-hongguo-license-prove-review](../../reviews/2026-11-07-hongguo-license-prove-review.md), [2026-11-07-hongguo-lic-host-portability](../../reviews/2026-11-07-hongguo-lic-host-portability.md), [2026-11-07-hongguo-2x-post-restart-test](../../reviews/2026-11-07-hongguo-2x-post-restart-test.md)
-- Nhắc trong CHANGELOG: **3** lần · DECISIONS: **0** lần
+- Nhắc trong CHANGELOG: **4** lần · DECISIONS: **0** lần
 
 <!-- AUTO:END -->
 

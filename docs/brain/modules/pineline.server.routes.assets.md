@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `pineline/server/routes/assets.py` · **Lớp:** `misc` · **32 dòng** (24 code) · **1 hàm**, **0 class** · sha1 `187af1df6a`
 
 > Assets + LLM models: cookies / voices / frames / brand / clone — LIVE registry. Thân handler giữ trong root `server.py`. Module này chỉ path → hàm.

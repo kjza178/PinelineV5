@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `rvc_bridge/vieneu_batch.py` · **Lớp:** `tts` · **183 dòng** (150 code) · **5 hàm**, **0 class** · sha1 `f3bafd6faa`
 
 > Worker VieNeu-TTS v3-Turbo (chạy trong D:/vieneu_env). Đọc job json: {out_dir, ref, text, device, batch_size, lines:[[i,"vi"],...]} -> mỗi câu ghi seg_XXXX.wav (48kHz). In "prog <done>/<total>" cho orchestrator.

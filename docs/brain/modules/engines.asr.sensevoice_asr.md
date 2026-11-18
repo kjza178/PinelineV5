@@ -2,8 +2,8 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/asr/sensevoice_asr.py` · **Lớp:** `asr` · **255 dòng** (220 code) · **4 hàm**, **0 class** · sha1 `d1b7d75b78`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/asr/sensevoice_asr.py` · **Lớp:** `asr` · **260 dòng** (225 code) · **4 hàm**, **0 class** · sha1 `3cd8a939e7`
 
 > sensevoice_asr.py — STAGE ASR bằng FunASR SenseVoiceSmall (nhanh, đa ngôn ngữ). Model : iic/SenseVoiceSmall (+ fsmn-vad) Đầu vào : work/<job>/source.* hoặc audio.wav có sẵn
 
@@ -31,12 +31,12 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_clean_sv_text` | 51 | 12 | `text` |  |
-| `_post_clean_segs` | 65 | 10 | `segs` |  |
-| `run_asr_sensevoice` | 77 | 158 ⚠️ | `work_dir, device, force, language, hub, sidecar` | sidecar: ghi asr.<tag>.json + sub.zh.<tag>.srt, không đụng asr.json / manifest ASR chính. |
-| `main` | 237 | 15 | `argv` |  |
+| `_clean_sv_text` | 56 | 12 | `text` |  |
+| `_post_clean_segs` | 70 | 10 | `segs` |  |
+| `run_asr_sensevoice` | 82 | 158 ⚠️ | `work_dir, device, force, language, hub, sidecar` | sidecar: ghi asr.<tag>.json + sub.zh.<tag>.srt, không đụng asr.json / manifest ASR chính. |
+| `main` | 242 | 15 | `argv` |  |
 
-**Hàm dài ≥120 dòng:** `run_asr_sensevoice` (158, L77)
+**Hàm dài ≥120 dòng:** `run_asr_sensevoice` (158, L82)
 
 ### Config / env keys (3)
 

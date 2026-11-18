@@ -1196,9 +1196,9 @@ def build_plan(
     # A7: Tận dụng context lớn (DeepSeek/Aurora/Qwen) đọc toàn bộ thoại ASR của cả phim
     if mode in ("file", "upload", "srt", "full", "a7"):
         try:
-            from engines.translate_simple.cfg import full_plan_enabled
+            from translate_simple.cfg import full_plan_enabled
             if full_plan_enabled():
-                from engines.translate_simple.stage_draft import build_full_movie_plan
+                from translate_simple.stage_draft import build_full_movie_plan
                 data = build_full_movie_plan(
                     Path(work_dir) if work_dir else None,
                     segments,
@@ -1244,7 +1244,7 @@ def build_plan(
 
     data = _normalize_plan_data(data)
     try:
-        from tools.context_studio.schema import apply_style_lock_from_genre
+        from context_studio.schema import apply_style_lock_from_genre
         data = apply_style_lock_from_genre(data)
     except Exception:  # noqa: BLE001
         pass
@@ -4544,7 +4544,7 @@ def _run_translate_impl(
                       "(không gọi build_plan).")
                 # đảm bảo style_lock lexicon nếu pack cũ thiếu
                 try:
-                    from tools.context_studio.schema import apply_style_lock_from_genre
+                    from context_studio.schema import apply_style_lock_from_genre
                     plan = apply_style_lock_from_genre(plan)
                 except Exception:  # noqa: BLE001
                     pass

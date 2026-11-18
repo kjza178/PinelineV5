@@ -2,23 +2,26 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/check_block.py` · **Lớp:** `ops` · **350 dòng** (296 code) · **4 hàm**, **0 class** · sha1 `c2b2642ec5`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/check_block.py` · **Lớp:** `ops` · **350 dòng** (296 code) · **4 hàm**, **0 class** · sha1 `9d72809dd3`
 
 > check_block.py — Module kiểm tra trạng thái Bản quyền / Block YouTube (Cơ chế 1: Không cần đăng nhập). Kiểm tra qua YouTube oEmbed và YouTube Watch Page (ytInitialPlayerResponse). Phát hiện: Clean (Sạch), Blocked (Chặn t
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [core.film_db](./core.film_db.md)
-- **Được dùng bởi:** [core.film_db](./core.film_db.md), [http_routes.routes_films](./http_routes.routes_films.md), [tools.lib_check](./tools.lib_check.md)
+- **Được dùng bởi:** [agents.agent_tele_cmd](./agents.agent_tele_cmd.md), [agents.test_channel](./agents.test_channel.md), [core.film_db](./core.film_db.md), [http_routes.routes_films](./http_routes.routes_films.md), [tools.lib_check](./tools.lib_check.md), [tools.test_channel](./tools.test_channel.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ```mermaid
 flowchart LR
   engines_check_block[[engines.check_block]]
+  agents_agent_tele_cmd[agents.agent_tele_cmd] --> engines_check_block
+  agents_test_channel[agents.test_channel] --> engines_check_block
   core_film_db[core.film_db] --> engines_check_block
   http_routes_routes_films[http_routes.routes_films] --> engines_check_block
   tools_lib_check[tools.lib_check] --> engines_check_block
+  tools_test_channel[tools.test_channel] --> engines_check_block
   engines_check_block --> core_film_db[core.film_db]
 ```
 

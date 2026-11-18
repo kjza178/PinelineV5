@@ -17,7 +17,7 @@ from __future__ import annotations
 try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
     from core import machine as _machine
 except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
+    import core.machine as _machine  # type: ignore
 import json
 import os
 import subprocess

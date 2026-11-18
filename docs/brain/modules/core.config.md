@@ -2,36 +2,36 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `core/config.py` · **Lớp:** `core` · **201 dòng** (158 code) · **9 hàm**, **0 class** · sha1 `8825d06233`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `core/config.py` · **Lớp:** `core` · **194 dòng** (154 code) · **8 hàm**, **0 class** · sha1 `6056d910ff`
 
 > config.py — Cấu hình/đường dẫn PORTABLE cho Pineline. Thứ tự ưu tiên khi lấy 1 giá trị: biến môi trường  >  pineline.config.json  >  mặc định. install.py sẽ ghi pineline.config.json với đường dẫn thật của máy (venv, HF c
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** —
-- **Được dùng bởi:** [agents.agent_core](./agents.agent_core.md), [agents.agent_hongguo](./agents.agent_hongguo.md), [agents.agent_name_pass](./agents.agent_name_pass.md), [agents.agent_pronoun_pass](./agents.agent_pronoun_pass.md), [agents.agent_watch](./agents.agent_watch.md), [agents.hongguo_bridge](./agents.hongguo_bridge.md), [engines.asr.firered_asr](./engines.asr.firered_asr.md), [engines.clone_tts](./engines.clone_tts.md), [engines.download](./engines.download.md), [engines.llm](./engines.llm.md), [engines.render](./engines.render.md), [engines.render_fx](./engines.render_fx.md), [engines.sfx_lib](./engines.sfx_lib.md), [engines.subs](./engines.subs.md), [hongguo_bridge](./hongguo_bridge.md), [http_routes.routes_uploader_settings](./http_routes.routes_uploader_settings.md), [render](./render.md), [scripts.check_batch2](./scripts.check_batch2.md), [scripts.check_batch3](./scripts.check_batch3.md)
-- **Được nhắc tên file `.py` (subprocess/script) bởi:** [config](./config.md), [restart_server](./restart_server.md), [scripts._tmp_extract_sigs_batch2](./scripts._tmp_extract_sigs_batch2.md), [scripts.brain_build](./scripts.brain_build.md)
-- **Test:** `tests/test_chatgpt_route.py`, `tests/test_layout_paths.py`
+- **Được dùng bởi:** [agents.agent_brain](./agents.agent_brain.md), [agents.agent_core](./agents.agent_core.md), [agents.agent_feeder](./agents.agent_feeder.md), [agents.agent_hang_fix](./agents.agent_hang_fix.md), [agents.agent_heal](./agents.agent_heal.md), [agents.agent_hongguo](./agents.agent_hongguo.md), [agents.agent_name_pass](./agents.agent_name_pass.md), [agents.agent_pronoun_pass](./agents.agent_pronoun_pass.md), [agents.agent_qa_ask](./agents.agent_qa_ask.md), [agents.agent_qa_fix](./agents.agent_qa_fix.md), [agents.agent_retry](./agents.agent_retry.md), [agents.meta_studio](./agents.meta_studio.md), [agents.uploader_settings_api](./agents.uploader_settings_api.md), [core.machine](./core.machine.md), [engines.asr.firered_asr](./engines.asr.firered_asr.md), [engines.clone_tts](./engines.clone_tts.md), [engines.cloud_retry](./engines.cloud_retry.md), [engines.download](./engines.download.md), [engines.hs_ocr_fast](./engines.hs_ocr_fast.md), [engines.llm](./engines.llm.md), [engines.media_ts](./engines.media_ts.md), [engines.mt_zh_vi](./engines.mt_zh_vi.md), [engines.pronoun_consistency](./engines.pronoun_consistency.md), [engines.render](./engines.render.md), [engines.render_fx](./engines.render_fx.md), [engines.sfx_lib](./engines.sfx_lib.md), [engines.source_preflight](./engines.source_preflight.md), [engines.subs](./engines.subs.md), [engines.translate](./engines.translate.md), [engines.translate_simple.cfg](./engines.translate_simple.cfg.md), [http_routes.routes_uploader_settings](./http_routes.routes_uploader_settings.md), [scripts.check_batch2](./scripts.check_batch2.md), [scripts.check_batch3](./scripts.check_batch3.md), [scripts.check_env](./scripts.check_env.md), [scripts.test_deepseek_plan](./scripts.test_deepseek_plan.md), [server](./server.md)
+- **Được nhắc tên file `.py` (subprocess/script) bởi:** [core.machine](./core.machine.md), [restart_server](./restart_server.md), [scripts._tmp_extract_sigs_batch2](./scripts._tmp_extract_sigs_batch2.md), [scripts.brain_build](./scripts.brain_build.md), [scripts.check_env](./scripts.check_env.md)
+- **Test:** `tests/test_chatgpt_route.py`, `tests/test_layout_paths.py`, `tests/test_translate_simple.py`
 
 ```mermaid
 flowchart LR
   core_config[[core.config]]
+  agents_agent_brain[agents.agent_brain] --> core_config
   agents_agent_core[agents.agent_core] --> core_config
+  agents_agent_feeder[agents.agent_feeder] --> core_config
+  agents_agent_hang_fix[agents.agent_hang_fix] --> core_config
+  agents_agent_heal[agents.agent_heal] --> core_config
   agents_agent_hongguo[agents.agent_hongguo] --> core_config
   agents_agent_name_pass[agents.agent_name_pass] --> core_config
   agents_agent_pronoun_pass[agents.agent_pronoun_pass] --> core_config
-  agents_agent_watch[agents.agent_watch] --> core_config
-  agents_hongguo_bridge[agents.hongguo_bridge] --> core_config
+  agents_agent_qa_ask[agents.agent_qa_ask] --> core_config
+  agents_agent_qa_fix[agents.agent_qa_fix] --> core_config
+  agents_agent_retry[agents.agent_retry] --> core_config
+  agents_meta_studio[agents.meta_studio] --> core_config
+  agents_uploader_settings_api[agents.uploader_settings_api] --> core_config
+  core_machine[core.machine] --> core_config
   engines_asr_firered_asr[engines.asr.firered_asr] --> core_config
-  engines_clone_tts[engines.clone_tts] --> core_config
-  engines_download[engines.download] --> core_config
-  engines_llm[engines.llm] --> core_config
-  engines_render[engines.render] --> core_config
-  engines_render_fx[engines.render_fx] --> core_config
-  engines_sfx_lib[engines.sfx_lib] --> core_config
-  engines_subs[engines.subs] --> core_config
-  hongguo_bridge[hongguo_bridge] --> core_config
 ```
 
 ### Hàm & class top-level
@@ -39,14 +39,13 @@ flowchart LR
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
 | `_load_cfg` | 20 | 19 | `force` | Nạp lại pineline.config.json khi file đổi (tránh setdefault env khóa giá trị cũ). |
-| `save_config` | 44 | 13 | `updates` | Cập nhật pineline.config.json an toàn + đồng bộ runtime. |
-| `_from_file_keys` | 85 | 2 | `` |  |
-| `inject_env` | 89 | 24 | `` | Chép pineline.config.json (rồi config.json) vào os.environ để tiến trình con kế thừa. |
-| `get` | 115 | 23 | `key, default` | env var  >  config.json  >  default. |
-| `llm_settings` | 140 | 13 | `` | LLM cho job (dịch/review) — đọc lúc gọi để sửa pineline.config.json có hiệu lực không cần restart. |
-| `pass_llm_model` | 155 | 15 | `kind` | Model cho pass ngắn (name/pronoun). Ưu tiên NAME_MODEL/PRONOUN_MODEL → CHATGPT_* → REVIEW → LLM. |
-| `agent_llm` | 172 | 11 | `` | LLM cho agent chat / feeder: AGENT_* rồi LLM_* (cả hai file trước env). |
-| `venv_python` | 185 | 4 | `venv_dir` | Đường dẫn python trong venv, đúng theo OS. |
+| `_from_file_keys` | 75 | 2 | `` |  |
+| `inject_env` | 79 | 24 | `` | Chép pineline.config.json (rồi config.json) vào os.environ để tiến trình con kế thừa. |
+| `get` | 105 | 23 | `key, default` | env var  >  config.json  >  default. |
+| `llm_settings` | 130 | 17 | `` | LLM cho job (dịch/review) — đọc lúc gọi để sửa pineline.config.json có hiệu lực không cần restart. |
+| `pass_llm_model` | 149 | 14 | `kind` | Model cho pass ngắn (name/pronoun). Ưu tiên NAME_MODEL/PRONOUN_MODEL → CHATGPT_* → REVIEW → LLM. |
+| `agent_llm` | 165 | 11 | `` | LLM cho agent chat / feeder: AGENT_* rồi LLM_* (cả hai file trước env). |
+| `venv_python` | 178 | 4 | `venv_dir` | Đường dẫn python trong venv, đúng theo OS. |
 
 ### Config / env keys (2)
 
@@ -56,7 +55,7 @@ flowchart LR
 
 **File/artifact nhắc tới:** `config.json`, `pineline.config.json`
 
-**Tín hiệu rủi ro (đếm tĩnh):** broad_except=2 · file_writes=1 · global_stmt=1
+**Tín hiệu rủi ro (đếm tĩnh):** broad_except=2 · global_stmt=1
 
 ### Lịch sử (từ docs/)
 
@@ -65,7 +64,7 @@ flowchart LR
   - [2026-10-06 — Đợt 3 review: opts một nguồn, config file-first, ghi nguyên tử](../../fixes/2026-10-06-batch3-single-source.md)
   - [2026-10-06 — Đợt 2 review: bảo mật + config một nguồn + LLM sập không để trống câu](../../fixes/2026-10-06-batch2-security.md)
 - **Reviews:** [_atoms_core_server](../../reviews/_atoms_core_server.md), [2026-11-06-v5-part-atoms](../../reviews/2026-11-06-v5-part-atoms.md), [2026-11-06-v5-func-catalog](../../reviews/2026-11-06-v5-func-catalog.md), [2026-10-06-code-review](../../reviews/2026-10-06-code-review.md)
-- Nhắc trong CHANGELOG: **4** lần · DECISIONS: **1** lần
+- Nhắc trong CHANGELOG: **5** lần · DECISIONS: **1** lần
 
 <!-- AUTO:END -->
 

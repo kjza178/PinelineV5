@@ -2,8 +2,8 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `http_routes/routes_films.py` · **Lớp:** `control` · **370 dòng** (291 code) · **31 hàm**, **0 class** · sha1 `56a5ca912a`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `http_routes/routes_films.py` · **Lớp:** `control` · **370 dòng** (291 code) · **31 hàm**, **0 class** · sha1 `8e6564eccc`
 
 > FastAPI Router cho Thư viện Phim & Database (đồng bộ trực tiếp trong Pineline V4). Thay vì phải chạy sidecar :8802 riêng mới dùng được films_ui.html, router này gắn trực tiếp vào server.py (port 8804).
 
@@ -97,15 +97,21 @@ flowchart LR
 | `tc_recheck_one` | 359 | 4 | `payload` |  |
 | `tc_recheck_pending` | 366 | 4 | `payload` |  |
 
+### Config / env keys (1)
+
+`PINELINE_PORT`
+
 **Cổng nhắc tới:** 8804
 
 **Tín hiệu rủi ro (đếm tĩnh):** broad_except=17 · swallow_except=2
 
 ### Lịch sử (từ docs/)
 
-- **Fix logs (1):**
+- **Fix logs (3):**
+  - [V5 không khởi động được → chuyển về bố cục package bằng sync_from_v2](../../fixes/2026-11-11-v5-package-sync.md)
+  - [REVIEW lỗi bị coi là đã soát · park treo hàng đợi · Brain V4 điều khiển nhầm V2](../../fixes/2026-11-11-review-fail-park-port.md)
   - [`/library/action` crash — gọi API film_db không tồn tại](../../fixes/2026-11-02-library-action-missing-api.md)
-- **Reviews:** [_atoms_http_agents](../../reviews/_atoms_http_agents.md), [2026-11-06-v5-part-atoms](../../reviews/2026-11-06-v5-part-atoms.md), [2026-11-06-v5-func-catalog](../../reviews/2026-11-06-v5-func-catalog.md), [2026-11-02-v4-structure-and-v2-port](../../reviews/2026-11-02-v4-structure-and-v2-port.md)
+- **Reviews:** [_atoms_http_agents](../../reviews/_atoms_http_agents.md), [2026-11-11-v4-v5-port-review](../../reviews/2026-11-11-v4-v5-port-review.md), [2026-11-06-v5-part-atoms](../../reviews/2026-11-06-v5-part-atoms.md), [2026-11-06-v5-func-catalog](../../reviews/2026-11-06-v5-func-catalog.md), [2026-11-02-v4-structure-and-v2-port](../../reviews/2026-11-02-v4-structure-and-v2-port.md)
 - Nhắc trong CHANGELOG: **2** lần · DECISIONS: **0** lần
 
 <!-- AUTO:END -->

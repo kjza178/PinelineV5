@@ -2,10 +2,10 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `tools/migrate_work.py` · **Lớp:** `ops` · **299 dòng** (252 code) · **12 hàm**, **0 class** · sha1 `3cdc60d8a9`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `tools/migrate_work.py` · **Lớp:** `ops` · **297 dòng** (250 code) · **12 hàm**, **0 class** · sha1 `4ef7eacdfd`
 
-> Chuyển Z:\PinelineV5\work sang ổ khác (mặc định D:\PinelineV5_work) giữa 2 job, không mất tiến độ. 1. Copy trước (robocopy /MIR) trong lúc job hiện tại vẫn chạy. 2. Rút các job đang chờ khỏi hàng + tắt Auto-pilot → worke
+> Chuyển Z:\PinelineV2\work sang ổ khác (mặc định D:\PinelineV2_work) giữa 2 job, không mất tiến độ. 1. Copy trước (robocopy /MIR) trong lúc job hiện tại vẫn chạy. 2. Rút các job đang chờ khỏi hàng + tắt Auto-pilot → worke
 
 ### Phụ thuộc
 
@@ -26,24 +26,24 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `log` | 42 | 11 | `msg` |  |
-| `tg` | 55 | 7 | `msg` |  |
-| `robocopy` | 64 | 12 | `label` |  |
-| `api` | 78 | 6 | `method, url, body, timeout` |  |
-| `api_retry` | 86 | 11 | `method, url, body, timeout, tries` | Server đang render nặng có thể trễ >30s — không coi 1 lần timeout là lỗi chết. |
-| `running_stages` | 99 | 14 | `` |  |
-| `procs` | 115 | 7 | `pattern` |  |
-| `kill_with_parent_cmd` | 124 | 31 | `p` |  |
-| `start_bat` | 157 | 5 | `name` |  |
-| `wait_http` | 164 | 9 | `url, sec` |  |
-| `start_services_and_requeue` | 175 | 23 | `pending, opts, ap_was` |  |
-| `main` | 200 | 89 | `` |  |
+| `log` | 43 | 11 | `msg` |  |
+| `tg` | 56 | 7 | `msg` |  |
+| `robocopy` | 65 | 12 | `label` |  |
+| `api` | 79 | 6 | `method, url, body, timeout` |  |
+| `api_retry` | 87 | 11 | `method, url, body, timeout, tries` | Server đang render nặng có thể trễ >30s — không coi 1 lần timeout là lỗi chết. |
+| `running_stages` | 100 | 14 | `` |  |
+| `procs` | 116 | 7 | `pattern` |  |
+| `kill_with_parent_cmd` | 125 | 31 | `p` |  |
+| `start_bat` | 158 | 5 | `name` |  |
+| `wait_http` | 165 | 9 | `url, sec` |  |
+| `start_services_and_requeue` | 176 | 20 | `pending, opts, ap_was` |  |
+| `main` | 198 | 89 | `` |  |
 
-### Config / env keys (3)
+### Config / env keys (2)
 
-`AGENT_TELEGRAM`, `PINELINE_BASE`, `PORT`
+`AGENT_TELEGRAM`, `PINELINE_BASE`
 
-**Cổng nhắc tới:** 8802
+**Cổng nhắc tới:** 8801, 8802
 
 **File/artifact nhắc tới:** `manifest.json`, `migrate_work.log`, `migrate_work.prev.log`, `migrate_work_plan.json`
 
@@ -51,10 +51,11 @@ flowchart LR
 
 ### Lịch sử (từ docs/)
 
-- **Fix logs (1):**
+- **Fix logs (2):**
+  - [V5 không khởi động được → chuyển về bố cục package bằng sync_from_v2](../../fixes/2026-11-11-v5-package-sync.md)
   - [Restart hẹn giờ chết giữa chừng, server :8801 nằm chết](../../fixes/2026-10-06-restart-killed-itself.md)
 - **Reviews:** [_atoms_tools_ui](../../reviews/_atoms_tools_ui.md), [2026-11-06-v5-func-catalog](../../reviews/2026-11-06-v5-func-catalog.md), [2026-11-02-v4-structure-sync](../../reviews/2026-11-02-v4-structure-sync.md), [2026-11-02-v4-structure-and-v2-port](../../reviews/2026-11-02-v4-structure-and-v2-port.md), [2026-11-02-v4-duplication-audit](../../reviews/2026-11-02-v4-duplication-audit.md)
-- Nhắc trong CHANGELOG: **7** lần · DECISIONS: **0** lần
+- Nhắc trong CHANGELOG: **8** lần · DECISIONS: **0** lần
 
 <!-- AUTO:END -->
 

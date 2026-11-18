@@ -2,24 +2,24 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/asr/hybrid_asr.py` · **Lớp:** `asr` · **202 dòng** (177 code) · **3 hàm**, **0 class** · sha1 `09a5cca6b2`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/asr/hybrid_asr.py` · **Lớp:** `asr` · **207 dòng** (182 code) · **3 hàm**, **0 class** · sha1 `5eff6f77d8`
 
 > hybrid_asr.py — ASR chốt: Nano chữ + Para timing + ForcedAlign + Repair. Pipeline (sidecar rồi promote → asr.json): 1) Fun-ASR-Nano     → asr.fun_nano.json
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [core.manifest](./core.manifest.md), [engines.asr.asr_align_nano_para](./engines.asr.asr_align_nano_para.md), [engines.asr.asr_repair](./engines.asr.asr_repair.md), [engines.asr.asr_spam](./engines.asr.asr_spam.md), [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [engines.subs](./engines.subs.md), [engines.vram](./engines.vram.md)
+- **Gọi tới (import nội bộ):** [core.manifest](./core.manifest.md), [engines.asr.asr_align_nano_para](./engines.asr.asr_align_nano_para.md), [engines.asr.asr_fix_align](./engines.asr.asr_fix_align.md), [engines.asr.asr_repair](./engines.asr.asr_repair.md), [engines.asr.asr_spam](./engines.asr.asr_spam.md), [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [engines.subs](./engines.subs.md), [engines.vram](./engines.vram.md)
 - **Được dùng bởi:** —
 - **Được nhắc tên file `.py` (subprocess/script) bởi:** [restart_server](./restart_server.md), [server](./server.md)
 - **Test:** ❌ chưa có test import trực tiếp
-- **Thư viện ngoài:** `asr_fix_align`
 
 ```mermaid
 flowchart LR
   engines_asr_hybrid_asr[[engines.asr.hybrid_asr]]
   engines_asr_hybrid_asr --> core_manifest[core.manifest]
   engines_asr_hybrid_asr --> engines_asr_asr_align_nano_para[engines.asr.asr_align_nano_para]
+  engines_asr_hybrid_asr --> engines_asr_asr_fix_align[engines.asr.asr_fix_align]
   engines_asr_hybrid_asr --> engines_asr_asr_repair[engines.asr.asr_repair]
   engines_asr_hybrid_asr --> engines_asr_asr_spam[engines.asr.asr_spam]
   engines_asr_hybrid_asr --> engines_asr_fun_asr_nano[engines.asr.fun_asr_nano]
@@ -32,11 +32,11 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_prog` | 45 | 8 | `m, **fields` |  |
-| `run_hybrid_fa` | 55 | 123 ⚠️ | `work_dir, device, force, no_fa, no_repair, hub_nano, hub_para` |  |
-| `main` | 180 | 19 | `argv` |  |
+| `_prog` | 50 | 8 | `m, **fields` |  |
+| `run_hybrid_fa` | 60 | 123 ⚠️ | `work_dir, device, force, no_fa, no_repair, hub_nano, hub_para` |  |
+| `main` | 185 | 19 | `argv` |  |
 
-**Hàm dài ≥120 dòng:** `run_hybrid_fa` (123, L55)
+**Hàm dài ≥120 dòng:** `run_hybrid_fa` (123, L60)
 
 ### Config / env keys (2)
 

@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `engines/asr/__init__.py` · **Lớp:** `misc` · **1 dòng** (1 code) · **0 hàm**, **0 class** · sha1 `3a44d0169b`
 
 > ASR engine variants.

@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `pineline/server/routes/jobs.py` · **Lớp:** `misc` · **79 dòng** (68 code) · **1 hàm**, **0 class** · sha1 `381520cd4a`
 
 > Jobs API: /api/jobs/* — LIVE registry trong khung pineline V5. Thân handler vẫn trong root `server.py` (xen helper). Module này chỉ đăng ký path → hàm trên `S`, để bản đồ API nằm trong `pineline/`.

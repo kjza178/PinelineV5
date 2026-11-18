@@ -2,24 +2,28 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `core/job_queue.py` · **Lớp:** `core` · **658 dòng** (564 code) · **32 hàm**, **0 class** · sha1 `9661f66ff6`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `core/job_queue.py` · **Lớp:** `core` · **667 dòng** (567 code) · **33 hàm**, **0 class** · sha1 `085403c6a1`
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** —
-- **Được dùng bởi:** [agents.agent_watch](./agents.agent_watch.md), [agents.meta_studio](./agents.meta_studio.md), [engines.split_parts](./engines.split_parts.md), [scripts.check_batch1](./scripts.check_batch1.md), [scripts.check_batch4](./scripts.check_batch4.md)
+- **Được dùng bởi:** [agents.agent_brain](./agents.agent_brain.md), [agents.agent_brain_context](./agents.agent_brain_context.md), [agents.agent_retry](./agents.agent_retry.md), [agents.agent_watch](./agents.agent_watch.md), [agents.auto_publisher](./agents.auto_publisher.md), [agents.meta_studio](./agents.meta_studio.md), [scripts.check_batch1](./scripts.check_batch1.md), [scripts.check_batch4](./scripts.check_batch4.md), [server](./server.md)
 - **Được nhắc tên file `.py` (subprocess/script) bởi:** [restart_server](./restart_server.md)
-- **Test:** `tests/test_film_db_queue_meta.py`, `tests/test_job_queue.py`, `tests/test_layout_paths.py`, `tests/test_queue_http_state.py`
+- **Test:** `tests/test_film_db_queue_meta.py`, `tests/test_job_queue.py`, `tests/test_job_queue_worker.py`, `tests/test_layout_paths.py`, `tests/test_parent_rerun_after_done.py`, `tests/test_queue_http_state.py`
 
 ```mermaid
 flowchart LR
   core_job_queue[[core.job_queue]]
+  agents_agent_brain[agents.agent_brain] --> core_job_queue
+  agents_agent_brain_context[agents.agent_brain_context] --> core_job_queue
+  agents_agent_retry[agents.agent_retry] --> core_job_queue
   agents_agent_watch[agents.agent_watch] --> core_job_queue
+  agents_auto_publisher[agents.auto_publisher] --> core_job_queue
   agents_meta_studio[agents.meta_studio] --> core_job_queue
-  engines_split_parts[engines.split_parts] --> core_job_queue
   scripts_check_batch1[scripts.check_batch1] --> core_job_queue
   scripts_check_batch4[scripts.check_batch4] --> core_job_queue
+  server[server] --> core_job_queue
 ```
 
 ### Hàm & class top-level
@@ -43,21 +47,22 @@ flowchart LR
 | `_hist_push` | 307 | 5 | `job_id, status, detail` |  |
 | `queue_busy` | 314 | 4 | `` | True nếu worker đang chạy hoặc còn job trong hàng — dùng GPU gate heal/watch. |
 | `queue_state` | 320 | 13 | `` |  |
-| `queue_add` | 335 | 50 | `job_ids, opts, skip_done, sort_first` |  |
-| `queue_sort` | 387 | 15 | `by` | Sắp xếp lại các job đang chờ trong hàng: |
-| `queue_move` | 404 | 28 | `job_id, action` | Di chuyển vị trí của 1 job trong hàng chờ: |
-| `queue_reorder` | 434 | 10 | `new_order` | Gán lại toàn bộ thứ tự cho hàng chờ theo danh sách client gửi. |
-| `queue_add_group` | 446 | 37 | `group_id, opts, skip_done` | Enqueue mọi member của group theo group_index tăng dần. |
-| `queue_front` | 485 | 6 | `job_id` |  |
-| `queue_remove` | 493 | 11 | `job_ids` | Bỏ job khỏi hàng chờ (không stop current). |
-| `queue_update_opts` | 506 | 10 | `updates` | Đổi opts của job ĐANG CHỜ tại chỗ (giữ thứ tự, không đụng current) — thay cho remove+add. |
-| `queue_clear` | 518 | 6 | `` |  |
-| `queue_stop` | 526 | 20 | `` | Clear queue + báo worker dừng; gọi _stop_job(current) nếu server đã wire. |
-| `set_stop_hook` | 548 | 2 | `fn` |  |
-| `set_clear_stop_hook` | 552 | 3 | `fn` |  |
-| `_ensure_worker_unlocked` | 557 | 9 | `` |  |
-| `_ensure_worker` | 568 | 3 | `` |  |
-| `_worker_loop` | 573 | 80 | `` |  |
+| `_persistable_opts` | 340 | 2 | `opts` |  |
+| `queue_add` | 344 | 50 | `job_ids, opts, skip_done, sort_first` |  |
+| `queue_sort` | 396 | 15 | `by` | Sắp xếp lại các job đang chờ trong hàng: |
+| `queue_move` | 413 | 28 | `job_id, action` | Di chuyển vị trí của 1 job trong hàng chờ: |
+| `queue_reorder` | 443 | 10 | `new_order` | Gán lại toàn bộ thứ tự cho hàng chờ theo danh sách client gửi. |
+| `queue_add_group` | 455 | 37 | `group_id, opts, skip_done` | Enqueue mọi member của group theo group_index tăng dần. |
+| `queue_front` | 494 | 6 | `job_id` |  |
+| `queue_remove` | 502 | 11 | `job_ids` | Bỏ job khỏi hàng chờ (không stop current). |
+| `queue_update_opts` | 515 | 10 | `updates` | Đổi opts của job ĐANG CHỜ tại chỗ (giữ thứ tự, không đụng current) — thay cho remove+add. |
+| `queue_clear` | 527 | 6 | `` |  |
+| `queue_stop` | 535 | 20 | `` | Clear queue + báo worker dừng; gọi _stop_job(current) nếu server đã wire. |
+| `set_stop_hook` | 557 | 2 | `fn` |  |
+| `set_clear_stop_hook` | 561 | 3 | `fn` |  |
+| `_ensure_worker_unlocked` | 566 | 9 | `` |  |
+| `_ensure_worker` | 577 | 3 | `` |  |
+| `_worker_loop` | 582 | 80 | `` |  |
 
 ### Config / env keys (1)
 
@@ -69,7 +74,8 @@ flowchart LR
 
 ### Lịch sử (từ docs/)
 
-- **Fix logs (12):**
+- **Fix logs (13):**
+  - [Port V2→V5: Second Brain (Telegram events + gỡ HOLD khi chạy tay) + đóng dấu luồng dịch theo job](../../fixes/2026-11-12-port-brain-hold-pipeline.md)
   - [Studio SOP: 1 job / ghế — ASR→NMT→Aurora∥ REVIEW→TTS→mux→Done→next](../../fixes/2026-11-11-studio-1job-pipeline.md)
   - [Queue nhảy job khi còn HOLD/soát dở — mất invariant studio 1 job→output](../../fixes/2026-11-10-queue-park-held.md)
   - [Auto-pub «Phần Cuối» thành «Phần 1 | Xuyên Không Thành Nô Lệ…» (+ nhiều draft YT)](../../fixes/2026-11-07-autopub-phan-cuoi-as-p1.md)

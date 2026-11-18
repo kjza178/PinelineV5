@@ -2,8 +2,8 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `scripts/tree_audit.py` · **Lớp:** `ops` · **226 dòng** (199 code) · **9 hàm**, **0 class** · sha1 `c04741109e`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `scripts/tree_audit.py` · **Lớp:** `ops` · **226 dòng** (199 code) · **9 hàm**, **0 class** · sha1 `3730462856`
 
 > tree_audit.py — Kiểm tra sức khoẻ cây code Pineline (V2/V4/V5) sau mỗi lần sync/port. Chỉ đọc (AST + hash), không import, không chạy code. Bắt các lỗi kiểu: • import không resolve được trong cây này  → server/sidecar khô
 
@@ -11,6 +11,7 @@
 
 - **Gọi tới (import nội bộ):** —
 - **Được dùng bởi:** —
+- **Được nhắc tên file `.py` (subprocess/script) bởi:** [scripts.sync_from_v2](./scripts.sync_from_v2.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ### Hàm & class top-level
@@ -31,8 +32,14 @@
 
 ### Lịch sử (từ docs/)
 
-- Fix logs: —
-- Nhắc trong CHANGELOG: **0** lần · DECISIONS: **0** lần
+- **Fix logs (5):**
+  - [Port V2→V5: preflight/chuẩn hoá video nguồn + extract_pcm bền + FireRed slice khoảng lặng + câu rác «None.» / ](../../fixes/2026-11-13-port-preflight-slice-junk.md)
+  - [Port V2→V5: Brain — job đã xong không heal + park tự động ≠ HOLD cần người](../../fixes/2026-11-13-port-brain-finished-hold.md)
+  - [Port V2→V5: luồng dịch `translate_simple` (mặc định) + Demucs trước ASR](../../fixes/2026-11-12-port-simple-demucs.md)
+  - [V5 không khởi động được → chuyển về bố cục package bằng sync_from_v2](../../fixes/2026-11-11-v5-package-sync.md)
+  - [REVIEW lỗi bị coi là đã soát · park treo hàng đợi · Brain V4 điều khiển nhầm V2](../../fixes/2026-11-11-review-fail-park-port.md)
+- **Reviews:** [2026-11-11-v4-v5-port-review](../../reviews/2026-11-11-v4-v5-port-review.md)
+- Nhắc trong CHANGELOG: **3** lần · DECISIONS: **0** lần
 
 <!-- AUTO:END -->
 

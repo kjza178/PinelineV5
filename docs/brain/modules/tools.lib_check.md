@@ -2,23 +2,28 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `tools/lib_check.py` · **Lớp:** `ops` · **411 dòng** (345 code) · **9 hàm**, **0 class** · sha1 `fe82f3ce7a`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `tools/lib_check.py` · **Lớp:** `ops` · **411 dòng** (345 code) · **9 hàm**, **0 class** · sha1 `cea1455c1d`
 
 > lib_check.py — Kiểm tra bản quyền / Block YouTube cho Phim trong Thư viện gốc (D:\Lib) trước khi làm job. Bao gồm: - Tìm video nguồn (merged hoặc tập đầu).
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [core.film_db](./core.film_db.md), [engines.check_block](./engines.check_block.md), [engines.title_mt](./engines.title_mt.md)
-- **Được dùng bởi:** [http_routes.routes_films](./http_routes.routes_films.md), [http_routes.routes_uploader_settings](./http_routes.routes_uploader_settings.md)
+- **Được dùng bởi:** [agents.agent_tele_cmd](./agents.agent_tele_cmd.md), [agents.test_channel](./agents.test_channel.md), [agents.uploader_settings_api](./agents.uploader_settings_api.md), [http_routes.routes_films](./http_routes.routes_films.md), [http_routes.routes_uploader_settings](./http_routes.routes_uploader_settings.md), [tools.test_channel](./tools.test_channel.md)
+- **Được nhắc tên file `.py` (subprocess/script) bởi:** [core.machine](./core.machine.md)
 - **Test:** ❌ chưa có test import trực tiếp
 - **Thư viện ngoài:** `yt_accounts`
 
 ```mermaid
 flowchart LR
   tools_lib_check[[tools.lib_check]]
+  agents_agent_tele_cmd[agents.agent_tele_cmd] --> tools_lib_check
+  agents_test_channel[agents.test_channel] --> tools_lib_check
+  agents_uploader_settings_api[agents.uploader_settings_api] --> tools_lib_check
   http_routes_routes_films[http_routes.routes_films] --> tools_lib_check
   http_routes_routes_uploader_settings[http_routes.routes_uploader_settings] --> tools_lib_check
+  tools_test_channel[tools.test_channel] --> tools_lib_check
   tools_lib_check --> core_film_db[core.film_db]
   tools_lib_check --> engines_check_block[engines.check_block]
   tools_lib_check --> engines_title_mt[engines.title_mt]

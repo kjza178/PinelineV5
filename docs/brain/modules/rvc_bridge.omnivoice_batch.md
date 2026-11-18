@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `rvc_bridge/omnivoice_batch.py` · **Lớp:** `tts` · **47 dòng** (38 code) · **1 hàm**, **0 class** · sha1 `c8f48ec784`
 
 > Worker omnivoice-vietnamese (chạy trong D:/OmniVoiceStudio-v2/.venv). Đọc job json: {out_dir, ref, text, device, speed, model, lines:[[i,"vi"],...]} -> mỗi câu ghi seg_XXXX.wav. In "prog <done>/<total>" cho orchestrator.

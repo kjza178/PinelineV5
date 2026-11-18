@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `scripts/download_firered_models.py` · **Lớp:** `ops` · **29 dòng** (22 code) · **1 hàm**, **0 class** · sha1 `aca3756417`
 
 > Download FireRedASR2S models into FIRERED_MODELS (default D:/AI_CACHE/firered).
@@ -11,6 +11,7 @@
 
 - **Gọi tới (import nội bộ):** —
 - **Được dùng bởi:** —
+- **Được nhắc tên file `.py` (subprocess/script) bởi:** [scripts.check_env](./scripts.check_env.md)
 - **Test:** ❌ chưa có test import trực tiếp
 - **Thư viện ngoài:** `huggingface_hub`
 

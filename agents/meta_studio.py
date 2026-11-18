@@ -4,10 +4,6 @@ và dựng Thumbnail 16:9 chuẩn YouTube từ poster dọc + text giật gân.
 """
 from __future__ import annotations
 
-try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
-    from core import machine as _machine
-except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
 import io
 import json
 import os
@@ -207,11 +203,14 @@ def build_master_image_prompt(
     sub_text: str = "",
     font_material: str = "",
     trust_hooks: bool = False,
+    typo_color: str = "",
+    typo_integration: str = "",
 ) -> str:
     """Prompt ảnh AI: scene + chữ 3D LATIN (không dấu) — giảm gen sai chữ Việt có dấu.
 
     Badge NEW/HOT. Hook/sub đã sanitize; bản nung ảnh = vi_to_image_latin(...).
     ``trust_hooks=True``: giữ đúng 2 dòng hook đã chốt (concept/UI), không ép neo tên.
+    Typography đa dạng về kiểu dáng/vật liệu và hòa hợp, tương phản nổi bật dựa trên nền ảnh tham chiếu.
     """
     title = clean_series_name(title_vi or "", fallback=title_vi) or title_zh or "donghua"
     if trust_hooks and hook_texts and len([h for h in hook_texts if str(h or "").strip()]) >= 2:
@@ -227,7 +226,9 @@ def build_master_image_prompt(
     dna = (visual_dna or "main character faithful to reference image").strip()
     colors = (palette or "palette matching the film's real setting, not generic fire-gold").strip()
     lay = (layout or "character on the right third, bold 3D text on the left").strip()
-    mat = (font_material or "premium 3D metallic type matching the chosen color system").strip()
+    mat = (font_material or "premium 3D stylized display typography matching the reference atmosphere").strip()
+    color_desc = (typo_color or "high-contrast color scheme tailored to punch out against the reference background").strip()
+    integ = (typo_integration or "deep ambient drop shadow and directional rim lighting reacting to reference scene illumination").strip()
     line1 = vi_to_image_latin(hooks[0])
     line2 = vi_to_image_latin(hooks[1])
     sub_img = vi_to_image_latin(sub)
@@ -254,7 +255,10 @@ def build_master_image_prompt(
         f"  2) \"{line2}\"\n"
         f"  Letter check line1: {_spell(line1)}\n"
         f"  Letter check line2: {_spell(line2)}\n"
-        f"  Material: {mat}. Sharp, high-contrast, readable on mobile.\n"
+        f"- DIVERSE TYPOGRAPHY STYLING & MATERIAL (Tailored to Reference Background):\n"
+        f"  * Material & Palette: {mat}; Colors: {color_desc}.\n"
+        f"  * Diverse Typography Styles: Use varied 3D lettering (e.g. fractured ice crystal, brushed titanium, ancient engraved jade, molten lava core, or mirror chrome) instead of generic flat gold.\n"
+        f"  * Reference Background Integration: {integ}. Letters MUST react to the reference image background lighting (directional rim glow, atmospheric mist weaving around letters, deep contact shadows) so text seamlessly fuses with the scene yet punches out with razor-sharp mobile readability.\n"
         f"- Bottom subtitle banner EXACTLY: \"{sub_img}\"\n"
         "Do NOT add extra words. Do NOT restore diacritics. Do NOT write Chinese characters.\n"
         "Avoid cluttered HUD/stat bars unless the plot is literally a system/RPG panel moment.\n\n"
@@ -324,6 +328,8 @@ def finalize_thumb_meta_fields(
         sub_text=data["sub_text"],
         font_material=str(typo.get("effects") or typo.get("font_style") or ""),
         trust_hooks=trust_hooks,
+        typo_color=str(typo.get("color") or ""),
+        typo_integration=str(typo.get("graphic_integration") or ""),
     )
     data["ai_image_prompt"] = data["master_image_prompt"]
     if typo is not None:
@@ -1061,22 +1067,17 @@ def _get_chatgpt_token() -> str:
 
 
 def _chatgpt_candidate_bases() -> list[str]:
-    """Ưu tiên CHATGPT_BASE_URL trong pineline.config (local :3377), rồi Aurora LAN (.247/.244).
-    Đẩy các base vừa lỗi kết nối (ConnectionError) xuống cuối danh sách trong 60s.
+    """Chỉ dùng endpoint Aurora local (:3377) hoặc cấu hình riêng.
+    Bỏ hoàn toàn các IP backup 192.168.* để khi retry sẽ roll sang account khác trực tiếp trên pool :3377.
     """
-    import time
     bases: list[str] = []
     for k in ("AURORA_BASE_URL", "CHATGPT_BASE_URL"):
-        v = _cfg(k).rstrip("/")
-        if v and v not in bases:
+        v = (_cfg(k) or "").strip().rstrip("/")
+        if v and not v.startswith("http://192.168.") and v not in bases:
             bases.append(v)
-    for u in _machine.aurora_base_urls():  # machine-config: :3377 + AURORA_FALLBACK_URLS
-        if u not in bases:
-            bases.append(u)
-    now = time.time()
-    alive = [b for b in bases if _DEAD_CHATGPT_BASES.get(b, 0.0) <= now]
-    dead = [b for b in bases if _DEAD_CHATGPT_BASES.get(b, 0.0) > now]
-    return alive + dead
+    if "http://127.0.0.1:3377/v1" not in bases:
+        bases.append("http://127.0.0.1:3377/v1")
+    return bases
 
 
 def extract_job_summary(job_id: str, max_chars: int = 5500) -> str:
@@ -1358,8 +1359,8 @@ def _call_chatgpt(messages: list[dict], model: str = "gpt-5-6") -> str:
                     continue
                 except Exception as e:
                     last_err = e
-            # Thử 2: Gọi trực tiếp không token (Aurora dùng pool tài khoản nội bộ trên Pi 5 — retry tối đa 2 lần để xoay acc lỗi 400/500)
-            for attempt in range(2):
+            # Thử 2: Gọi trực tiếp không token (Aurora dùng pool tài khoản nội bộ — retry trực tiếp trên :3377 để xoay acc pool khi gặp 400/500)
+            for attempt in range(4):
                 try:
                     headers = {"Content-Type": "application/json"}
                     r = requests.post(url, headers=headers, json=data, timeout=60)
@@ -1367,17 +1368,17 @@ def _call_chatgpt(messages: list[dict], model: str = "gpt-5-6") -> str:
                         res = r.json()
                         content = ((res.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
                         if content.strip():
-                            _DEAD_CHATGPT_BASES.pop(base_url, None)
                             return content
                     last_err = RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
-                    time.sleep(0.6)
+                    print(f"[meta_studio] Aurora :3377 HTTP {r.status_code} ({attempt+1}/4) — retry roll acc...", flush=True)
+                    time.sleep(1.0)
                 except requests.ConnectionError as e_conn:
-                    _DEAD_CHATGPT_BASES[base_url] = time.time() + _DEAD_BASE_TTL_SEC
                     last_err = e_conn
-                    break
+                    print(f"[meta_studio] Aurora :3377 lỗi kết nối ({attempt+1}/4): {e_conn}", flush=True)
+                    time.sleep(1.0)
                 except Exception as e:
                     last_err = e
-                    time.sleep(0.6)
+                    time.sleep(1.0)
 
     raise ConnectionError(f"Không thể kết nối tới LLM trên Pi 5 ({last_err})")
 
@@ -1451,6 +1452,7 @@ def generate_ai_image(
     ref_images: list[bytes] | bytes | None = None,
     job_id: str = "",
     poster_name: str = "",
+    allow_edits: bool | None = None,
 ) -> bytes | None:
     """Gọi Aurora trên Pi 5 để sinh ảnh Thumbnail 16:9 chất lượng cao:
     - Bước 1: Thử gửi ảnh gốc tham chiếu (Poster + Frame trong phim) lên `/v1/images/edits`
@@ -1461,6 +1463,12 @@ def generate_ai_image(
     import base64
     import time
     import requests
+
+    if allow_edits is None:
+        # Mặc định TẮT edits ("0") vì Aurora pool Free không hỗ trợ image-to-image edit (chỉ echo ngược lại file gốc).
+        # Đi thẳng sang /images/generations siêu tốc (30-45s) tích hợp nhân vật + typography 3D.
+        val = str(_cfg("META_AI_IMAGE_EDITS", "0") or "0").strip().lower()
+        allow_edits = val in ("1", "true", "yes", "on")
 
     token = _get_chatgpt_token()
     candidate_urls = _chatgpt_candidate_bases()
@@ -1497,7 +1505,7 @@ def generate_ai_image(
         auth_headers_list.append({"Authorization": f"Bearer {token}"})
 
     # 1. NẾU CÓ ẢNH THAM CHIẾU -> THỬ /v1/images/edits (chỉ nhận khi ảnh trả về KHÁC ảnh tham chiếu đầu vào)
-    if ref_list:
+    if allow_edits and ref_list:
         ref_prefix = (
             "REFERENCE IMAGE MANDATE: Strictly use the attached reference image(s) for the main character's "
             "exact facial features, hairstyle, hair color, outfit design, and 3D/2D rendering aesthetic. "
@@ -1506,41 +1514,47 @@ def generate_ai_image(
         )
         edit_prompt = prompt if "REFERENCE IMAGE" in prompt.upper() else (ref_prefix + prompt)
 
+        # Phép gọi /images/edits có đính kèm multipart file, Aurora xử lý qua ChatGPT web session
+        # có thể mất từ 1.5 đến 2.5 phút (vd: 2m10s). Tuyệt đối không kẹp 90s vì sẽ gây timeout sớm,
+        # ngắt socket máy chủ (wsasend: An established connection was aborted).
+        edit_timeout = max(timeout, 240)
+
         for base_url in candidate_urls:
-            if _DEAD_CHATGPT_BASES.get(base_url, 0.0) > time.time():
-                continue
             edit_url = f"{base_url}/images/edits"
             for hdrs in auth_headers_list:
-                try:
-                    files_payload = [
-                        ("image", (f"ref_{idx}.jpg", img_b, "image/jpeg"))
-                        for idx, img_b in enumerate(ref_list[:2])
-                    ]
-                    form_data = {
-                        "model": "gpt-image-2",
-                        "prompt": edit_prompt,
-                        "n": "1",
-                        "size": req_size,
-                        "response_format": "b64_json",
-                    }
-                    print(f"[meta_studio] Gửi {len(files_payload)} ảnh gốc tham chiếu lên {edit_url} (multipart)...", flush=True)
-                    r = requests.post(edit_url, headers=hdrs, data=form_data, files=files_payload, timeout=min(timeout, 90))
-                    if r.status_code == 200:
-                        out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout, reject_list=ref_list)
-                        if out_bytes:
-                            _DEAD_CHATGPT_BASES.pop(base_url, None)
-                            print(f"[meta_studio] ✅ Sinh ảnh mới từ Reference Image (/images/edits) thành công ({len(out_bytes)//1024} KB)!", flush=True)
-                            return out_bytes
-                        print(f"[meta_studio] ⚠️ {edit_url} trả ngược lại ảnh tham chiếu gốc (pool Free không hỗ trợ edit file) -> chuyển sang /images/generations", flush=True)
+                for attempt in range(2):
+                    try:
+                        files_payload = [
+                            ("image", (f"ref_{idx}.jpg", img_b, "image/jpeg"))
+                            for idx, img_b in enumerate(ref_list[:2])
+                        ]
+                        form_data = {
+                            "model": "gpt-image-2",
+                            "prompt": edit_prompt,
+                            "n": "1",
+                            "size": req_size,
+                            "response_format": "b64_json",
+                        }
+                        print(f"[meta_studio] Gửi {len(files_payload)} ảnh gốc tham chiếu lên {edit_url} (multipart, timeout={edit_timeout}s, lần {attempt+1}/2)...", flush=True)
+                        r = requests.post(edit_url, headers=hdrs, data=form_data, files=files_payload, timeout=edit_timeout)
+                        if r.status_code == 200:
+                            out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout, reject_list=ref_list)
+                            if out_bytes:
+                                print(f"[meta_studio] ✅ Sinh ảnh mới từ Reference Image (/images/edits) thành công ({len(out_bytes)//1024} KB)!", flush=True)
+                                return out_bytes
+                            print(f"[meta_studio] ⚠️ {edit_url} trả ngược lại ảnh tham chiếu gốc (pool Free không hỗ trợ edit file) -> chuyển sang /images/generations", flush=True)
+                            break
+                        print(f"[meta_studio] /images/edits status={r.status_code} ({base_url}) lần {attempt+1}/2: {r.text[:160]}", flush=True)
+                        time.sleep(1.0)
+                    except requests.Timeout as e_to:
+                        print(f"[meta_studio] ⚠️ /images/edits timeout ({base_url}) sau {edit_timeout}s -> chuyển sang /images/generations: {e_to}", flush=True)
                         break
-                    else:
-                        print(f"[meta_studio] /images/edits status={r.status_code} ({base_url}): {r.text[:160]}", flush=True)
-                except requests.ConnectionError as e_conn:
-                    _DEAD_CHATGPT_BASES[base_url] = time.time() + _DEAD_BASE_TTL_SEC
-                    print(f"[meta_studio] /images/edits lỗi kết nối ({base_url}): {e_conn}", flush=True)
-                    break
-                except Exception as e_mp:
-                    print(f"[meta_studio] /images/edits multipart warning ({base_url}): {e_mp}", flush=True)
+                    except requests.ConnectionError as e_conn:
+                        print(f"[meta_studio] /images/edits lỗi kết nối ({base_url}) lần {attempt+1}/2: {e_conn}", flush=True)
+                        time.sleep(1.0)
+                    except Exception as e_mp:
+                        print(f"[meta_studio] /images/edits multipart warning ({base_url}): {e_mp}", flush=True)
+                        time.sleep(1.0)
 
     # 2. GỌI /v1/images/generations (Hỗ trợ đầy đủ trên Aurora pool, xoay account khi gặp lỗi 400/500)
     gen_prompt = prompt
@@ -1560,13 +1574,11 @@ def generate_ai_image(
             "response_format": "b64_json",
         }
         for base_url in _chatgpt_candidate_bases():
-            if _DEAD_CHATGPT_BASES.get(base_url, 0.0) > time.time():
-                continue
             url = f"{base_url}/images/generations"
             for hdrs in auth_headers_list:
-                for attempt in range(2):
+                for attempt in range(4):
                     try:
-                        print(f"[meta_studio] Gọi {url} (size={chosen_size}, thử {attempt+1}/2)...", flush=True)
+                        print(f"[meta_studio] Gọi {url} (size={chosen_size}, lần {attempt+1}/4 để roll acc pool)...", flush=True)
                         r = requests.post(
                             url,
                             headers={**hdrs, "Content-Type": "application/json"},
@@ -1576,18 +1588,19 @@ def generate_ai_image(
                         if r.status_code == 200:
                             out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout, reject_list=ref_list)
                             if out_bytes:
-                                _DEAD_CHATGPT_BASES.pop(base_url, None)
                                 print(f"[meta_studio] ✅ Sinh ảnh /images/generations ({base_url}, size={chosen_size}) thành công ({len(out_bytes)//1024} KB)!", flush=True)
                                 return out_bytes
-                        print(f"[meta_studio] /images/generations status={r.status_code} ({base_url}): {r.text[:180]}", flush=True)
-                        time.sleep(0.8)
-                    except requests.ConnectionError as e_conn:
-                        _DEAD_CHATGPT_BASES[base_url] = time.time() + _DEAD_BASE_TTL_SEC
-                        print(f"[meta_studio] /images/generations lỗi kết nối ({base_url}): {e_conn}", flush=True)
+                        print(f"[meta_studio] /images/generations status={r.status_code} ({base_url}) lần {attempt+1}/4: {r.text[:180]}", flush=True)
+                        time.sleep(1.0)
+                    except requests.Timeout as e_to:
+                        print(f"[meta_studio] /images/generations timeout ({base_url}): {e_to}", flush=True)
                         break
+                    except requests.ConnectionError as e_conn:
+                        print(f"[meta_studio] /images/generations lỗi kết nối ({base_url}) lần {attempt+1}/4: {e_conn}", flush=True)
+                        time.sleep(1.0)
                     except Exception as e_gen:
                         print(f"[meta_studio] /images/generations warning ({base_url}): {e_gen}", flush=True)
-                        time.sleep(0.8)
+                        time.sleep(1.0)
     return None
 
 
@@ -1674,6 +1687,22 @@ Tùy theo thể loại và bối cảnh cốt truyện, BẮT BUỘC chọn 1 tr
 
 ---
 
+### PHẦN 2B — QUY TẮC TYPOGRAPHY 3D ĐA DẠNG DỰA TRÊN NỀN ẢNH THAM CHIẾU (BACKGROUND-AWARE TYPOGRAPHY):
+- **Đa dạng hóa phong cách chữ & vật liệu (Font Style & Material Diversity)**:
+  * TUYỆT ĐỐI CẤM rập khuôn chữ vàng kim hoặc 1 kiểu kim loại phẳng đơn điệu.
+  * Phải chọn vật liệu và phong cách 3D độc đáo ăn khớp với cốt truyện & không gian:
+    + *Kiểu khối 3D chiseled bevel góc cạnh, Futuristic Blade Cut, Heavy Brutalist Gothic, hoặc Divine Seal phù điêu*.
+    + *Đa dạng vật liệu*: Pha lê băng tuyết nứt vỡ (Fractured Frost Crystal), Thép titan xước mờ phản quang (Brushed Titanium), Ngọc bích chạm khắc viền vàng (Imperial Carved Jade & Gold), Lõi dung nham nóng chảy (Molten Magma Core), Kính neon vi tính (Cyber Hologram Glass), Bạch kim tráng gương (Mirror Chrome Platinum), Đá hắc diện thạch khắc phù văn (Runic Engraved Obsidian)...
+- **Neo chặt và phản hồi với NỀN CỦA ẢNH THAM CHIẾU (Reference Background Lighting & Contrast)**:
+  * Quan sát kỹ bối cảnh nền và ánh sáng của Reference Image:
+    + *Nền tối/đêm/không gian vũ trụ/hang động*: Chữ 3D dùng chất liệu phát sáng rực rỡ (Luminous / Electric Cyan / Radiant Platinum Glow), đổ bóng sâu (Ambient Occlusion Drop Shadow) để chữ bứt phá nổi bật trên nền đen.
+    + *Nền sáng/khói lửa/chiến trường*: Chữ dùng chất liệu thép lạnh đậm màu (Dark Damascus Steel / Cold Gunmetal) hoặc vàng đồng cổ viền đổ bóng sâu để KHÔNG bị chìm vào nền đỏ cam.
+    + *Nền rừng/sương mù/tiên cảnh*: Chữ ngọc bích phù điêu hoặc bạch kim thanh nhã, sương mù môi trường luồn nhẹ qua chân chữ.
+  * *Hòa nhập ánh sáng môi trường (Environmental Lighting Integration)*: Viền chữ (directional rim light) phải đón đúng hướng sáng và màu ánh sáng chủ đạo của nền ảnh gốc (ví dụ nền hắt ánh xanh thì viền chữ ánh xanh, nền hoàng hôn thì viền chữ ánh hổ phách).
+  * *Khoảng trống âm (Negative Space)*: Luôn đặt khối chữ vào vùng nền thoáng ít chi tiết rác của cảnh nền tham chiếu, không che mặt hoặc tư thế nhân vật, đảm bảo cực kỳ sắc nét và dễ đọc trên màn hình điện thoại di động (mobile readability).
+
+---
+
 ### PHẦN 3 — QUY TẮC TIÊU ĐỀ YOUTUBE & HOOK TEXT (BÁM TÊN GỐC + BAIKE, KHÔNG BỊA):
 1. **HOOK TEXT TRÊN THUMBNAIL (`hook_texts`)**:
    - Đúng 2 dòng, mỗi dòng 2–4 từ IN HOA.
@@ -1705,12 +1734,12 @@ Trả về DUY NHẤT một khối JSON hợp lệ theo cấu trúc sau (không 
     "layout": "Bố cục & góc máy cụ thể"
   },
   "typography_direction": {
-    "font_style": "Kiểu chữ 3D phù hợp thể loại",
+    "font_style": "Kiểu chữ 3D đa dạng (vd: Heavy Chiseled 3D Block / Futuristic Blade Cut / Ancient Runic Carved)",
     "weight": "Extra Bold / Heavy",
-    "layout": "Vị trí đặt chữ có khoảng trống âm (Negative Space)",
-    "color": "Phối màu chữ 3D tương phản mạnh với nền (vd: Platinum Chrome & Ice Cyan / Emerald & Gold / Crimson & Silver...)",
-    "effects": "Hiệu ứng vật liệu 3D",
-    "graphic_integration": "Tương tác giữa chữ và bối cảnh/hiệu ứng",
+    "layout": "Vị trí đặt chữ trên khoảng trống âm của nền ảnh tham chiếu (Left / Top-Left Negative Space)",
+    "color": "Màu chữ 3D tương phản cực mạnh với nền ảnh tham chiếu (vd: Nền tối dùng Platinum Chrome & Ice Cyan Glow; Nền lửa dùng Dark Titanium with Golden Rim Light...)",
+    "effects": "Hiệu ứng vật liệu đa dạng (vd: Fractured Frost Crystal / Brushed Titanium / Molten Magma Core / Mirror Chrome / Radiant Jade)",
+    "graphic_integration": "Phản hồi với ánh sáng nền tham chiếu (vd: Directional rim light matching background ambient glow, deep drop shadow for separation, subtle background mist weaving through letters)",
     "text_exact": ["DÒNG 1 (2-3 TỪ IN HOA)", "DÒNG 2 (2-3 TỪ IN HOA)"]
   },
   "hook_texts": ["DÒNG 1 (2-3 TỪ)", "DÒNG 2 (2-3 TỪ)"],

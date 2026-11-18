@@ -7,9 +7,9 @@ try:
     import agents.agent_retry as ar
     from agents.agent_quality import scan_script
 except ImportError:
-    import agent_qa_fix as qf
-    import agent_retry as ar
-    from agent_quality import scan_script
+    import agents.agent_qa_fix as qf
+    import agents.agent_retry as ar
+    from agents.agent_quality import scan_script
 
 
 ROWS = [

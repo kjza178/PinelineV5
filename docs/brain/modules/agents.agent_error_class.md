@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `agents/agent_error_class.py` · **Lớp:** `agent` · **121 dòng** (106 code) · **3 hàm**, **0 class** · sha1 `e395cd2a0d`
 
 > Phân loại lỗi theo log / cur_text / error (ASR · TTS · mux · …).
@@ -10,13 +10,14 @@
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** —
-- **Được dùng bởi:** [agents.agent_heal](./agents.agent_heal.md)
+- **Được dùng bởi:** [agents.agent_heal](./agents.agent_heal.md), [agents.agent_retry](./agents.agent_retry.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ```mermaid
 flowchart LR
   agents_agent_error_class[[agents.agent_error_class]]
   agents_agent_heal[agents.agent_heal] --> agents_agent_error_class
+  agents_agent_retry[agents.agent_retry] --> agents_agent_error_class
 ```
 
 ### Hàm & class top-level

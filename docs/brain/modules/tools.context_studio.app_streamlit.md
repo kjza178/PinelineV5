@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `tools/context_studio/app_streamlit.py` · **Lớp:** `control` · **108 dòng** (95 code) · **0 hàm**, **0 class** · sha1 `edfdc968b0`
 
 > Streamlit UI stub — Context Detection trước khi dịch Pineline. Chạy: pip install streamlit

@@ -2,27 +2,28 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `agents/agent_pronoun_pass.py` · **Lớp:** `agent` · **256 dòng** (231 code) · **4 hàm**, **0 class** · sha1 `c4c613aac0`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `agents/agent_pronoun_pass.py` · **Lớp:** `agent` · **258 dòng** (233 code) · **4 hàm**, **0 class** · sha1 `9fa71d5dd8`
 
 > Rà XƯNG HÔ trong bản dịch theo glossary.pronouns + genre. 1. Quét deterministic (cùng apply_pronoun_postpass) rồi 2. Các câu còn nghi (Ta/Ngươi lệch genre, hoặc cặp who+to có mặt mà self/call lệch)
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [config](./config.md), [core.config](./core.config.md), [core.manifest](./core.manifest.md), [engines.llm](./engines.llm.md), [engines.subs](./engines.subs.md), [engines.translate](./engines.translate.md), [pronoun_register_policy](./pronoun_register_policy.md)
-- **Được dùng bởi:** —
-- **Test:** ❌ chưa có test import trực tiếp
+- **Gọi tới (import nội bộ):** [core.config](./core.config.md), [core.manifest](./core.manifest.md), [engines.llm](./engines.llm.md), [engines.pronoun_register_policy](./engines.pronoun_register_policy.md), [engines.subs](./engines.subs.md), [engines.translate](./engines.translate.md)
+- **Được dùng bởi:** [engines.pronoun_consistency](./engines.pronoun_consistency.md), [server](./server.md)
+- **Test:** `tests/test_translate_b1.py`, `tests/test_translate_simple.py`
 
 ```mermaid
 flowchart LR
   agents_agent_pronoun_pass[[agents.agent_pronoun_pass]]
-  agents_agent_pronoun_pass --> config[config]
+  engines_pronoun_consistency[engines.pronoun_consistency] --> agents_agent_pronoun_pass
+  server[server] --> agents_agent_pronoun_pass
   agents_agent_pronoun_pass --> core_config[core.config]
   agents_agent_pronoun_pass --> core_manifest[core.manifest]
   agents_agent_pronoun_pass --> engines_llm[engines.llm]
+  agents_agent_pronoun_pass --> engines_pronoun_register_policy[engines.pronoun_register_policy]
   agents_agent_pronoun_pass --> engines_subs[engines.subs]
   agents_agent_pronoun_pass --> engines_translate[engines.translate]
-  agents_agent_pronoun_pass --> pronoun_register_policy[pronoun_register_policy]
 ```
 
 ### Hàm & class top-level
@@ -32,13 +33,9 @@ flowchart LR
 | `_fold` | 22 | 3 | `s` |  |
 | `find_pronoun_issues` | 27 | 63 | `rows, plan` |  |
 | `_fix_batch` | 92 | 36 | `chunk, plan_block, model, system` |  |
-| `run_pronoun_pass` | 130 | 127 ⚠️ | `work_dir, model` |  |
+| `run_pronoun_pass` | 130 | 129 ⚠️ | `work_dir, model` |  |
 
-**Hàm dài ≥120 dòng:** `run_pronoun_pass` (127, L130)
-
-### Config / env keys (1)
-
-`PRONOUN_TITLE_POLICY`
+**Hàm dài ≥120 dòng:** `run_pronoun_pass` (129, L130)
 
 **File/artifact nhắc tới:** `glossary.json`, `script.json`, `sub.vi.srt`
 

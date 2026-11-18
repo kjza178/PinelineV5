@@ -2,8 +2,8 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/asr/fun_asr_nano.py` · **Lớp:** `asr` · **597 dòng** (521 code) · **11 hàm**, **0 class** · sha1 `14d1281219`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/asr/fun_asr_nano.py` · **Lớp:** `asr` · **602 dòng** (526 code) · **11 hàm**, **0 class** · sha1 `4d717e869d`
 
 > fun_asr_nano.py — STAGE ASR bằng Fun-ASR-Nano (chất lượng tiếng Trung cao nhất). Model : FunAudioLLM/Fun-ASR-Nano-2512 (+ fsmn-vad cắt đoạn dài) Đầu vào : work/<job>/source.mp4
 
@@ -38,19 +38,19 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_pick_device` | 44 | 10 | `device` |  |
-| `_wav_dur` | 56 | 13 | `wav` |  |
-| `_ms_to_s` | 71 | 6 | `v` | FunASR timestamp luôn là milliseconds. |
-| `_split_text_by_punct` | 79 | 4 | `text` | Tách câu theo dấu câu (mỏng: gọi subs.split_text_by_punct). |
-| `_spread_sentences` | 85 | 19 | `text, start, end` | Không có timestamp ký tự -> chia thời gian theo độ dài chữ. |
-| `_parse_funasr_result` | 106 | 70 | `res, audio_dur` | Chuẩn hoá output FunASR -> [{start, end, text}, ...]. |
-| `_split_by_punct` | 178 | 36 | `text, char_ts` | Gộp timestamp ký tự thành câu theo dấu câu Trung/Việt. |
-| `_vad_ranges_chunked` | 216 | 77 | `vad_model, wav, audio_dur, vad_kw, chunk_s, overlap_s, on_progress` | VAD theo cửa sổ ~chunk_s — tránh treo generate() trên file dài. |
-| `_vad_slice_asr` | 295 | 102 | `asr_model, vad_model, wav, language, on_progress, pad_s, overlap_s,…` | VAD cắt đoạn -> ASR từng đoạn có pad/overlap (Fun-ASR-Nano không có CTC ts). |
-| `run_asr_nano` | 398 | 180 ⚠️ | `work_dir, device, force, language, hub, sidecar` | sidecar: ghi asr.<tag>.json + sub.zh.<tag>.srt, không đụng asr.json / manifest ASR chính. |
-| `main` | 580 | 14 | `argv` |  |
+| `_pick_device` | 49 | 10 | `device` |  |
+| `_wav_dur` | 61 | 13 | `wav` |  |
+| `_ms_to_s` | 76 | 6 | `v` | FunASR timestamp luôn là milliseconds. |
+| `_split_text_by_punct` | 84 | 4 | `text` | Tách câu theo dấu câu (mỏng: gọi subs.split_text_by_punct). |
+| `_spread_sentences` | 90 | 19 | `text, start, end` | Không có timestamp ký tự -> chia thời gian theo độ dài chữ. |
+| `_parse_funasr_result` | 111 | 70 | `res, audio_dur` | Chuẩn hoá output FunASR -> [{start, end, text}, ...]. |
+| `_split_by_punct` | 183 | 36 | `text, char_ts` | Gộp timestamp ký tự thành câu theo dấu câu Trung/Việt. |
+| `_vad_ranges_chunked` | 221 | 77 | `vad_model, wav, audio_dur, vad_kw, chunk_s, overlap_s, on_progress` | VAD theo cửa sổ ~chunk_s — tránh treo generate() trên file dài. |
+| `_vad_slice_asr` | 300 | 102 | `asr_model, vad_model, wav, language, on_progress, pad_s, overlap_s,…` | VAD cắt đoạn -> ASR từng đoạn có pad/overlap (Fun-ASR-Nano không có CTC ts). |
+| `run_asr_nano` | 403 | 180 ⚠️ | `work_dir, device, force, language, hub, sidecar` | sidecar: ghi asr.<tag>.json + sub.zh.<tag>.srt, không đụng asr.json / manifest ASR chính. |
+| `main` | 585 | 14 | `argv` |  |
 
-**Hàm dài ≥120 dòng:** `run_asr_nano` (180, L398)
+**Hàm dài ≥120 dòng:** `run_asr_nano` (180, L403)
 
 ### Config / env keys (3)
 

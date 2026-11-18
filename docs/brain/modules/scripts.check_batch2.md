@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `scripts/check_batch2.py` · **Lớp:** `ops` · **327 dòng** (262 code) · **9 hàm**, **1 class** · sha1 `dced6717a7`
 
 > Kiểm thử đợt 2 (bảo mật + config 1 nguồn + LLM lỗi dừng stage). KHÔNG chạm server/sidecar live: middleware & handler được tách bằng AST rồi exec vào app/handler giả.

@@ -179,6 +179,7 @@ small{color:#888}
         <b>Chọn tất cả</b>
       </label>
       <button class="b pri" id="btn-add-checked" onclick="addCheckedUnified()" style="background:#0284c7;border-color:#38bdf8" title="Đẩy các bộ hoặc mùa đã tick vào hàng chờ xử lý">➕ Thêm đã tick</button>
+      <button class="b" id="btn-normalize-checked" onclick="normalizeChecked()" style="background:#0c2d48;border-color:#38bdf8;color:#7dd3fc" title="Chuẩn hóa các mùa đã tick: mùa đã chuẩn hóa / gộp mới đã kiểm thì bỏ qua, còn lại mã hoá lại (tiếng/hình/codec đồng nhất) — chạy nền, lần lượt">📐 Chuẩn hóa đã tick</button>
       <button class="b" id="btn-merge-all-lib" onclick="mergeAllNeedMerge()" style="background:#3b2f14;border-color:#f59e0b;color:#fde68a" title="Ghép tất cả mùa đang chờ ghép trong thư viện">🔗 Ghép tất cả chờ ghép</button>
       <span style="flex:1"></span>
       <input id="lib-q" placeholder="Lọc theo tên…" oninput="renderLib()" size="22" style="padding:6px 10px">
@@ -604,6 +605,15 @@ small{color:#888}
         <label>Model AI Agent Co-pilot (AGENT_MODEL):</label>
         <input type="text" id="cfg-agent-model" placeholder="ollama/gemma4:31b-cloud hoặc openclaw" style="padding:7px 10px;border-radius:5px;background:#181818;border:1px solid #333;color:#eee">
       </div>
+      <div class="meta-field">
+        <label>DeepSeek API Key (DEEPSEEK_API_KEY):</label>
+        <input type="password" id="cfg-deepseek-key" placeholder="sk-..." style="padding:7px 10px;border-radius:5px;background:#181818;border:1px solid #333;color:#eee">
+      </div>
+      <div class="meta-field">
+        <label>Số request song song DeepSeek (DEEPSEEK_CONCURRENCY, mặc định 32):</label>
+        <input type="number" id="cfg-deepseek-concurrency" placeholder="32" min="1" max="64" style="padding:7px 10px;border-radius:5px;background:#181818;border:1px solid #333;color:#eee">
+        <div style="font-size:11px;color:#888;margin-top:2px">Dùng tính cỡ lô động (số câu ÷ số request song song, kẹp trong 40–200 câu). Mặc định 32 worker.</div>
+      </div>
       <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
         <button type="button" class="b sm" onclick="testLlmConn()" style="border-color:#38bdf8;color:#38bdf8">🔌 Kiểm tra kết nối LLM</button>
         <span id="cfg-llm-test-result" style="font-size:12px;color:#aaa"></span>
@@ -792,6 +802,10 @@ small{color:#888}
       <div id="tbm-reason-box" style="margin-top:6px;font-size:12px;color:#fca5a5;display:none">
         ⚠️ Chi tiết: <span id="tbm-reason"></span>
       </div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #283044;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:11.5px;color:#94a3b8">Độ phân giải & Chất lượng:</span>
+        <button class="b sm" style="background:#0c2d48;border-color:#38bdf8;color:#7dd3fc;padding:3px 9px;font-size:11px" onclick="normalizeCurrentTestSeason()" title="Chuẩn hóa file video về Full HD 1080p (NVENC)">📐 Chuẩn hóa 1080p</button>
+      </div>
     </div>
 
     <!-- Tự động test qua Kênh Phụ -->
@@ -925,10 +939,12 @@ small{color:#888}
             </select>
           </div>
           <button class="b pri" style="margin-top:16px;height:34px" id="btn-gen-meta" onclick="doGenerateMeta()">⚡ Sinh Meta & Prompt AI</button>
+          <button class="b" style="margin-top:16px;height:34px;background:#1e3a5f;border-color:#38bdf8;color:#e0f2fe" id="btn-gen-title" onclick="doGenerateTitlesOnly()" title="Chỉ sinh 5 tiêu đề YT — khi Sinh Meta nặng/lệch">🔤 Sinh tiêu đề</button>
         </div>
 
         <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #333">
           <h4 style="margin:0 0 8px;color:#e0b050">🖼️ Thiết kế Thumbnail 16:9 (1280×720)</h4>
+          <div style="font-size:11px;color:#94a3b8;margin:-4px 0 8px">Sửa tự do hook/badge/style/sub → Aurora dùng đúng form (không khoá tên phim). Bấm pill concept hoặc «Áp chữ concept».</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <div class="meta-field">
               <label>Chữ Hook dòng 1 (in hoa)</label>
@@ -940,7 +956,10 @@ small{color:#888}
             </div>
           </div>
           <div id="m-hook-options-box" class="hide" style="margin:2px 0 8px">
-            <small style="color:#aaa;display:block;margin-bottom:3px">💡 Gợi ý chữ Thumb từ AI (bấm để chọn):</small>
+            <small style="color:#aaa;display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;gap:8px">
+              <span>💡 Gợi ý chữ Thumb từ AI (bấm để chọn):</span>
+              <button type="button" class="b sm" id="btn-apply-concept-hooks" onclick="applyConceptHooks()" style="padding:2px 8px;font-size:11px">Áp chữ concept</button>
+            </small>
             <div id="m-hook-options"></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -962,13 +981,14 @@ small{color:#888}
             <label>Dòng phụ (Subtext)</label>
             <input id="t-sub" placeholder="VD: Siêu phẩm Tu Tiên Đô Thị">
           </div>
-          <div style="display:flex;gap:8px;margin-top:6px">
-            <button class="b warning" style="flex:1" id="btn-render-thumb" onclick="doRenderThumbnail()">🎨 Render Local 16:9</button>
-            <button class="b pri" style="flex:1;background:#10a37f;border-color:#10a37f;color:#fff" id="btn-copy-gpt" onclick="doCopyGptPrompt()">🤖 Copy Prompt ChatGPT</button>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+            <button class="b pri" style="flex:1;min-width:140px;background:#7c3aed;border-color:#8b5cf6;color:#fff" id="btn-gen-ai-thumb" onclick="doGenerateAuroraAiThumb()" title="Gọi GPT local :3377 / Aurora sinh Master Thumbnail 16:9">✨ Sinh ảnh AI Aurora</button>
+            <button class="b warning" style="flex:1;min-width:120px" id="btn-render-thumb" onclick="doRenderThumbnail()">🎨 Render Local 16:9</button>
+            <button class="b pri" style="flex:1;min-width:120px;background:#10a37f;border-color:#10a37f;color:#fff" id="btn-copy-gpt" onclick="doCopyGptPrompt()">🤖 Copy Prompt ChatGPT</button>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11.5px">
             <a href="https://chatgpt.com" target="_blank" style="color:#10a37f;text-decoration:none;display:inline-flex;align-items:center;gap:4px">↗️ Mở chatgpt.com để tạo ảnh</a>
-            <span style="color:#64748b">Format chuẩn Master Art Director</span>
+            <span style="color:#64748b">Aurora = AI vẽ sẵn chữ · Local = Pillow đè chữ</span>
           </div>
           <div id="m-strat-box" class="hide" style="margin-top:10px;background:#151c24;border:1px solid #243b55;border-radius:6px;padding:8px 10px;font-size:11.5px;color:#cbd5e1">
             <div style="font-weight:600;color:#74c0fc;margin-bottom:4px">🎯 Phân tích & Bố cục Thumbnail:</div>
@@ -999,7 +1019,7 @@ small{color:#888}
             <span style="color:#888;font-size:11px">Click để copy</span>
           </label>
           <div id="m-titles-list">
-            <div style="color:#666;font-size:12px;padding:4px">Chưa sinh tiêu đề...</div>
+            <div style="color:#666;font-size:12px;padding:4px">Chưa sinh tiêu đề… → bấm <b>⚡ Sinh Meta & Prompt AI</b> bên trái</div>
           </div>
         </div>
 
@@ -1496,6 +1516,7 @@ function renderLib(){
             </label>
             ${seasonBlockBadge(s)}
             <button class="b sm" style="padding:2px 5px;font-size:10px" onclick="openTestBlockModal(${jq(s.name)}, ${jq(s.title_vi||s.title)}, ${jq(s.block_status||'')}, ${jq(s.block_reason||'')}, ${jq(s.test_yt_url||'')}, ${jq(g.core)})" title="Kiểm tra bản quyền / Test upload">🛡️ Test</button>
+            <button class="b sm" style="padding:2px 5px;font-size:10px;background:#0c2d48;border-color:#38bdf8;color:#7dd3fc" onclick="event.stopPropagation();normalizeSeasonVideo(${jq(s.name)})" title="Chuẩn hóa video mùa này (luôn chạy, kể cả đã chuẩn): 1920x1080 / dọc 1080x1920, AAC 48k stereo, NVENC GPU">📐 1080p</button>
             <button class="b sm danger" style="padding:2px 5px;font-size:10px;background:#450a0a;border-color:#7f1d1d;color:#fca5a5" onclick="event.stopPropagation();deleteLocalSeason(${jq(s.name)})" title="Xoá thư mục mùa này khỏi ổ D:\\Lib để giải phóng dung lượng">🗑️</button>
           </div>
         `).join('')}
@@ -1714,6 +1735,115 @@ function doDeleteCurrentLocalLib(){
   const name = CURRENT_TEST_LIB.name;
   deleteLocalSeason(name);
   closeTestBlockModal();
+}
+
+// 2026-11-18: chuẩn hóa chạy NỀN trong sidecar :8802 (lib_normalize) — 1 ffmpeg/lúc, lần lượt.
+// 📐 1 mùa = chạy bắt buộc (lên đầu hàng). «📐 Chuẩn hóa đã tick» = kiểm từng mùa: đã chuẩn / gộp mới đã kiểm
+// → bỏ qua; còn lại → chuẩn hóa. Khung bên phải: trạng thái từng mùa + log (console :8802, work/logs/lib_normalize.log).
+let NORM_TIMER = null, NORM_HIDDEN = false, NORM_LOG_OPEN = false, NORM_SEEN = {};
+function normBox(){
+  let el = document.getElementById('normBox');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'normBox';
+    el.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:9999;width:500px;max-width:92vw;max-height:62vh;'
+      + 'overflow:auto;background:#0b1220;border:1px solid #38bdf8;border-radius:8px;padding:8px 10px;font-size:12px;'
+      + 'color:#e2e8f0;box-shadow:0 4px 18px rgba(0,0,0,.55);display:none';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function normRender(st){
+  const el = normBox();
+  const items = (st && st.items) || [];
+  if(!items.length || NORM_HIDDEN){ el.style.display = 'none'; return; }
+  const c = st.counts || {};
+  const head = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+      <b style="color:#7dd3fc">📐 Chuẩn hóa</b>
+      <span style="color:#94a3b8">chạy ${c.running||0} · chờ ${(c.queued||0)+(c.checking||0)} · xong ${c.done||0} · bỏ qua ${c.skipped||0} · <span style="color:${c.failed?'#fca5a5':'#94a3b8'}">lỗi ${c.failed||0}</span></span>
+      <span style="flex:1"></span>
+      ${st.queue?`<button class="b sm" style="padding:1px 6px;font-size:10px" onclick="normCancel()">⏹ Huỷ hàng chờ</button>`:''}
+      <button class="b sm" style="padding:1px 6px;font-size:10px" onclick="NORM_LOG_OPEN=!NORM_LOG_OPEN;normTick()">${NORM_LOG_OPEN?'Ẩn log':'Log'}</button>
+      <button class="b sm" style="padding:1px 6px;font-size:10px" onclick="NORM_HIDDEN=true;normBox().style.display='none'">✕</button>
+    </div>`;
+  const color = {done:'#86efac', failed:'#fca5a5', skipped:'#94a3b8', running:'#7dd3fc', cancelled:'#94a3b8'};
+  const rows = items.slice().reverse().map(it => `<div style="padding:3px 0;border-top:1px solid #1e293b">
+      <div style="color:${color[it.state]||'#e2e8f0'}">${esc(it.name)}</div>
+      <div style="color:#cbd5e1;padding-left:10px;white-space:pre-wrap">${esc(it.text||'')}${it.info?`\n<span style="color:#64748b">${esc(it.info)}</span>`:''}${
+        it.state==='failed' && (it.error_tail||[]).length ? `\n<span style="color:#f87171">${esc((it.error_tail||[]).slice(-3).join('\n'))}</span>`:''}</div>
+    </div>`).join('');
+  const log = NORM_LOG_OPEN ? `<pre style="margin:6px 0 0;max-height:24vh;overflow:auto;background:#020617;padding:6px;font-size:11px;color:#94a3b8;white-space:pre-wrap">${esc((st.log||[]).slice(-60).join('\n'))}</pre>` : '';
+  el.innerHTML = head + rows + log;
+  el.style.display = 'block';
+}
+async function normTick(){
+  clearTimeout(NORM_TIMER);
+  let st = null;
+  try { st = await (await fetch('/api/hg/library/normalize/status')).json(); } catch(e){}
+  if(st && st.ok){
+    for(const it of st.items || []){                 // báo khi 1 mùa vừa xong / lỗi
+      const prev = NORM_SEEN[it.name];
+      if(prev && prev !== it.state){
+        if(it.state === 'done'){ toast(`✅ Chuẩn hóa xong «${it.name}»`); try { loadLib(); } catch(e){} }
+        if(it.state === 'failed') toast(`❌ Không chuẩn hóa được «${it.name}»: ${it.error||''}`);
+      }
+      NORM_SEEN[it.name] = it.state;
+    }
+    normRender(st);
+    const active = st.worker || (st.items||[]).some(x => ['queued','checking','running'].includes(x.state));
+    NORM_TIMER = setTimeout(normTick, active ? 3000 : 30000);
+  } else {
+    NORM_TIMER = setTimeout(normTick, 10000);
+  }
+}
+async function normCancel(){
+  if(!confirm('Huỷ các mùa đang CHỜ chuẩn hóa? (mùa đang chạy vẫn chạy tiếp tới xong)')) return;
+  try { await fetch('/api/hg/library/normalize/cancel', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'}); } catch(e){}
+  normTick();
+}
+
+async function normalizeSeasonVideo(name){
+  if(!name) return;
+  if(!confirm(`Chuẩn hóa video mùa «${name}» về Full HD (1920x1080, mùa dọc → 1080x1920, AAC 48kHz stereo, NVENC; lỗi → libx264)?\n\nChạy nền — tiến độ + log ở khung bên phải. Phim dài có thể mất vài chục phút.`)) return;
+  try {
+    const res = await (await fetch('/api/hg/library/normalize', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name})
+    })).json();
+    if(res.ok){
+      toast((res.already||[]).length ? `«${name}» đã trong hàng chuẩn hóa — xem khung bên phải` : `⏳ Đã xếp chuẩn hóa «${name}» (${res.file || ''})`);
+      NORM_HIDDEN = false; normTick();
+    } else {
+      toast(`❌ Lỗi chuẩn hóa: ${res.error || 'Thất bại'}`);
+    }
+  } catch(e){ toast(`Lỗi: ${e}`); }
+}
+
+async function normalizeChecked(){
+  const picks = [...document.querySelectorAll('.pick:checked')];
+  const ready = picks.filter(x => x.dataset.state === 'ready').map(x => x.value);
+  const needMerge = picks.filter(x => x.dataset.state === 'need_merge').map(x => x.value);
+  if(!ready.length){
+    toast(needMerge.length ? `${needMerge.length} mùa đã tick còn chờ ghép — ghép trước rồi mới chuẩn hóa` : 'Chưa tick mùa nào (tick «Chọn bộ» hoặc từng mùa)');
+    return;
+  }
+  if(!confirm(`Chuẩn hóa ${ready.length} mùa đã tick?\n\n• Mùa đã chuẩn hóa / gộp mới đã kiểm → tự bỏ qua\n• Còn lại → mã hoá lại (1 mùa một lúc, chạy nền)`
+      + (needMerge.length ? `\n\nBỏ ${needMerge.length} mùa chưa ghép.` : ''))) return;
+  try {
+    const res = await (await fetch('/api/hg/library/normalize/batch', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({names: ready})
+    })).json();
+    if(res.ok){
+      toast(`⏳ Xếp ${res.added.length} mùa vào hàng chuẩn hóa` + ((res.already||[]).length ? ` (${res.already.length} mùa đã trong hàng)` : ''));
+      NORM_HIDDEN = false; normTick();
+    } else toast(`❌ ${res.error || 'Lỗi'}`);
+  } catch(e){ toast(`Lỗi: ${e}`); }
+}
+
+normTick();   // mở lại trang khi đang chạy → khung tự hiện
+
+function normalizeCurrentTestSeason(){
+  if(!CURRENT_TEST_LIB || !CURRENT_TEST_LIB.name) return;
+  normalizeSeasonVideo(CURRENT_TEST_LIB.name);
 }
 
 async function doCutSample(){
@@ -3164,18 +3294,76 @@ function closeMetaModal(){
   $('meta-modal').classList.add('hide');
 }
 
+let LAST_META_RES = null;
+
 function selectHookOpt(txt){
   txt = (txt || '').trim();
-  const parts = txt.split(/\s+/).filter(Boolean);
-  if(parts.length <= 2){
-    $('t-hook-1').value = txt.toUpperCase();
-    $('t-hook-2').value = '';
+  // Concept hay dùng «A / B» — tách 2 dòng theo / | ·
+  const slash = txt.split(/\s*[\/|·•]\s*/).map(s=>s.trim()).filter(Boolean);
+  if(slash.length >= 2){
+    $('t-hook-1').value = slash[0].toUpperCase();
+    $('t-hook-2').value = slash.slice(1).join(' ').toUpperCase();
   } else {
-    const mid = Math.ceil(parts.length / 2);
-    $('t-hook-1').value = parts.slice(0, mid).join(' ').toUpperCase();
-    $('t-hook-2').value = parts.slice(mid).join(' ').toUpperCase();
+    const parts = txt.split(/\s+/).filter(Boolean);
+    if(parts.length <= 2){
+      $('t-hook-1').value = txt.toUpperCase();
+      $('t-hook-2').value = '';
+    } else {
+      const mid = Math.ceil(parts.length / 2);
+      $('t-hook-1').value = parts.slice(0, mid).join(' ').toUpperCase();
+      $('t-hook-2').value = parts.slice(mid).join(' ').toUpperCase();
+    }
   }
+  syncAiPromptFromForm();
   toast('Đã chọn hook: ' + txt);
+}
+
+function applyConceptHooks(){
+  const typo = (LAST_META_RES && LAST_META_RES.typography_direction) || {};
+  const exact = typo.text_exact || (LAST_META_RES && LAST_META_RES.hook_texts) || [];
+  if(!exact.length){
+    toast('Chưa có chữ concept — bấm Sinh Meta trước, hoặc chọn pill gợi ý');
+    return;
+  }
+  $('t-hook-1').value = String(exact[0]||'').toUpperCase();
+  $('t-hook-2').value = String(exact[1]||'').toUpperCase();
+  // Palette concept → style gần đúng (không còn chỉ fire_gold)
+  const concept = String(((LAST_META_RES.thumbnail_concept||{}).selected_concept)||'') + ' ' + String(typo.color||'');
+  const c = concept.toLowerCase();
+  if(/emerald|toxic|ngọc|thép|steel|cyan|neon|bio/.test(c) && $('t-style')) $('t-style').value = 'neon_cyan';
+  else if(/tím|purple|magic|huyền/.test(c) && $('t-style')) $('t-style').value = 'purple_magic';
+  else if(/bạc|silver|white|platinum|obsidian/.test(c) && $('t-style')) $('t-style').value = 'clean_white';
+  syncAiPromptFromForm();
+  toast('Đã áp chữ concept vào form Thumbnail');
+}
+
+function syncAiPromptFromForm(){
+  if(!$('m-ai-prompt')) return;
+  const raw = $('m-ai-prompt').value || '';
+  if(!raw || !(raw.includes('TYPOGRAPHY') || raw.includes('REFERENCE IMAGE') || raw.includes('Main 3D Headline') || raw.includes('Main headline'))){
+    return;
+  }
+  const hook1 = ($('t-hook-1')||{}).value||'';
+  const hook2 = ($('t-hook-2')||{}).value||'';
+  const badge = (($('t-badge')||{}).value||'NEW').trim() || 'NEW';
+  const sub = (($('t-sub')||{}).value||'').trim();
+  let p = raw;
+  // Cập nhật badge / 2 dòng headline / subtitle trong prompt sẵn có (giữ palette/concept)
+  p = p.replace(/Top badge ribbon EXACTLY:\s*"[^"]*"/i, 'Top badge ribbon EXACTLY: "'+badge+'"');
+  if(hook1){
+    p = p.replace(/(Main 3D Headline EXACTLY two lines[^\n]*\n\s*1\)\s*")[^"]*(")/i, '$1'+hook1.toUpperCase()+'$2');
+    p = p.replace(/(Main headline EXACTLY the two hook_texts lines[^\n]*\n[^\n]*\n\s*-?\s*")[^"]*(")/i, (m)=>{
+      return m; // fallback below
+    });
+  }
+  if(hook2){
+    p = p.replace(/(2\)\s*")[^"]*(")/i, '$1'+hook2.toUpperCase()+'$2');
+  }
+  if(sub){
+    p = p.replace(/Bottom subtitle banner EXACTLY:\s*"[^"]*"/i, 'Bottom subtitle banner EXACTLY: "'+sub.toUpperCase()+'"');
+    p = p.replace(/Bottom ornate[^\n]*:\s*"[^"]*"/i, (m)=>m.replace(/"[^"]*"\s*$/, '"'+sub+'"'));
+  }
+  $('m-ai-prompt').value = p;
 }
 
 async function doFetchBaikeInfo(){
@@ -3212,13 +3400,74 @@ async function doFetchBaikeInfo(){
   }
 }
 
+function metaApiUrl(path){
+  // path: '/meta/generate' hoặc '/api/meta/generate-title'
+  const p = String(location.port || '');
+  const rel = path.startsWith('/api/') ? path : ('/api' + path);
+  if(p === '8801'){
+    // generate-title/meta trên cả 8801 (routes_hg) và 8802 — ưu tiên cùng host
+    return path;
+  }
+  return path;
+}
+
+async function doGenerateTitlesOnly(){
+  if(!CURRENT_META_JOB && !($('m-title-vi')||{}).value){ toast('Chưa chọn phim / thiếu tên'); return; }
+  const btn = $('btn-gen-title');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Title…'; }
+  toast('Đang sinh 5 tiêu đề YouTube (không đụng meta/thumb)…');
+  try{
+    const body = {
+      job_id: CURRENT_META_JOB ? CURRENT_META_JOB.jobId : '',
+      series_name: ($('m-title-vi')||{}).value.trim(),
+      title_zh: ($('m-title-zh')||{}).value.trim(),
+      info_text: ($('m-info')||{}).value.trim(),
+      summary: ($('m-info')||{}).value.trim(),
+      tone: ($('m-tone')||{}).value || '',
+      count: 5,
+      season: 1
+    };
+    let r = await fetch(metaApiUrl('/meta/generate-title'), {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(r.status === 404){
+      r = await fetch('http://127.0.0.1:8802/api/meta/generate-title', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+      });
+    }
+    const res = await r.json();
+    if(!r.ok || !res.ok){
+      toast('Lỗi sinh tiêu đề: ' + (res.error || res.detail || ('HTTP '+r.status)));
+      return;
+    }
+    const titles = res.titles || [];
+    if(titles.length){
+      $('m-titles-list').innerHTML = titles.map((t, idx) => `
+        <div class="title-opt" onclick="navigator.clipboard.writeText(${jq(t)});toast('Đã copy tiêu đề!');">
+          <span><b>${idx+1}.</b> ${esc(t)}</span>
+          <button class="b sm" style="flex:none">Copy</button>
+        </div>
+      `).join('');
+      toast('Đã sinh ' + titles.length + ' tiêu đề');
+    } else {
+      toast('AI không trả titles');
+    }
+  }catch(e){
+    toast('Lỗi: ' + e);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '🔤 Sinh tiêu đề'; }
+  }
+}
+
 async function doGenerateMeta(){
   const btn = $('btn-gen-meta');
   btn.disabled = true;
   btn.textContent = '⏳ Đang sinh…';
   toast('Đang gọi AI sinh Title, Mô tả, Tags & Hook text…');
   try{
-    const res = await (await fetch('/meta/generate', {
+    const res = await (await fetch(metaApiUrl('/meta/generate'), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -3226,10 +3475,12 @@ async function doGenerateMeta(){
         title_zh: $('m-title-zh').value.trim(),
         info_text: $('m-info').value.trim(),
         prompt_guide: $('m-prompt').value.trim(),
-        tone: $('m-tone').value
+        tone: $('m-tone').value,
+        job_id: CURRENT_META_JOB ? CURRENT_META_JOB.jobId : ''
       })
     })).json();
     if(res.ok){
+      LAST_META_RES = res;
       toast('Đã sinh Metadata chuẩn Master SEO & Thumbnail!');
       if(Array.isArray(res.titles)){
         $('m-titles-list').innerHTML = res.titles.map((t, idx) => `
@@ -3312,8 +3563,18 @@ async function doGenerateMeta(){
 
       if(res.badge_text) $('t-badge').value = res.badge_text;
       if(res.sub_text) $('t-sub').value = res.sub_text;
+      // Ưu tiên chữ concept (text_exact) — không bị khoá tên series
+      const exact = (res.typography_direction && res.typography_direction.text_exact) || res.hook_texts || [];
+      if(exact[0]) $('t-hook-1').value = String(exact[0]).toUpperCase();
+      if(exact[1]) $('t-hook-2').value = String(exact[1]).toUpperCase();
+      const concept = String(((res.thumbnail_concept||{}).selected_concept)||'') + ' ' + String(((res.typography_direction||{}).color)||'');
+      const cl = concept.toLowerCase();
+      if(/emerald|toxic|ngọc|thép|steel|cyan|neon|bio/.test(cl) && $('t-style')) $('t-style').value = 'neon_cyan';
+      else if(/tím|purple|magic|huyền/.test(cl) && $('t-style')) $('t-style').value = 'purple_magic';
+      else if(/bạc|silver|white|platinum|obsidian/.test(cl) && $('t-style')) $('t-style').value = 'clean_white';
       const imgPrompt = res.master_image_prompt || res.ai_image_prompt || '';
       if(imgPrompt) $('m-ai-prompt').value = imgPrompt;
+      syncAiPromptFromForm();
       if(res.description) $('m-desc').value = res.description;
       if(Array.isArray(res.tags)) $('m-tags').value = res.tags.join(', ');
       else if(res.tags) $('m-tags').value = res.tags;
@@ -4022,6 +4283,8 @@ async function loadSettings(){
     if($('cfg-llm-key')) $('cfg-llm-key').value = c.LLM_API_KEY || '';
     if($('cfg-llm-model')) $('cfg-llm-model').value = c.TRANSLATE_MODEL || c.LLM_MODEL || '';
     if($('cfg-agent-model')) $('cfg-agent-model').value = c.AGENT_MODEL || '';
+    if($('cfg-deepseek-key')) $('cfg-deepseek-key').value = c.DEEPSEEK_API_KEY || '';
+    if($('cfg-deepseek-concurrency')) $('cfg-deepseek-concurrency').value = c.DEEPSEEK_CONCURRENCY || '32';
 
     // Gợi ý model dropdown
     const sel = $('cfg-llm-avail-sel');
@@ -4060,6 +4323,8 @@ async function saveSettings(){
     LLM_MODEL: ($('cfg-llm-model')||{value:''}).value.trim(),
     TRANSLATE_MODEL: ($('cfg-llm-model')||{value:''}).value.trim(),
     AGENT_MODEL: ($('cfg-agent-model')||{value:''}).value.trim(),
+    DEEPSEEK_API_KEY: ($('cfg-deepseek-key')||{value:''}).value.trim(),
+    DEEPSEEK_CONCURRENCY: ($('cfg-deepseek-concurrency')||{value:''}).value.trim(),
     AGENT_TELEGRAM: !!($('cfg-tele-active') && $('cfg-tele-active').checked),
     TELEGRAM_BOT_TOKEN: ($('cfg-tele-token')||{value:''}).value.trim(),
     TELEGRAM_ALLOWED_USERS: ($('cfg-tele-users')||{value:''}).value.trim()
@@ -4258,13 +4523,15 @@ function buildIntegratedMasterPrompt(){
   const info = $('m-info') ? $('m-info').value.trim() : '';
   const hook1 = $('t-hook-1') ? $('t-hook-1').value.trim() : '';
   const hook2 = $('t-hook-2') ? $('t-hook-2').value.trim() : '';
-  const badge = ($('t-badge') ? $('t-badge').value.trim() : '') || 'TRỌN BỘ THUYẾT MINH';
+  const badge = ($('t-badge') ? $('t-badge').value.trim() : '') || 'NEW';
   const sub = ($('t-sub') ? $('t-sub').value.trim() : '') || titleVi;
   const rawAiPrompt = $('m-ai-prompt') ? $('m-ai-prompt').value.trim() : '';
   const hookText = [hook1, hook2].filter(Boolean).join(' ') || 'NGHỊCH THIÊN ĐỒ THẦN';
 
-  if(rawAiPrompt && (rawAiPrompt.includes('brush calligraphy') || rawAiPrompt.includes('TYPOGRAPHY') || rawAiPrompt.includes('Left side: Huge dramatic 3D'))){
-    return rawAiPrompt;
+  // Có master prompt concept → cập nhật chữ từ FORM (không bỏ qua sửa tay)
+  if(rawAiPrompt && (rawAiPrompt.includes('brush calligraphy') || rawAiPrompt.includes('TYPOGRAPHY') || rawAiPrompt.includes('REFERENCE IMAGE') || rawAiPrompt.includes('Left side: Huge dramatic 3D'))){
+    syncAiPromptFromForm();
+    return ($('m-ai-prompt').value || rawAiPrompt);
   }
 
   let p = `A breathtaking 16:9 YouTube thumbnail for the Chinese cultivation Donghua series "${titleVi || 'Huyền Thoại Tu Tiên'}".\n`;
@@ -4286,6 +4553,14 @@ function doCopyGptPrompt(){
   toast('🎉 Đã copy Master Prompt! Hãy paste vào ChatGPT để tạo ảnh.');
 }
 
+/** Meta AI image sống trên sidecar :8802; :8801 cũng có sau khi nạp routes_hg.
+ *  Khi mở Films UI trên :8801 mà server chưa restart → fallback gọi thẳng :8802 (CORS OK). */
+function metaAiImageUrl(){
+  const p = String(location.port || '');
+  if(p === '8801') return 'http://127.0.0.1:8802/api/meta/ai-image';
+  return '/api/meta/ai-image';
+}
+
 async function doGenerateAuroraAiThumb(){
   if(!CURRENT_META_JOB){ toast('Chưa chọn phim'); return; }
   const prompt = buildIntegratedMasterPrompt();
@@ -4301,28 +4576,36 @@ async function doGenerateAuroraAiThumb(){
   }
   toast('Đang gọi AI sinh Master Thumbnail 16:9 tích hợp Typography 3D Lửa...');
   try {
-    const aiRes = await (await fetch('/api/meta/ai-image', {
+    const r = await fetch(metaAiImageUrl(), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         prompt: prompt,
         job_id: CURRENT_META_JOB.jobId,
+        poster_name: CURRENT_META_JOB.posterName || '',
         hook_1: $('t-hook-1') ? $('t-hook-1').value.trim() : '',
         hook_2: $('t-hook-2') ? $('t-hook-2').value.trim() : '',
         badge: $('t-badge') ? $('t-badge').value.trim() : '',
         sub: $('t-sub') ? $('t-sub').value.trim() : '',
         style: $('t-style') ? $('t-style').value : 'fire_gold'
       })
-    })).json();
-
-    if(!aiRes.ok || !aiRes.filename){
-      toast('Lỗi sinh ảnh AI: ' + (aiRes.error || 'Thất bại'));
+    });
+    let aiRes = {};
+    try { aiRes = await r.json(); } catch(_){ aiRes = {}; }
+    if(!r.ok || !aiRes.ok || !aiRes.filename){
+      const detail = aiRes.error || aiRes.detail || ('HTTP ' + r.status);
+      toast('Lỗi sinh ảnh AI: ' + detail);
       return;
     }
-    CURRENT_THUMB_URL = (aiRes.url || ('/api/meta/thumbnail?file=' + encodeURIComponent(aiRes.filename))) + '&_t=' + Date.now();
+    // Ảnh lưu chung data/thumbnails — serve relative trên cùng host UI cũng được
+    let thumbPath = aiRes.url || ('/api/meta/thumbnail?file=' + encodeURIComponent(aiRes.filename));
+    if(thumbPath.indexOf('http') !== 0 && String(location.port||'') === '8801' && thumbPath.indexOf('/meta/') === 0){
+      thumbPath = '/api' + thumbPath; // /meta/thumbnail → /api/meta/thumbnail trên :8801
+    }
+    CURRENT_THUMB_URL = thumbPath + (thumbPath.indexOf('?') >= 0 ? '&' : '?') + '_t=' + Date.now();
     $('thumb-box').innerHTML = `<img src="${CURRENT_THUMB_URL}" alt="Master Thumbnail 16:9">`;
     if($('btn-thumb-dl')){
-      $('btn-thumb-dl').href = aiRes.url || ('/api/meta/thumbnail?file=' + encodeURIComponent(aiRes.filename));
+      $('btn-thumb-dl').href = thumbPath;
       $('btn-thumb-dl').download = `thumb_${CURRENT_META_JOB.jobId}.jpg`;
     }
     $('thumb-actions').classList.remove('hide');

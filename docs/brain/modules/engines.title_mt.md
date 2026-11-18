@@ -2,21 +2,23 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/title_mt.py` · **Lớp:** `translate` · **172 dòng** (151 code) · **6 hàm**, **0 class** · sha1 `7e1e3e0b2f`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/title_mt.py` · **Lớp:** `translate` · **172 dòng** (151 code) · **6 hàm**, **0 class** · sha1 `fc308867de`
 
 > Dịch thô tiêu đề Trung → Việt (Google gtx, không cần API key). Chỉ để duyệt Hongguo cho biết nội dung — không phải bản dịch kênh. Cache theo series_id + theo chuỗi title gốc.
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** —
-- **Được dùng bởi:** [agents.agent_hongguo](./agents.agent_hongguo.md), [tools.lib_check](./tools.lib_check.md)
+- **Được dùng bởi:** [agents.agent_hongguo](./agents.agent_hongguo.md), [agents.agent_tele_cmd](./agents.agent_tele_cmd.md), [http_routes.routes_hg](./http_routes.routes_hg.md), [tools.lib_check](./tools.lib_check.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ```mermaid
 flowchart LR
   engines_title_mt[[engines.title_mt]]
   agents_agent_hongguo[agents.agent_hongguo] --> engines_title_mt
+  agents_agent_tele_cmd[agents.agent_tele_cmd] --> engines_title_mt
+  http_routes_routes_hg[http_routes.routes_hg] --> engines_title_mt
   tools_lib_check[tools.lib_check] --> engines_title_mt
 ```
 

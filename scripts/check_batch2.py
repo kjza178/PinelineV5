@@ -302,8 +302,8 @@ for f in secret_files:
         continue
     check(f"{f}: không còn key", not pat.search(p.read_text(encoding="utf-8")))
 tb = (ROOT / "apps" / "run_tele_cmd.bat").read_text(encoding="utf-8")
-check("apps/run_tele_cmd.bat giữ AGENT_MODEL + fallback openclaw",
-      'set "AGENT_MODEL=' in tb and 'set "AGENT_FALLBACK_MODEL=openclaw"' in tb)
+check("apps/run_tele_cmd.bat giữ AGENT_MODEL, không còn fallback openclaw (bỏ 2026-11-18)",
+      'set "AGENT_MODEL=' in tb and 'AGENT_FALLBACK_MODEL=openclaw' not in tb)
 rv = (ROOT / "apps" / "run_v5.bat").read_text(encoding="utf-8")
 check("apps/run_v5.bat PORT 8805 + PinelineV5_tmp",
       "8805" in rv and "PinelineV5_tmp" in rv)

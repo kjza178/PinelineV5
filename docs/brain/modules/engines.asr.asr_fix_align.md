@@ -2,21 +2,23 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/asr/asr_fix_align.py` · **Lớp:** `asr` · **330 dòng** (288 code) · **7 hàm**, **0 class** · sha1 `5f4fccb0cd`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/asr/asr_fix_align.py` · **Lớp:** `asr` · **335 dòng** (293 code) · **7 hàm**, **0 class** · sha1 `05c3a6acef`
 
 > asr_fix_align.py — Phương án 3: fix monotonic_fix Bước 1 (fallback): chỗ timing bịa/đảo → trả start/end về Nano VAD Bước 2 (forced align): Qwen3-ForcedAligner chỉ trên các đoạn vừa fallback
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.subs](./engines.subs.md), [engines.vram](./engines.vram.md)
-- **Được dùng bởi:** —
+- **Được dùng bởi:** [engines.asr.asr_repair](./engines.asr.asr_repair.md), [engines.asr.hybrid_asr](./engines.asr.hybrid_asr.md)
 - **Test:** ❌ chưa có test import trực tiếp
 - **Thư viện ngoài:** `numpy`, `qwen_asr`, `soundfile`, `torch`
 
 ```mermaid
 flowchart LR
   engines_asr_asr_fix_align[[engines.asr.asr_fix_align]]
+  engines_asr_asr_repair[engines.asr.asr_repair] --> engines_asr_asr_fix_align
+  engines_asr_hybrid_asr[engines.asr.hybrid_asr] --> engines_asr_asr_fix_align
   engines_asr_asr_fix_align --> engines_asr_fun_asr_nano[engines.asr.fun_asr_nano]
   engines_asr_asr_fix_align --> engines_subs[engines.subs]
   engines_asr_asr_fix_align --> engines_vram[engines.vram]
@@ -26,13 +28,13 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_load` | 41 | 2 | `path` |  |
-| `_save_asr` | 45 | 8 | `work, tag, rows` |  |
-| `step1_nano_fallback` | 55 | 48 | `aligned, nano` | Chỗ monotonic_fix (và đảo thời gian): lấy lại timing Nano theo chữ. |
-| `_merge_indices_to_windows` | 105 | 22 | `rows, indices, gap_s` | Gộp index gần nhau thành cửa sổ FA. |
-| `step2_forced_align` | 129 | 104 | `rows, wav, indices, device, pad_s, max_windows` | Forced-align từng cửa sổ chứa các câu nano_fallback. |
-| `run_fix` | 235 | 75 | `work_dir, aligned_name, nano_name, device, step1_only, step2_only, …` |  |
-| `main` | 312 | 15 | `argv` |  |
+| `_load` | 46 | 2 | `path` |  |
+| `_save_asr` | 50 | 8 | `work, tag, rows` |  |
+| `step1_nano_fallback` | 60 | 48 | `aligned, nano` | Chỗ monotonic_fix (và đảo thời gian): lấy lại timing Nano theo chữ. |
+| `_merge_indices_to_windows` | 110 | 22 | `rows, indices, gap_s` | Gộp index gần nhau thành cửa sổ FA. |
+| `step2_forced_align` | 134 | 104 | `rows, wav, indices, device, pad_s, max_windows` | Forced-align từng cửa sổ chứa các câu nano_fallback. |
+| `run_fix` | 240 | 75 | `work_dir, aligned_name, nano_name, device, step1_only, step2_only, …` |  |
+| `main` | 317 | 15 | `argv` |  |
 
 ### Config / env keys (4)
 

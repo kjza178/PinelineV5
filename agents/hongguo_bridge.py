@@ -7,10 +7,6 @@ sẽ đổi resolution giữa chừng. Pineline chuẩn hoá canvas khi phát hi
 """
 from __future__ import annotations
 
-try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
-    from core import machine as _machine
-except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
 import json
 import os
 import re
@@ -1658,7 +1654,7 @@ def library(base: str = DEFAULT_BASE) -> dict:
     try:
         root = Path((_rpc_mod().settings_get() or {}).get("saveFolder") or "") or None
     except Exception:  # noqa: BLE001
-        root = _machine.library_dir() if _machine.library_dir().is_dir() else None
+        root = Path(r"D:\Lib") if Path(r"D:\Lib").is_dir() else None
     items = list((data or {}).get("items") or [])
     for it in items:
         name = it.get("name") or it.get("title") or ""
@@ -2175,12 +2171,23 @@ def merged_has_mixed_res(path: Path, samples: int = 0) -> dict[str, Any]:
     }
 
 
+NORM_MARK = "pineline_norm_v1"      # metadata comment — file đã qua normalize_merged_file (lib_normalize kiểm)
+
+
 def normalize_merged_file(
     path: Path,
     target_wh: tuple[int, int] | None = None,
     on_pct: Callable[[float], None] | None = None,
+    on_progress: Callable[[dict], None] | None = None,
+    auto_orient: bool = False,
 ) -> dict[str, Any]:
-    """Re-encode 1 file (merged) về canvas cố định (scale+pad)."""
+    """Re-encode 1 file (merged) về canvas cố định (scale+pad).
+
+    on_progress(dict) (2026-11-17): {phase, pct, out_sec, dur, speed, fps, n_err, last_err} — phase
+    probe → encode → replace → done; ffmpeg lỗi trả `error_tail` (≤15 dòng cuối) thay vì chỉ rc.
+    2026-11-18: bỏ gói hỏng (-err_detect ignore_err, +discardcorrupt, aresample async — như
+    hg_merge_check.normalize_episode), NVENC lỗi → thử lại libx264, tiếng AAC 48k stereo, gắn
+    metadata comment=NORM_MARK; auto_orient=True: nguồn dọc → canvas dọc (1080x1920)."""
     path = Path(path)
     if not path.is_file():
         return {"ok": False, "error": "missing file"}
@@ -2192,39 +2199,95 @@ def normalize_merged_file(
     if not target_wh:
         target_wh = MERGE_MIXED_CANVAS
     tw, th = int(target_wh[0]), int(target_wh[1])
+
+    def _prog(**kw: Any) -> None:
+        if on_progress:
+            try:
+                on_progress(kw)
+            except Exception:  # noqa: BLE001
+                pass
+
+    _prog(phase="probe", pct=0.0)
+    if auto_orient:
+        wh = _probe_wh(path)
+        if wh and wh[1] > wh[0] and tw > th:
+            tw, th = th, tw
     tw, th = tw - (tw % 2), th - (th % 2)
     dur = _probe_dur(path)
     tmp = path.with_suffix(".norm.partial.mp4")
     final_tmp = path.with_suffix(".norm.tmp.mp4")
-    vargs = _pick_h264_encoder()
-    cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stats",
-        "-i", str(path),
-        "-vf", _scale_vf(tw, th),
-        *vargs, "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
-        "-progress", "pipe:1", "-nostats",
-        str(tmp),
-    ]
-    try:
+    import collections
+    tail: collections.deque = collections.deque(maxlen=15)
+    n_err = 0
+
+    def _encode(vargs: list[str]) -> int:
+        nonlocal n_err
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-err_detect", "ignore_err", "-fflags", "+genpts+discardcorrupt",
+            "-i", str(path),
+            "-map", "0:v:0", "-map", "0:a:0?",
+            "-vf", _scale_vf(tw, th),
+            *vargs, "-pix_fmt", "yuv420p",
+            "-af", "aresample=async=1:first_pts=0",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-metadata", f"comment={NORM_MARK}",
+            "-movflags", "+faststart",
+            "-progress", "pipe:1", "-nostats",
+            str(tmp),
+        ]
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
         )
         assert proc.stdout is not None
+        cur = {"out_sec": 0.0, "speed": "", "fps": ""}
+        _prog(phase="encode", pct=0.0, dur=dur, encoder=vargs[1] if len(vargs) > 1 else "?")
         for line in proc.stdout:
-            if on_pct and dur > 0 and line.startswith("out_time_us="):
-                try:
-                    us = int(line.split("=", 1)[1])
-                    on_pct(min(99.0, us / 1e6 / dur * 100))
-                except ValueError:
-                    pass
-        rc = proc.wait()
+            line = line.rstrip("\r\n")
+            k, sep, v = line.partition("=")
+            if sep and k in ("out_time_us", "out_time_ms", "speed", "fps", "progress", "frame", "bitrate",
+                             "total_size", "out_time", "dup_frames", "drop_frames", "stream_0_0_q"):
+                if k in ("out_time_us", "out_time_ms"):
+                    try:
+                        cur["out_sec"] = int(v) / 1e6
+                    except ValueError:
+                        pass
+                elif k in ("speed", "fps"):
+                    cur[k] = v.strip()
+                elif k == "progress":       # 1 khối -progress xong → báo
+                    pct = min(99.0, cur["out_sec"] / dur * 100) if dur > 0 else 0.0
+                    if on_pct and dur > 0:
+                        on_pct(pct)
+                    _prog(phase="encode", pct=round(pct, 1), out_sec=round(cur["out_sec"], 1), dur=dur,
+                          speed=cur["speed"], fps=cur["fps"], n_err=n_err,
+                          last_err=tail[-1] if tail else "")
+                continue
+            if line.strip():
+                n_err += 1
+                tail.append(line.strip()[:300])
+        return proc.wait()
+
+    encs = [_pick_h264_encoder()]
+    if encs[0][1:2] != ["libx264"]:
+        encs.append(["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"])
+    try:
+        rc, used = -1, encs[0]
+        for i, vargs in enumerate(encs):
+            used = vargs
+            if i:
+                tail.append(f"--- {encs[0][1]} lỗi (rc={rc}) → thử lại libx264 ---")
+                _prog(phase="retry", pct=0.0, last_err=tail[-1])
+            rc = _encode(vargs)
+            if rc == 0 and tmp.exists() and tmp.stat().st_size >= 1000:
+                break
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
         if rc != 0 or not tmp.exists() or tmp.stat().st_size < 1000:
             if tmp.exists():
                 tmp.unlink(missing_ok=True)
-            return {"ok": False, "error": f"ffmpeg rc={rc}"}
+            return {"ok": False, "error": f"ffmpeg rc={rc}", "error_tail": list(tail), "n_err": n_err}
+        _prog(phase="replace", pct=99.5, n_err=n_err)
         tmp.replace(final_tmp)
         bak = path.with_suffix(path.suffix + ".pre_norm.bak")
         if bak.exists():
@@ -2237,8 +2300,10 @@ def normalize_merged_file(
             pass
         if on_pct:
             on_pct(100.0)
+        _prog(phase="done", pct=100.0, n_err=n_err)
         return {"ok": True, "path": str(path), "target": f"{tw}x{th}",
-                "encoder": vargs[1] if len(vargs) > 1 else "?"}
+                "encoder": used[1] if len(used) > 1 else "?", "n_err": n_err,
+                "error_tail": list(tail)[-5:]}
     except Exception as e:  # noqa: BLE001
         for p in (tmp, final_tmp):
             try:
@@ -2246,7 +2311,7 @@ def normalize_merged_file(
                     p.unlink()
             except OSError:
                 pass
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "error_tail": list(tail), "n_err": n_err}
 
 
 def merge_series_normalized(

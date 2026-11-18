@@ -2,21 +2,24 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/subs.py` · **Lớp:** `render` · **1106 dòng** (970 code) · **34 hàm**, **0 class** · sha1 `92e5f6bd18`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/subs.py` · **Lớp:** `render` · **1106 dòng** (970 code) · **34 hàm**, **0 class** · sha1 `de0d0c5d67`
 
 > subs.py — Sinh phụ đề .srt từ danh sách câu có timestamp. Dùng chung: asr.json (tiếng Trung, key 'text') và script.json (tiếng Việt, key 'vi') đều là list [{start, end, text/vi, ...}] -> đổ ra .srt chuẩn để import vào
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [core.config](./core.config.md)
-- **Được dùng bởi:** [agents.agent_pronoun_pass](./agents.agent_pronoun_pass.md), [engines.asr.asr](./engines.asr.asr.md), [engines.asr.asr_align_nano_para](./engines.asr.asr_align_nano_para.md), [engines.asr.asr_fix_align](./engines.asr.asr_fix_align.md), [engines.asr.asr_repair](./engines.asr.asr_repair.md), [engines.asr.asr_spam](./engines.asr.asr_spam.md), [engines.asr.firered_asr](./engines.asr.firered_asr.md), [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.hybrid_asr](./engines.asr.hybrid_asr.md), [engines.asr.nano_fa_asr](./engines.asr.nano_fa_asr.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [engines.asr.sensevoice_asr](./engines.asr.sensevoice_asr.md), [engines.render](./engines.render.md), [engines.script_lint](./engines.script_lint.md), [render](./render.md)
+- **Được dùng bởi:** [agents.agent_hang_fix](./agents.agent_hang_fix.md), [agents.agent_pronoun_pass](./agents.agent_pronoun_pass.md), [agents.agent_qa_ask](./agents.agent_qa_ask.md), [agents.agent_qa_fix](./agents.agent_qa_fix.md), [engines.asr.asr](./engines.asr.asr.md), [engines.asr.asr_align_nano_para](./engines.asr.asr_align_nano_para.md), [engines.asr.asr_fix_align](./engines.asr.asr_fix_align.md), [engines.asr.asr_repair](./engines.asr.asr_repair.md), [engines.asr.asr_spam](./engines.asr.asr_spam.md), [engines.asr.firered_asr](./engines.asr.firered_asr.md), [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.hybrid_asr](./engines.asr.hybrid_asr.md), [engines.asr.nano_fa_asr](./engines.asr.nano_fa_asr.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [engines.asr.sensevoice_asr](./engines.asr.sensevoice_asr.md), [engines.render](./engines.render.md), [engines.script_lint](./engines.script_lint.md), [engines.translate](./engines.translate.md), [engines.translate_simple.pipeline](./engines.translate_simple.pipeline.md), [server](./server.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ```mermaid
 flowchart LR
   engines_subs[[engines.subs]]
+  agents_agent_hang_fix[agents.agent_hang_fix] --> engines_subs
   agents_agent_pronoun_pass[agents.agent_pronoun_pass] --> engines_subs
+  agents_agent_qa_ask[agents.agent_qa_ask] --> engines_subs
+  agents_agent_qa_fix[agents.agent_qa_fix] --> engines_subs
   engines_asr_asr[engines.asr.asr] --> engines_subs
   engines_asr_asr_align_nano_para[engines.asr.asr_align_nano_para] --> engines_subs
   engines_asr_asr_fix_align[engines.asr.asr_fix_align] --> engines_subs
@@ -28,9 +31,6 @@ flowchart LR
   engines_asr_nano_fa_asr[engines.asr.nano_fa_asr] --> engines_subs
   engines_asr_paraformer_zh[engines.asr.paraformer_zh] --> engines_subs
   engines_asr_sensevoice_asr[engines.asr.sensevoice_asr] --> engines_subs
-  engines_render[engines.render] --> engines_subs
-  engines_script_lint[engines.script_lint] --> engines_subs
-  render[render] --> engines_subs
   engines_subs --> core_config[core.config]
 ```
 

@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `scripts/check_batch4.py` · **Lớp:** `ops` · **457 dòng** (373 code) · **6 hàm**, **2 class** · sha1 `2537da8e4b`
 
 > Kiểm thử đợt 4 (tranh chấp ghi manifest, claim endpoint, single-instance, worker khởi động). Chạy trên thư mục tạm; import server như pytest (không nạp hàng đợi thật).

@@ -2,8 +2,8 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/asr/nano_fa_asr.py` · **Lớp:** `asr` · **337 dòng** (271 code) · **5 hàm**, **0 class** · sha1 `f481fc5594`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/asr/nano_fa_asr.py` · **Lớp:** `asr` · **342 dòng** (276 code) · **5 hàm**, **0 class** · sha1 `029cf53826`
 
 > nano_fa_asr.py — SOTA ASR: Fun-ASR-Nano (Chữ chuẩn nhất) + Direct Qwen3-ForcedAligner (Mốc chuẩn từng chữ). Kiến trúc sạch, chuẩn công nghiệp: 1) Fun-ASR-Nano nhận diện văn bản (hiểu ngữ cảnh, ít sai chữ, chống lặp qua V
 
@@ -29,13 +29,13 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_merge_all_to_windows` | 39 | 34 | `rows, gap_s, max_win_s` | Gom các câu thoại gần nhau thành cửa sổ nhỏ (<=24s) để Forced Aligner xử lý tối ưu. |
-| `align_nano_with_fa` | 75 | 121 ⚠️ | `rows, wav, device, pad_s, on_progress` | Căn mốc trực tiếp từng câu của Nano bằng Qwen3ForcedAligner. |
-| `run_nano_fa` | 198 | 114 | `work_dir, device, force, hub_nano, sidecar` |  |
-| `_torch_has_cuda` | 314 | 6 | `` |  |
-| `main` | 322 | 11 | `argv` |  |
+| `_merge_all_to_windows` | 44 | 34 | `rows, gap_s, max_win_s` | Gom các câu thoại gần nhau thành cửa sổ nhỏ (<=24s) để Forced Aligner xử lý tối ưu. |
+| `align_nano_with_fa` | 80 | 121 ⚠️ | `rows, wav, device, pad_s, on_progress` | Căn mốc trực tiếp từng câu của Nano bằng Qwen3ForcedAligner. |
+| `run_nano_fa` | 203 | 114 | `work_dir, device, force, hub_nano, sidecar` |  |
+| `_torch_has_cuda` | 319 | 6 | `` |  |
+| `main` | 327 | 11 | `argv` |  |
 
-**Hàm dài ≥120 dòng:** `align_nano_with_fa` (121, L75)
+**Hàm dài ≥120 dòng:** `align_nano_with_fa` (121, L80)
 
 ### Config / env keys (4)
 

@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `engines/vram.py` · **Lớp:** `ops` · **89 dòng** (76 code) · **4 hàm**, **0 class** · sha1 `0c23090f49`
 
 > vram.py — Nhả VRAM trước MỖI bước dùng GPU. Ollama (Gemma ctx 128k), FunASR, Demucs, TTS, NVENC tranh nhau 12GB. Model Ollama sống dai sau bước dịch; torch cache sống dai trong cùng process.
@@ -10,7 +10,7 @@
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** —
-- **Được dùng bởi:** [engines.asr.asr](./engines.asr.asr.md), [engines.asr.asr_fix_align](./engines.asr.asr_fix_align.md), [engines.asr.asr_repair](./engines.asr.asr_repair.md), [engines.asr.firered_asr](./engines.asr.firered_asr.md), [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.hybrid_asr](./engines.asr.hybrid_asr.md), [engines.asr.nano_fa_asr](./engines.asr.nano_fa_asr.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [engines.asr.sensevoice_asr](./engines.asr.sensevoice_asr.md), [engines.clone_tts](./engines.clone_tts.md), [engines.llm](./engines.llm.md), [engines.ocr](./engines.ocr.md), [engines.render](./engines.render.md), [engines.separate](./engines.separate.md), [render](./render.md)
+- **Được dùng bởi:** [engines.asr.asr](./engines.asr.asr.md), [engines.asr.asr_fix_align](./engines.asr.asr_fix_align.md), [engines.asr.asr_repair](./engines.asr.asr_repair.md), [engines.asr.firered_asr](./engines.asr.firered_asr.md), [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.hybrid_asr](./engines.asr.hybrid_asr.md), [engines.asr.nano_fa_asr](./engines.asr.nano_fa_asr.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [engines.asr.sensevoice_asr](./engines.asr.sensevoice_asr.md), [engines.clone_tts](./engines.clone_tts.md), [engines.llm](./engines.llm.md), [engines.ocr](./engines.ocr.md), [engines.render](./engines.render.md), [engines.separate](./engines.separate.md), [engines.translate](./engines.translate.md), [server](./server.md)
 - **Test:** ❌ chưa có test import trực tiếp
 - **Thư viện ngoài:** `torch`
 
@@ -31,7 +31,7 @@ flowchart LR
   engines_ocr[engines.ocr] --> engines_vram
   engines_render[engines.render] --> engines_vram
   engines_separate[engines.separate] --> engines_vram
-  render[render] --> engines_vram
+  engines_translate[engines.translate] --> engines_vram
 ```
 
 ### Hàm & class top-level

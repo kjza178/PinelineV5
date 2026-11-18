@@ -4,8 +4,29 @@ Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần resta
 
 
 
+## 2026-11-18 — Port từ V2: DeepSeek flash + HOLD QA hỏi Telegram + chuẩn hóa nhiều mùa
+
+- **Agent chat: thử lại khi lỗi tạm, không fallback** (user 19:43): `agent_core._chat_turn` thử lại CÙNG model `AGENT_RETRIES` lần (mặc định 2, chờ `AGENT_RETRY_WAIT`=3 s × lượt) khi lỗi tạm (HTTP 429/5xx, Aurora «Error in message stream», timeout, mất kết nối); 4xx/lỗi khác → báo lỗi ngay. Test `tests/test_agent_retry.py`. V2/V4/V5. **Cần restart :8801/:8802.**
+- **Bỏ fallback `openclaw` của Agent chat** (user 19:00): `AGENT_FALLBACK_MODEL=openclaw` → `set "AGENT_FALLBACK_MODEL="` trong run_v2.bat / run_tele_cmd.bat (V4: run_tele_cmd.bat; V5: apps/run_tele_cmd.bat); `scripts/check_batch2.py` kiểm ngược lại. Lý do: combo openclaw nằm trên 9router LAN 192.168.31.247 (đã bỏ 17/11) và `agent_core._chat_turn` gửi model fallback tới CÙNG base Aurora :3377 → luôn lỗi, chỉ thêm 1 lần thử vô ích. **Cần restart :8801/:8802 (mở lại cửa sổ .bat)** để hết env cũ.
+- **Soát bổ sung chia lô theo số câu** (user 18:54): `translate_simple/pipeline._review_missing` dùng `cfg.missing_batch_for(n)` — còn ≤ `SIMPLE_MISSING_SMALL_MAX` (5) câu → lô `SIMPLE_MISSING_BATCH` (4) như cũ (câu rác/khó); nhiều hơn → lô thường `SIMPLE_BATCH` (30). c7367a659c46_p01: 81 câu OCR lượt B đổi chữ trước đi 21 lô × 4 (mỗi lô kèm cả plan) → nay 3 lô. Test `tests/test_missing_batch.py`. V2/V4/V5. **Cần restart :8801.**
+- **Job mới bị khoá nhầm luồng dịch cũ (legacy)** (c7367a659c46_p01 chạy `run_translate` + upload SRT lên Aurora «pronoun-analyze»): server `mark_running(translate)` (started_at/status=running) TRƯỚC khi hỏi luồng → `translate_simple/cfg._infer_job_pipeline` coi là dấu vết legacy rồi đóng dấu luôn. Sửa: chỉ tính legacy khi `script.json` đã có câu VI hoặc stage translate done/error/failed (`_script_has_vi`). Test `tests/test_pipeline_infer.py` (3). V2/V4/V5. **Cần restart :8801** (V4/V5: server của bản đó).
+- `scripts/sync_from_v2.py --apply` (backup `.backup_sync_20261117_1901/`): 31 module cập nhật + mới `agent_qa_ask`, `lib_normalize`. Nội dung (chi tiết: CHANGELOG V2 17–18/11):
+  - DeepSeek: tắt thinking mặc định (`DEEPSEEK_THINKING`), `LLMEmptyResponse` (200 + content rỗng không còn bị coi là 5xx / lặp 16 lần), plan A7 hết max_tokens → ×2 (tay: `translate_simple/stage_draft.py`).
+  - Brain: bỏ quét QA job chưa dịch xong; HOLD QA hỏi người qua Telegram (chi tiết + đề xuất + nút ✅⏭▶️ + reply câu VI, `?` xem ngữ cảnh, `/qa <job>`, tool agent `pineline_qa_flags`), quá `QA_HOLD_MAX_MIN`=10' tự xử lý / gác job.
+  - Films UI chuẩn hóa: 📐 từng mùa + «Chuẩn hóa đã tick» (bỏ qua mùa đã chuẩn), chạy + log trong sidecar; `normalize_merged_file` chịu gói hỏng, NVENC lỗi → libx264, dọc 1080x1920.
+- `films_ui.html` chép từ V2 (cả root + static/).
+- `pineline.config.json` theo V2: `PLAN_MODEL`/`REVIEW_MODEL`/`LLM_MODEL` = `deepseek/deepseek-flash`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_KEY`, `MT_ZH_VI=0`, `MT_ZH_VI_ONLY=0`, `SIMPLE_PAIR_RULES/PAIR_FILL/ZH_SOURCE/LEARN_INFERRED=1`. Giá trị cũ: LLM_MODEL=ollama/gemma4:31b-cloud, PLAN_MODEL=chatgpt/gpt-5-6-mini, REVIEW_MODEL=chatgpt/gpt-6, MT_ZH_VI=1, MT_ZH_VI_ONLY=1, SIMPLE_* chưa có.
+- Test mới: `test_brain_qa_ask`, `test_lib_normalize`, `test_deepseek_empty_and_brain_idle`; `scripts/test_deepseek_plan.py`. tree_audit ERROR=0.
+- **Cần restart server + sidecar của PinelineV5.**
+
 ## 2026-11-17 — Port từ V2: xoá Hongguo classic + gộp tập có kiểm tra
 
+- **Cờ running giả khi HOLD** (ff8e66b475a7 «treo» 40', CPU/GPU đứng yên): hàng đợi `mark_running` bước kế (mux) trước khi chạy, pipeline dừng ở HOLD QA gate → mux «running» không có file nào; Brain tưởng post_tts nên chỉ «chờ mux», heal bị chặn vì queue.current.
+  - `server._unmark_running_on_hold`: HOLD sau dịch / QA gate / hàng đợi trả «held» → tts/mux đang `running` về `pending` (Manifest.update).
+  - Brain `_ghost_running`: job HOLD (qa_blocked / held_at qa_brain|qa_gate|after_translate) mà tts/mux `running` không dấu hiệu sống trong `GHOST_RUN_MIN` (10') (updated_at/started_at, partial/dub/mixed/_hstrack) → không phải post_tts; tts xong + mux không chạy → phase `held_post_tts` (quét QA, không sửa script) → CLEAR khi high=0 / HOLD quá giờ. `_reset_ghost_running` đưa stage giả về pending.
+  - `_qa_hold_timeout` tính cả held_at=qa_gate.
+  - `routes_agent._agent_resume`: job PARK (queue.current, không claim) → gỡ HOLD, hàng đợi tự chạy lại (trước trả «đang chạy rồi»).
+  - Test: 5 test mới trong `tests/test_brain_qa_hold_timeout.py`.
 - **Brain tự xử lý + tự thử lại** (yêu cầu: brain phải xử lý được, fail thì tự retry):
   - `agent_qa_fix.py` (mới): cờ QA **high khác hang** (name_echo, calque, vi_pattern, empty_vi, nonsense_shape…) → LLM (`QA_FIX_MODEL` → HANG_FIX_MODEL → PRONOUN_MODEL) xét từng câu trong cửa sổ ZH/VI: báo sai → `row.qa_ack=[kind]` (scan_script bỏ qua), lỗi thật → ghi VI mới (giữ `vi_before_qa_fix`). Tối đa `QA_FIX_MAX_TRIES`=2 lượt/câu; LLM lỗi không tính lượt. Audit `qa_fix_trace.json`. Gọi trong `agent_quality.scan_and_heal_job` (cả trước TTS lẫn brain tick). Tắt: `BRAIN_QA_FIX=0`.
   - `agent_retry.py` (mới): stage **failed** → đặt lại pending (GIỮ artifact: clip TTS, script…; chỉ xoá output.partial.mp4) + xếp lại hàng đợi (hook `resume`). Backoff `RETRY_BACKOFF_MIN`=5,15,45 phút, tối đa `RETRY_MAX`=3 lần/(job, stage), quá → Telegram «cần người xem». Lỗi notify_only (thiếu giọng, đầy đĩa, source hỏng, user dừng) → chỉ báo 1 lần. Bỏ qua job đang chạy / trong hàng đợi / `.stop` / đang HOLD. Chạy MỌI tick kể cả khi hàng đợi bận (trước: L1 heal bị bỏ 100% tick vì «tick busy»). Tắt: `AGENT_RETRY=0`.

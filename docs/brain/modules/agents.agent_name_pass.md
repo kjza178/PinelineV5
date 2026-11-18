@@ -2,21 +2,22 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `agents/agent_name_pass.py` · **Lớp:** `agent` · **134 dòng** (118 code) · **5 hàm**, **0 class** · sha1 `df1a1bd11f`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `agents/agent_name_pass.py` · **Lớp:** `agent` · **138 dòng** (122 code) · **5 hàm**, **0 class** · sha1 `a5b3436a9c`
 
 > Rà TÊN NHÂN VẬT trong bản dịch theo bảng nhân vật (glossary.json). 1. Quét: câu nào zh có tên nhân vật (苏林…) mà vi không có tên Việt đã chốt (Tô Lâm) → nghi sai tên. 2. Gửi các câu nghi ngờ cho LLM sửa, CHỈ đổi tên riêng
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [core.config](./core.config.md), [core.manifest](./core.manifest.md), [engines.llm](./engines.llm.md), [engines.translate](./engines.translate.md)
-- **Được dùng bởi:** [engines.script_lint](./engines.script_lint.md)
-- **Test:** ❌ chưa có test import trực tiếp
+- **Được dùng bởi:** [engines.script_lint](./engines.script_lint.md), [server](./server.md)
+- **Test:** `tests/test_translate_b1.py`, `tests/test_translate_simple.py`
 
 ```mermaid
 flowchart LR
   agents_agent_name_pass[[agents.agent_name_pass]]
   engines_script_lint[engines.script_lint] --> agents_agent_name_pass
+  server[server] --> agents_agent_name_pass
   agents_agent_name_pass --> core_config[core.config]
   agents_agent_name_pass --> core_manifest[core.manifest]
   agents_agent_name_pass --> engines_llm[engines.llm]
@@ -29,9 +30,9 @@ flowchart LR
 |---|---:|---:|---|---|
 | `_fold` | 20 | 3 | `s` |  |
 | `_names` | 25 | 21 | `plan` | Chỉ characters (+ terms type=lock). Terms thường = mềm, không ép name-pass. |
-| `find_issues` | 48 | 13 | `rows, plan` |  |
-| `_fix_batch` | 63 | 21 | `chunk, plan_block, model` |  |
-| `run_name_pass` | 86 | 49 | `work_dir, model` |  |
+| `find_issues` | 48 | 15 | `rows, plan` |  |
+| `_fix_batch` | 65 | 21 | `chunk, plan_block, model` |  |
+| `run_name_pass` | 88 | 51 | `work_dir, model` |  |
 
 **File/artifact nhắc tới:** `glossary.json`, `script.json`
 

@@ -2,15 +2,15 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `agents/agent_hongguo.py` · **Lớp:** `agent` · **1570 dòng** (1381 code) · **36 hàm**, **0 class** · sha1 `56bfcbd3dc`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `agents/agent_hongguo.py` · **Lớp:** `agent` · **1570 dòng** (1381 code) · **36 hàm**, **0 class** · sha1 `dedab90ad7`
 
 > agent_hongguo.py — Tích hợp bộ tool Hongguo Downloader & Auto-chain cho Pineline AI Agent. Hỗ trợ 4 nhóm chức năng: 1. Cơ bản: hg_search, hg_download, hg_status, hg_library
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [agents.hongguo_bridge](./agents.hongguo_bridge.md), [core.batch_config](./core.batch_config.md), [core.config](./core.config.md), [engines.clone_tts](./engines.clone_tts.md), [engines.title_mt](./engines.title_mt.md)
-- **Được dùng bởi:** [agents.agent_core](./agents.agent_core.md), [scripts.check_batch5](./scripts.check_batch5.md)
+- **Được dùng bởi:** [agents.agent_core](./agents.agent_core.md), [agents.agent_tele_cmd](./agents.agent_tele_cmd.md), [scripts.check_batch5](./scripts.check_batch5.md)
 - **Được nhắc tên file `.py` (subprocess/script) bởi:** [restart_server](./restart_server.md), [scripts.check_batch1](./scripts.check_batch1.md)
 - **Test:** ❌ chưa có test import trực tiếp
 - **Thư viện ngoài:** `requests`
@@ -19,6 +19,7 @@
 flowchart LR
   agents_agent_hongguo[[agents.agent_hongguo]]
   agents_agent_core[agents.agent_core] --> agents_agent_hongguo
+  agents_agent_tele_cmd[agents.agent_tele_cmd] --> agents_agent_hongguo
   scripts_check_batch5[scripts.check_batch5] --> agents_agent_hongguo
   agents_agent_hongguo --> agents_hongguo_bridge[agents.hongguo_bridge]
   agents_agent_hongguo --> core_batch_config[core.batch_config]

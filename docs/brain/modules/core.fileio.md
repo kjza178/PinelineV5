@@ -2,15 +2,15 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `core/fileio.py` · **Lớp:** `core` · **104 dòng** (91 code) · **4 hàm**, **0 class** · sha1 `e820e73bf1`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `core/fileio.py` · **Lớp:** `core` · **104 dòng** (91 code) · **4 hàm**, **0 class** · sha1 `f05905b66d`
 
 > Ghi file an toàn giữa nhiều tiến trình (server :8801, sidecar :8802, script). atomic_write_text: ghi temp riêng (pid+thread) rồi os.replace — người đọc không bao giờ thấy file dở. file_lock: khoá liên tiến trình bằng fil
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** —
-- **Được dùng bởi:** [agents.agent_autopilot](./agents.agent_autopilot.md), [core.batch_config](./core.batch_config.md), [core.manifest](./core.manifest.md), [engines.asr.asr](./engines.asr.asr.md), [scripts.check_batch3](./scripts.check_batch3.md)
+- **Được dùng bởi:** [agents.agent_autopilot](./agents.agent_autopilot.md), [agents.agent_qa_ask](./agents.agent_qa_ask.md), [agents.agent_qa_fix](./agents.agent_qa_fix.md), [agents.agent_quality](./agents.agent_quality.md), [agents.auto_publisher](./agents.auto_publisher.md), [core.batch_config](./core.batch_config.md), [core.manifest](./core.manifest.md), [engines.asr.asr](./engines.asr.asr.md), [engines.translate](./engines.translate.md), [engines.translate_simple.pipeline](./engines.translate_simple.pipeline.md), [engines.translate_simple.script_store](./engines.translate_simple.script_store.md), [engines.translate_simple.stage_draft](./engines.translate_simple.stage_draft.md), [engines.translate_simple.suggest](./engines.translate_simple.suggest.md), [engines.translate_simple.zh_source](./engines.translate_simple.zh_source.md), [scripts.check_batch3](./scripts.check_batch3.md)
 - **Được nhắc tên file `.py` (subprocess/script) bởi:** [restart_server](./restart_server.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
@@ -18,9 +18,19 @@
 flowchart LR
   core_fileio[[core.fileio]]
   agents_agent_autopilot[agents.agent_autopilot] --> core_fileio
+  agents_agent_qa_ask[agents.agent_qa_ask] --> core_fileio
+  agents_agent_qa_fix[agents.agent_qa_fix] --> core_fileio
+  agents_agent_quality[agents.agent_quality] --> core_fileio
+  agents_auto_publisher[agents.auto_publisher] --> core_fileio
   core_batch_config[core.batch_config] --> core_fileio
   core_manifest[core.manifest] --> core_fileio
   engines_asr_asr[engines.asr.asr] --> core_fileio
+  engines_translate[engines.translate] --> core_fileio
+  engines_translate_simple_pipeline[engines.translate_simple.pipeline] --> core_fileio
+  engines_translate_simple_script_store[engines.translate_simple.script_store] --> core_fileio
+  engines_translate_simple_stage_draft[engines.translate_simple.stage_draft] --> core_fileio
+  engines_translate_simple_suggest[engines.translate_simple.suggest] --> core_fileio
+  engines_translate_simple_zh_source[engines.translate_simple.zh_source] --> core_fileio
   scripts_check_batch3[scripts.check_batch3] --> core_fileio
 ```
 

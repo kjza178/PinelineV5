@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `pineline/server/routes/fs.py` · **Lớp:** `misc` · **23 dòng** (16 code) · **1 hàm**, **0 class** · sha1 `0365c426c6`
 
 > FS picker: /api/fs/* — LIVE registry (body trong server.py).

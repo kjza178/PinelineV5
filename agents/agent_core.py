@@ -246,6 +246,20 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "pineline_qa_flags",
+            "description": ("Câu đang bị cờ QA high của job (số câu i, loại lỗi, ZH, VI, đề xuất của brain nếu có). "
+                            "Dùng khi job HOLD QA / user hỏi câu nào bị cờ. Sửa bằng pineline_script_edit_line "
+                            "→ câu tự được đánh dấu đã xử lý, hết câu thì job HOLD tự chạy tiếp."),
+            "parameters": {
+                "type": "object",
+                "properties": {"job_id": {"type": "string", "description": "id hoặc ≥4 ký tự đầu"}},
+                "required": ["job_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "pineline_script_edit_line",
             "description": "Sửa 1 câu script (vi và/hoặc zh). Cần allow_mutate. Gọi API script-line nội bộ.",
             "parameters": {
@@ -1214,6 +1228,25 @@ def script_search(
     return {"job_id": job_id, "query": query, "missing_only": missing_only, "hits": hits, "n_hits": len(hits)}
 
 
+def _edit_ok(res) -> bool:
+    return isinstance(res, dict) and not res.get("error")
+
+
+def _qa_after_edit(rt, job_id: str, nums: list[int]) -> dict:
+    """2026-11-17 qaask2: agent sửa câu → câu coi như đã xử lý (qa_ack + đóng item câu hỏi HOLD QA);
+    hết câu → gỡ HOLD + xếp lại (hook qa_release), để job không bị HOLD lại vì cùng cờ."""
+    try:
+        import agents.agent_qa_ask as agent_qa_ask
+        r = agent_qa_ask.mark_edited(Path(rt.work_root) / job_id, nums, by="agent")
+        if r.get("release"):
+            fn = (rt.heal_hooks or {}).get("qa_release")
+            r["resume"] = fn(job_id, r.get("deferred_ids")) if fn else {"ok": False, "error": "qa_release chưa bind"}
+        r.pop("msgs", None)
+        return r
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)[:200]}
+
+
 def script_get_lines(work_root: Path, job_id: str, i_from: int, i_to: int) -> dict:
     rows = _load_script(work_root, job_id)
     lo, hi = int(i_from), int(i_to)
@@ -1419,6 +1452,10 @@ def _dispatch(name: str, args: dict, allow_mutate: bool) -> str:
                 ),
                 ensure_ascii=False, indent=2,
             )
+        if name == "pineline_qa_flags":
+            import agents.agent_qa_ask as agent_qa_ask
+            return json.dumps(agent_qa_ask.flags_for_agent(rt.work_root, args["job_id"]),
+                              ensure_ascii=False, indent=2, default=str)
         if name == "pineline_script_edit_line":
             if not rt.edit_script_line:
                 return json.dumps({"error": "edit_script_line chưa bind"})
@@ -1428,6 +1465,9 @@ def _dispatch(name: str, args: dict, allow_mutate: bool) -> str:
                 args.get("vi"),
                 args.get("zh"),
             )
+            if _edit_ok(res):
+                res = {**(res if isinstance(res, dict) else {"result": res}),
+                       "qa": _qa_after_edit(rt, args["job_id"], [int(args["i"])])}
             return json.dumps(res, ensure_ascii=False, indent=2, default=str)
         if name == "pineline_script_edit_many":
             if not rt.edit_script_line:
@@ -1442,7 +1482,10 @@ def _dispatch(name: str, args: dict, allow_mutate: bool) -> str:
                 results.append(rt.edit_script_line(
                     args["job_id"], int(e["i"]), e.get("vi"), e.get("zh"),
                 ))
-            return json.dumps({"ok": True, "n": len(results), "results": results[:40]},
+            ok_i = [int(e["i"]) for e, r in zip([e for e in edits if isinstance(e, dict) and "i" in e], results)
+                    if _edit_ok(r)]
+            qa_r = _qa_after_edit(rt, args["job_id"], ok_i) if ok_i else None
+            return json.dumps({"ok": True, "n": len(results), "results": results[:40], "qa": qa_r},
                               ensure_ascii=False, indent=2, default=str)
         if name == "pineline_hold_after_translate":
             if not rt.set_hold_after_translate:
@@ -1746,13 +1789,58 @@ def _chat_turn(
     models = [c["model"]] + ([c["fallback"]] if c["fallback"] else [])
     last: Exception | None = None
     for i, m in enumerate(models):
-        try:
-            return _chat_turn_model(messages, use_tools, m, tool_choice=tool_choice)
-        except Exception as e:  # noqa: BLE001
-            last = e
-            if i + 1 < len(models):
-                print(f"[agent] LLM {m} lỗi ({str(e)[:160]}) → thử {models[i + 1]}", flush=True)
+        # 2026-11-18: thử lại CÙNG model khi lỗi tạm (Aurora 500 «Error in message stream», 429, 5xx, timeout,
+        # mất kết nối) — AGENT_RETRIES lần (mặc định 2), chờ AGENT_RETRY_WAIT giây × lượt. Lỗi khác (4xx, sai
+        # tool…) → không thử lại. Bỏ fallback openclaw (cùng ngày): hết lượt → báo lỗi luôn.
+        n_retry = _agent_retries()
+        for attempt in range(n_retry + 1):
+            try:
+                return _chat_turn_model(messages, use_tools, m, tool_choice=tool_choice)
+            except Exception as e:  # noqa: BLE001
+                last = e
+                if attempt < n_retry and _agent_transient(e):
+                    wait = _agent_retry_wait() * (attempt + 1)
+                    print(f"[agent] LLM {m} lỗi tạm ({str(e)[:160]}) → thử lại {attempt + 1}/{n_retry} "
+                          f"sau {wait:.0f}s", flush=True)
+                    time.sleep(wait)
+                    continue
+                break
+        if i + 1 < len(models):
+            print(f"[agent] LLM {m} lỗi ({str(last)[:160]}) → thử {models[i + 1]}", flush=True)
     raise last  # type: ignore[misc]
+
+
+_AGENT_TRANSIENT_RE = re.compile(
+    r"HTTP (429|5\d\d)\b|error in message stream|timed? ?out|timeout|connection (reset|aborted|refused|error)|"
+    r"remote end closed|temporarily unavailable|bad gateway|service unavailable", re.I)
+
+
+def _agent_transient(e: Exception) -> bool:
+    if isinstance(e, (requests.Timeout, requests.ConnectionError, TimeoutError, ConnectionError)):
+        return True
+    return bool(_AGENT_TRANSIENT_RE.search(str(e)))
+
+
+def _agent_retries() -> int:
+    try:
+        return max(0, min(5, int(os.getenv("AGENT_RETRIES") or _agent_cfg_get("AGENT_RETRIES") or 2)))
+    except (TypeError, ValueError):
+        return 2
+
+
+def _agent_retry_wait() -> float:
+    try:
+        return max(0.0, float(os.getenv("AGENT_RETRY_WAIT") or _agent_cfg_get("AGENT_RETRY_WAIT") or 3))
+    except (TypeError, ValueError):
+        return 3.0
+
+
+def _agent_cfg_get(key: str):
+    try:
+        import core.config as _cfg
+        return _cfg.get(key)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _chat_turn_model(

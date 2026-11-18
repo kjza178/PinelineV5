@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `scripts/brain_build.py` · **Lớp:** `ops` · **857 dòng** (726 code) · **23 hàm**, **2 class** · sha1 `0494d084d7`
 
 > brain_build.py — Sinh/làm mới phần TỰ ĐỘNG của Second Brain (docs/brain/). Đọc mã nguồn bằng AST (không import, không chạy code) → viết: docs/brain/modules/<module>.md     thẻ module: AUTO (sinh lại) + MANUAL (giữ nguyên
@@ -11,6 +11,7 @@
 
 - **Gọi tới (import nội bộ):** —
 - **Được dùng bởi:** —
+- **Được nhắc tên file `.py` (subprocess/script) bởi:** [scripts.brain_export](./scripts.brain_export.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ### Hàm & class top-level
@@ -52,7 +53,8 @@
 ### Lịch sử (từ docs/)
 
 - Fix logs: —
-- Nhắc trong CHANGELOG: **0** lần · DECISIONS: **0** lần
+- **Reviews:** [2026-11-11-v4-v5-port-review](../../reviews/2026-11-11-v4-v5-port-review.md)
+- Nhắc trong CHANGELOG: **1** lần · DECISIONS: **0** lần
 
 <!-- AUTO:END -->
 

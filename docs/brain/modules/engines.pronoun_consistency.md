@@ -2,24 +2,27 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/pronoun_consistency.py` · **Lớp:** `translate` · **870 dòng** (764 code) · **30 hàm**, **0 class** · sha1 `4ebfca4fc5`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/pronoun_consistency.py` · **Lớp:** `translate` · **872 dòng** (766 code) · **30 hàm**, **0 class** · sha1 `3d5e285c57`
 
 > Đồng nhất xưng hô không cần diarization (A–C + vá câu đỏ). A) analyze_full_zh: quét TOÀN BỘ ZH theo lô + memory → glossary.pronouns + lock B) inject lock/ledger vào mỗi lô dịch
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [config](./config.md), [llm](./llm.md), [translate](./translate.md)
-- **Được dùng bởi:** —
-- **Test:** `tests/test_pronoun_consistency.py`
-- **Thư viện ngoài:** `agent_pronoun_pass`, `manifest`
+- **Gọi tới (import nội bộ):** [agents.agent_pronoun_pass](./agents.agent_pronoun_pass.md), [core.config](./core.config.md), [core.manifest](./core.manifest.md), [engines.llm](./engines.llm.md), [engines.translate](./engines.translate.md)
+- **Được dùng bởi:** [engines.translate](./engines.translate.md), [engines.translate_simple.stage_draft](./engines.translate_simple.stage_draft.md)
+- **Test:** `tests/test_pronoun_consistency.py`, `tests/test_translate_b1.py`, `tests/test_translate_b1_scenarios.py`, `tests/test_translate_b2.py`, `tests/test_translate_b2_review.py`
 
 ```mermaid
 flowchart LR
   engines_pronoun_consistency[[engines.pronoun_consistency]]
-  engines_pronoun_consistency --> config[config]
-  engines_pronoun_consistency --> llm[llm]
-  engines_pronoun_consistency --> translate[translate]
+  engines_translate[engines.translate] --> engines_pronoun_consistency
+  engines_translate_simple_stage_draft[engines.translate_simple.stage_draft] --> engines_pronoun_consistency
+  engines_pronoun_consistency --> agents_agent_pronoun_pass[agents.agent_pronoun_pass]
+  engines_pronoun_consistency --> core_config[core.config]
+  engines_pronoun_consistency --> core_manifest[core.manifest]
+  engines_pronoun_consistency --> engines_llm[engines.llm]
+  engines_pronoun_consistency --> engines_translate[engines.translate]
 ```
 
 ### Hàm & class top-level
@@ -55,7 +58,7 @@ flowchart LR
 | `_forms_in` | 731 | 10 | `vi` |  |
 | `find_pronoun_jumps` | 743 | 41 | `rows, window` | C) QA: trong cửa sổ gần nhau, vừa có {anh,em} vừa có {ông} ngôi hô / tôi lệch kiểu. |
 | `ensure_analyze_before_translate` | 786 | 21 | `work_dir, plan, segments, force` | Gọi từ translate.run_translate sau khi có plan. |
-| `run_post_translate_consistency` | 809 | 62 | `work_dir, rows, plan, fix_with_gpt` | C+D sau dịch/polish: post-pass + QA jumps + GPT vá đỏ. |
+| `run_post_translate_consistency` | 809 | 64 | `work_dir, rows, plan, fix_with_gpt` | C+D sau dịch/polish: post-pass + QA jumps + GPT vá đỏ. |
 
 **Hàm dài ≥120 dòng:** `analyze_full_zh` (165, L447)
 

@@ -333,7 +333,7 @@ def start_background(work_dir: str | Path) -> str:
     if st.get("state") in ("done", "running", "detect", "no_hardsub"):
         return st["state"]
     try:
-        from engines.translate_simple.pipeline import _script_all_reviewed
+        from translate_simple.pipeline import _script_all_reviewed
         if _script_all_reviewed(wd):
             return "reviewed"
     except Exception:  # noqa: BLE001
@@ -387,7 +387,7 @@ def _main(argv: list[str]) -> int:
     pid = os.getpid()
     _atomic_json(wd / PROG, {"state": "detect", "pid": pid, "started": time.time()})
     try:
-        from engines.translate_simple import zh_source
+        from translate_simple import zh_source
         det = zh_source.detect(wd)
         if not det.get("has_hardsub"):
             _atomic_json(wd / PROG, {"state": "no_hardsub", "detect": det})

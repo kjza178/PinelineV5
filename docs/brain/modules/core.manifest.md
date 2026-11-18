@@ -2,36 +2,36 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `core/manifest.py` · **Lớp:** `core` · **242 dòng** (190 code) · **4 hàm**, **1 class** · sha1 `c7cd54c8e3`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `core/manifest.py` · **Lớp:** `core` · **262 dòng** (208 code) · **4 hàm**, **1 class** · sha1 `510844dd19`
 
 > manifest.py — Trạng thái/checkpoint cho pipeline. Mỗi job (mỗi video) có một thư mục làm việc riêng chứa manifest.json. Mỗi stage ghi trạng thái vào đây; crash/mất điện thì resume từ stage cuối
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [core.fileio](./core.fileio.md)
-- **Được dùng bởi:** [agents.agent_name_pass](./agents.agent_name_pass.md), [agents.agent_pronoun_pass](./agents.agent_pronoun_pass.md), [agents.agent_qa_gate](./agents.agent_qa_gate.md), [engines.asr.asr](./engines.asr.asr.md), [engines.asr.asr_hybrid_progress](./engines.asr.asr_hybrid_progress.md), [engines.asr.firered_asr](./engines.asr.firered_asr.md), [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.hardsub_asr](./engines.asr.hardsub_asr.md), [engines.asr.hybrid_asr](./engines.asr.hybrid_asr.md), [engines.asr.nano_fa_asr](./engines.asr.nano_fa_asr.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [engines.asr.sensevoice_asr](./engines.asr.sensevoice_asr.md), [engines.clone_tts](./engines.clone_tts.md), [engines.download](./engines.download.md), [engines.mux](./engines.mux.md), [engines.ocr](./engines.ocr.md), [engines.render](./engines.render.md), [engines.separate](./engines.separate.md), [engines.split_parts](./engines.split_parts.md), [engines.translate_alts](./engines.translate_alts.md), [http_routes.routes_agent](./http_routes.routes_agent.md), [render](./render.md), [scripts.check_batch4](./scripts.check_batch4.md)
+- **Được dùng bởi:** [agents.agent_brain](./agents.agent_brain.md), [agents.agent_hang_fix](./agents.agent_hang_fix.md), [agents.agent_hold](./agents.agent_hold.md), [agents.agent_name_pass](./agents.agent_name_pass.md), [agents.agent_pronoun_pass](./agents.agent_pronoun_pass.md), [agents.agent_qa_ask](./agents.agent_qa_ask.md), [agents.agent_qa_gate](./agents.agent_qa_gate.md), [agents.agent_retry](./agents.agent_retry.md), [agents.auto_publisher](./agents.auto_publisher.md), [engines.asr.asr](./engines.asr.asr.md), [engines.asr.asr_hybrid_progress](./engines.asr.asr_hybrid_progress.md), [engines.asr.firered_asr](./engines.asr.firered_asr.md), [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.hardsub_asr](./engines.asr.hardsub_asr.md), [engines.asr.hybrid_asr](./engines.asr.hybrid_asr.md), [engines.asr.nano_fa_asr](./engines.asr.nano_fa_asr.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [engines.asr.sensevoice_asr](./engines.asr.sensevoice_asr.md), [engines.clone_tts](./engines.clone_tts.md), [engines.download](./engines.download.md), [engines.mux](./engines.mux.md), [engines.ocr](./engines.ocr.md), [engines.pronoun_consistency](./engines.pronoun_consistency.md), [engines.render](./engines.render.md), [engines.separate](./engines.separate.md), [engines.source_preflight](./engines.source_preflight.md), [engines.split_parts](./engines.split_parts.md), [engines.translate](./engines.translate.md), [engines.translate_alts](./engines.translate_alts.md), [engines.translate_simple.cfg](./engines.translate_simple.cfg.md), [engines.translate_simple.pipeline](./engines.translate_simple.pipeline.md), [http_routes.routes_agent](./http_routes.routes_agent.md), [scripts.check_batch4](./scripts.check_batch4.md), [server](./server.md)
 - **Được nhắc tên file `.py` (subprocess/script) bởi:** [restart_server](./restart_server.md), [scripts._tmp_extract_sigs_batch2](./scripts._tmp_extract_sigs_batch2.md)
-- **Test:** `tests/test_agent_core_smoke.py`, `tests/test_asr_demucs.py`
+- **Test:** `tests/test_agent_brain_notify.py`, `tests/test_agent_core_smoke.py`, `tests/test_agent_hold_telegram.py`, `tests/test_asr_demucs.py`, `tests/test_separate_demucs_chunks.py`, `tests/test_video_preflight.py`
 
 ```mermaid
 flowchart LR
   core_manifest[[core.manifest]]
+  agents_agent_brain[agents.agent_brain] --> core_manifest
+  agents_agent_hang_fix[agents.agent_hang_fix] --> core_manifest
+  agents_agent_hold[agents.agent_hold] --> core_manifest
   agents_agent_name_pass[agents.agent_name_pass] --> core_manifest
   agents_agent_pronoun_pass[agents.agent_pronoun_pass] --> core_manifest
+  agents_agent_qa_ask[agents.agent_qa_ask] --> core_manifest
   agents_agent_qa_gate[agents.agent_qa_gate] --> core_manifest
+  agents_agent_retry[agents.agent_retry] --> core_manifest
+  agents_auto_publisher[agents.auto_publisher] --> core_manifest
   engines_asr_asr[engines.asr.asr] --> core_manifest
   engines_asr_asr_hybrid_progress[engines.asr.asr_hybrid_progress] --> core_manifest
   engines_asr_firered_asr[engines.asr.firered_asr] --> core_manifest
   engines_asr_fun_asr_nano[engines.asr.fun_asr_nano] --> core_manifest
   engines_asr_hardsub_asr[engines.asr.hardsub_asr] --> core_manifest
   engines_asr_hybrid_asr[engines.asr.hybrid_asr] --> core_manifest
-  engines_asr_nano_fa_asr[engines.asr.nano_fa_asr] --> core_manifest
-  engines_asr_paraformer_zh[engines.asr.paraformer_zh] --> core_manifest
-  engines_asr_sensevoice_asr[engines.asr.sensevoice_asr] --> core_manifest
-  engines_clone_tts[engines.clone_tts] --> core_manifest
-  engines_download[engines.download] --> core_manifest
-  engines_mux[engines.mux] --> core_manifest
   core_manifest --> core_fileio[core.fileio]
 ```
 
@@ -39,7 +39,7 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| **class `Manifest`** | 96 | 11 method | |  |
+| **class `Manifest`** | 96 | 12 method | |  |
 | `_now` | 26 | 2 | `` |  |
 | `_lock_for` | 39 | 8 | `path` |  |
 | `_merge3` | 52 | 22 | `base, mine, theirs` | Gộp 3 chiều dict JSON. Key mình không đổi so với lúc load → lấy bản đĩa (người khác |

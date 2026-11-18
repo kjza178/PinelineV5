@@ -50,6 +50,7 @@ Restart chỉ khi hàng đợi rảnh, hoặc user đồng ý (yes/no).
 Đợt 7 (`fixes/2026-10-06-batch7-ui-split.md`): `server.py` tách `routes_ui.py`/`routes_hg.py`/`routes_agent.py` — đã có hiệu lực.
 
 ## Việc còn treo / cần user quyết
+- **Chờ restart server + sidecar** — port V2 18/11 (DeepSeek flash/thinking tắt, HOLD QA Telegram, chuẩn hóa nhiều mùa).
 
 - **11-13 — V5 port preflight + extract_pcm + FireRed slice + câu rác/parent chờ part (agent Q5) chờ restart :8805:** video nguồn được kiểm/chuẩn hoá ở stage đầu (`source_norm.*`, rollback `VIDEO_PREFLIGHT=0`); FireRed cắt slice tại khoảng lặng; câu ASR rác «None.» → «…» im lặng, nhận ≤ `SIMPLE_UNREVIEWED_TOLERANCE` câu nháp chưa soát; parent split giữ ghế khi part park. asr.json cũ không tự sửa. Xem `docs/fixes/2026-11-13-port-preflight-slice-junk.md`.
 - **11-13 — V5 port brain finished/park-vs-HOLD (agent R5) chờ restart :8805:** job đã xong không bị heal/nhắc lỗi; park tự động báo «⏸ tạm dừng … tự thử lại», chỉ HOLD cần người mới «⛔ … Cần bạn»; «Chạy tiếp» reset bộ đếm park. Xem `docs/fixes/2026-11-13-port-brain-finished-hold.md`.

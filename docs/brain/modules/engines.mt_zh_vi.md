@@ -2,22 +2,24 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/mt_zh_vi.py` · **Lớp:** `translate` · **302 dòng** (263 code) · **14 hàm**, **0 class** · sha1 `f625d482fb`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/mt_zh_vi.py` · **Lớp:** `translate` · **302 dòng** (263 code) · **14 hàm**, **0 class** · sha1 `8fa07ccdde`
 
 > NMT ZH→VI (HachimiMT) — DỊCH CHÍNH; LLM chỉ rà soát (run_review). Config: MT_ZH_VI=1                 bật NMT
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [config](./config.md)
-- **Được dùng bởi:** —
-- **Test:** ❌ chưa có test import trực tiếp
+- **Gọi tới (import nội bộ):** [core.config](./core.config.md)
+- **Được dùng bởi:** [engines.translate](./engines.translate.md), [engines.translate_simple.stage_draft](./engines.translate_simple.stage_draft.md)
+- **Test:** `tests/test_translate_b1.py`, `tests/test_translate_b1_scenarios.py`, `tests/test_translate_b2.py`, `tests/test_translate_b2_review.py`, `tests/test_translate_b3.py`, `tests/test_translate_simple.py`
 - **Thư viện ngoài:** `ctranslate2`, `huggingface_hub`, `torch`, `transformers`
 
 ```mermaid
 flowchart LR
   engines_mt_zh_vi[[engines.mt_zh_vi]]
-  engines_mt_zh_vi --> config[config]
+  engines_translate[engines.translate] --> engines_mt_zh_vi
+  engines_translate_simple_stage_draft[engines.translate_simple.stage_draft] --> engines_mt_zh_vi
+  engines_mt_zh_vi --> core_config[core.config]
 ```
 
 ### Hàm & class top-level
@@ -49,7 +51,8 @@ flowchart LR
 
 ### Lịch sử (từ docs/)
 
-- **Fix logs (1):**
+- **Fix logs (2):**
+  - [2026-11-11 — machine-config: cổng/thư mục phụ thuộc máy thành setting (V5)](../../fixes/2026-11-11-machine-config.md)
   - [NMT draft + glossary gầy + REVIEW GPT mini](../../fixes/2026-11-09-mt-draft-slim-gloss.md)
 - **Reviews:** [2026-11-09-mt-60-zh-vi](../../reviews/2026-11-09-mt-60-zh-vi.md)
 - Nhắc trong CHANGELOG: **1** lần · DECISIONS: **0** lần

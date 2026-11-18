@@ -10,10 +10,6 @@ Chức năng:
 """
 from __future__ import annotations
 
-try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
-    from core import machine as _machine
-except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
 import json
 import os
 import sys
@@ -57,7 +53,7 @@ def _safe_resolve_title_vi(name: str, title_vi: str = "") -> str:
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "test_channel"
-CLIENT_SECRET_FILE = DATA_DIR / "client_secret.json" if (DATA_DIR / "client_secret.json").is_file() else Path(os.getenv("TEST_YT_SECRET") or (_machine.yt_uploader_dir() / "client_secret.json"))
+CLIENT_SECRET_FILE = DATA_DIR / "client_secret.json" if (DATA_DIR / "client_secret.json").is_file() else Path(os.getenv("TEST_YT_SECRET") or r"Z:\yt_uploader\client_secret.json")
 TOKEN_FILE = DATA_DIR / "token.json"
 CHANNEL_FILE = DATA_DIR / "channel.json"
 PROJECTS_FILE = DATA_DIR / "projects.json"
@@ -575,6 +571,7 @@ def get_auth_url(redirect_uri: str, project_id: str | None = None) -> dict[str, 
         client_config,
         scopes=SCOPES,
         redirect_uri=redirect_uri,
+        autogenerate_code_verifier=False,
     )
     auth_url, _ = flow.authorization_url(
         prompt="select_account consent",
@@ -582,9 +579,13 @@ def get_auth_url(redirect_uri: str, project_id: str | None = None) -> dict[str, 
         include_granted_scopes="true",
         state=project_id,
     )
-    if flow.code_verifier:
-        (DATA_DIR / f"code_verifier_{project_id}.txt").write_text(flow.code_verifier, encoding="utf-8")
-        (DATA_DIR / "code_verifier.txt").write_text(flow.code_verifier, encoding="utf-8")
+    # Xoá file code_verifier cũ (nếu có) để tránh xung đột
+    for old_vf in [DATA_DIR / f"code_verifier_{project_id}.txt", DATA_DIR / "code_verifier.txt"]:
+        if old_vf.is_file():
+            try:
+                old_vf.unlink()
+            except Exception:
+                pass
     (DATA_DIR / "current_oauth_project.txt").write_text(project_id, encoding="utf-8")
 
     return {
@@ -622,6 +623,7 @@ def finish_oauth(code: str, redirect_uri: str, project_id: str | None = None) ->
         client_config,
         scopes=SCOPES,
         redirect_uri=redirect_uri,
+        autogenerate_code_verifier=False,
     )
 
     vf = DATA_DIR / f"code_verifier_{project_id}.txt"
@@ -701,6 +703,9 @@ def get_available_service(project_id: str | None = None, *, force: bool = False)
     if not connected:
         raise RuntimeError("Chưa có Project nào được đăng nhập. Vui lòng bấm '🔗 Đăng nhập Kênh Test'.")
 
+    preferred: list[dict[str, Any]] = []
+    exhausted_ok: list[dict[str, Any]] = []
+
     if project_id:
         chosen = next((p for p in connected if p["id"] == project_id), None)
         if not chosen:
@@ -756,7 +761,7 @@ def get_available_service(project_id: str | None = None, *, force: bool = False)
             msg = str(e)
             low = msg.lower()
             if "invalid_grant" in low or "revoked" in low:
-                hint = "token hết hạn/bị thu hồi — mở Kênh Test → Đăng nhập lại project này"
+                hint = "token hết hạn/bị thu hồi — mở Kênh Test → Đăng nhập lại project này (Lưu ý: trên Google Cloud Console nhớ bấm 'Publish App' ở mục OAuth Consent Screen để token không bị hết hạn sau 7 ngày)"
             elif "access_denied" in low or "accessnotconfigured" in low or "has not been used" in low:
                 hint = "chưa bật YouTube Data API v3 trên Google Cloud của project"
             elif "quota" in low or "ratelimitexceeded" in low or "dailylimitexceeded" in low:

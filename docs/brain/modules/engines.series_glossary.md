@@ -2,22 +2,28 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/series_glossary.py` · **Lớp:** `translate` · **176 dòng** (149 code) · **10 hàm**, **0 class** · sha1 `bebc1be20d`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/series_glossary.py` · **Lớp:** `translate` · **199 dòng** (167 code) · **11 hàm**, **0 class** · sha1 `0e1d7184d6`
 
 > Bảng nhân vật / thuật ngữ / xưng hô dùng chung cho CẢ BỘ (mọi mùa). - apply(work_dir, plan): khi dịch 1 mùa → đè các mục đã chốt của bộ lên plan (tên, tên phụ, xưng hô, thuật ngữ); nhân vật mới chỉ có ở mùa này giữ nguyê
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [agents.hongguo_bridge](./agents.hongguo_bridge.md), [core.film_db](./core.film_db.md)
-- **Được dùng bởi:** —
-- **Test:** ❌ chưa có test import trực tiếp
+- **Gọi tới (import nội bộ):** [agents.hongguo_bridge](./agents.hongguo_bridge.md), [core.film_db](./core.film_db.md), [engines.hv_auditor](./engines.hv_auditor.md)
+- **Được dùng bởi:** [engines.translate](./engines.translate.md), [engines.translate_simple.pipeline](./engines.translate_simple.pipeline.md), [engines.translate_simple.stage_draft](./engines.translate_simple.stage_draft.md), [engines.translate_simple.zh_source](./engines.translate_simple.zh_source.md), [server](./server.md)
+- **Test:** `tests/test_translate_b1.py`, `tests/test_translate_b1_scenarios.py`, `tests/test_translate_b2.py`, `tests/test_translate_simple.py`, `tests/test_translate_simple_next.py`, `tests/test_translate_simple_next_review.py`, `tests/test_translate_simple_scenarios.py`
 
 ```mermaid
 flowchart LR
   engines_series_glossary[[engines.series_glossary]]
+  engines_translate[engines.translate] --> engines_series_glossary
+  engines_translate_simple_pipeline[engines.translate_simple.pipeline] --> engines_series_glossary
+  engines_translate_simple_stage_draft[engines.translate_simple.stage_draft] --> engines_series_glossary
+  engines_translate_simple_zh_source[engines.translate_simple.zh_source] --> engines_series_glossary
+  server[server] --> engines_series_glossary
   engines_series_glossary --> agents_hongguo_bridge[agents.hongguo_bridge]
   engines_series_glossary --> core_film_db[core.film_db]
+  engines_series_glossary --> engines_hv_auditor[engines.hv_auditor]
 ```
 
 ### Hàm & class top-level
@@ -32,12 +38,13 @@ flowchart LR
 | `_merge_list` | 77 | 14 | `base, top, key` | top đè base theo key; giữ thứ tự: mục của top trước, mục chỉ có ở base sau. |
 | `_zh` | 93 | 2 | `x` |  |
 | `_pron` | 97 | 2 | `x` |  |
-| `apply` | 101 | 21 | `work_dir, plan` |  |
-| `save_from` | 124 | 53 | `work_dir, reason` |  |
+| `_hygiene_chars_terms` | 101 | 13 | `chars, terms` | Series hygiene (3): audit + bỏ mục hv_suspect không sửa được. |
+| `apply` | 116 | 23 | `work_dir, plan` |  |
+| `save_from` | 141 | 59 | `work_dir, reason` |  |
 
 **File/artifact nhắc tới:** `glossary.json`, `manifest.json`
 
-**Tín hiệu rủi ro (đếm tĩnh):** broad_except=7 · file_writes=2 · swallow_except=4
+**Tín hiệu rủi ro (đếm tĩnh):** broad_except=8 · file_writes=2 · swallow_except=4
 
 ### Lịch sử (từ docs/)
 

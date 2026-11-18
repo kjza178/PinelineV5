@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `scripts/_patch_hongguo2_discover_only.py` · **Lớp:** `ops` · **221 dòng** (210 code) · **0 hàm**, **0 class** · sha1 `4c887692d4`
 
 > Hongguo2: Tìm mùa mới (info-only) + làm rõ Update thư viện tải tập thiếu.

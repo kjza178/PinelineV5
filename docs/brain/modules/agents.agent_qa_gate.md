@@ -2,15 +2,15 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `agents/agent_qa_gate.py` · **Lớp:** `agent` · **201 dòng** (174 code) · **8 hàm**, **0 class** · sha1 `69824b3fc6`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `agents/agent_qa_gate.py` · **Lớp:** `agent` · **226 dòng** (196 code) · **8 hàm**, **0 class** · sha1 `2dcd06ebb3`
 
 > Gate QA: translate → review → diff → mới cho TTS.
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [core.manifest](./core.manifest.md)
-- **Được dùng bởi:** [agents.agent_core](./agents.agent_core.md), [http_routes.routes_agent](./http_routes.routes_agent.md)
+- **Gọi tới (import nội bộ):** [agents.agent_quality](./agents.agent_quality.md), [core.manifest](./core.manifest.md)
+- **Được dùng bởi:** [agents.agent_core](./agents.agent_core.md), [http_routes.routes_agent](./http_routes.routes_agent.md), [server](./server.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ```mermaid
@@ -18,6 +18,8 @@ flowchart LR
   agents_agent_qa_gate[[agents.agent_qa_gate]]
   agents_agent_core[agents.agent_core] --> agents_agent_qa_gate
   http_routes_routes_agent[http_routes.routes_agent] --> agents_agent_qa_gate
+  server[server] --> agents_agent_qa_gate
+  agents_agent_qa_gate --> agents_agent_quality[agents.agent_quality]
   agents_agent_qa_gate --> core_manifest[core.manifest]
 ```
 
@@ -28,15 +30,15 @@ flowchart LR
 | `_now` | 11 | 2 | `` |  |
 | `_load_rows` | 15 | 8 | `path` |  |
 | `snapshot_pre_review` | 25 | 7 | `work_dir` |  |
-| `review_diff` | 34 | 70 | `work_dir, job_id` | So script.json vs script.pre_review.json + thống kê rv / missing. |
-| `_fail_reasons` | 106 | 11 | `n, missing_ratio, review_ran, pack` |  |
-| `evaluate_qa_gate` | 119 | 2 | `work_dir` |  |
-| `run_qa_gate` | 123 | 60 | `work_dir, run_review_fn, target, review_model` | Snapshot → run_review (sync) → diff → quyết định pass/block. |
-| `set_qa_gate` | 185 | 17 | `work_dir, enabled, override_pass` |  |
+| `review_diff` | 34 | 86 | `work_dir, job_id` | So script.json vs script.pre_review.json + thống kê rv / missing. |
+| `_fail_reasons` | 122 | 20 | `n, missing_ratio, review_ran, pack, brain_high` |  |
+| `evaluate_qa_gate` | 144 | 2 | `work_dir` |  |
+| `run_qa_gate` | 148 | 60 | `work_dir, run_review_fn, target, review_model` | Snapshot → run_review (sync) → diff → quyết định pass/block. |
+| `set_qa_gate` | 210 | 17 | `work_dir, enabled, override_pass` |  |
 
 **File/artifact nhắc tới:** `glossary.json`, `qa_flags.json`, `script.json`, `script.pre_review.json`, `style_lock.json`
 
-**Tín hiệu rủi ro (đếm tĩnh):** broad_except=4
+**Tín hiệu rủi ro (đếm tĩnh):** broad_except=5
 
 ### Lịch sử (từ docs/)
 

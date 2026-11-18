@@ -9,10 +9,6 @@ Cấu hình qua config.json / pineline.config.json (LLM_* / TRANSLATE_MODEL / RE
 """
 from __future__ import annotations
 
-try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
-    from core import machine as _machine
-except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
 import json
 import os
 import sys
@@ -51,12 +47,23 @@ LOCAL_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1").rs
 LOCAL_PREFIX = "local/"
 
 # 2. llama-server :8083 (OpenAI-compatible siêu tốc GGUF)
-LLAMA_BASE_URL = _machine.llama_base_url()  # machine-config: LLAMA_BASE_URL > LLM_BASE_URL(localhost) > :8083
+LLAMA_BASE_URL = os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:8083/v1").rstrip("/")
 
 
 class LLMUnavailable(RuntimeError):
     """Không gọi được LLM (mất mạng / sai key / 429-5xx kéo dài). Caller phải DỪNG stage,
     không được coi như câu rỗng rồi chia lô / để trống."""
+
+
+class LLMEmptyResponse(LLMUnavailable):
+    """2026-11-18: API trả 200 nhưng `content` rỗng (vd DeepSeek: hết max_tokens / phần «suy nghĩ» ăn hết
+    budget / JSON mode trả rỗng). KHÔNG phải lỗi mạng tạm → cloud_retry không thử lại (trước: «thất bại …: None»
+    bị coi là 5xx → gửi lại cả phim tới 16 lần). Thuộc tính finish_reason để caller quyết (length → chia nhỏ)."""
+
+    def __init__(self, msg: str, *, finish_reason: str = "", usage: dict | None = None):
+        super().__init__(msg)
+        self.finish_reason = finish_reason
+        self.usage = usage or {}
 
 
 def _settings() -> tuple[str, str, str]:
@@ -73,7 +80,7 @@ def _settings() -> tuple[str, str, str]:
 def _llama_base() -> str:
     try:
         import core.config as _c
-        return _machine.llama_base_url()
+        return (_c.get("LLAMA_BASE_URL") or os.getenv("LLAMA_BASE_URL") or LLAMA_BASE_URL).rstrip("/")
     except Exception:
         return LLAMA_BASE_URL
 
@@ -348,9 +355,24 @@ def _deepseek_chat(
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
+    # 2026-11-18: deepseek-flash / v4 BẬT thinking mặc định (effort high) và token suy nghĩ tính vào max_tokens
+    # → plan cả phim trả content rỗng (hết max_tokens), mọi lần gọi chậm + tốn token đầu ra. User chốt: TẮT.
+    # DEEPSEEK_THINKING=enabled|1 để bật lại (khi bật: max_tokens tự +8192 cho phần suy nghĩ).
+    try:
+        th = (_cfg_get("DEEPSEEK_THINKING") or os.getenv("DEEPSEEK_THINKING") or "disabled").strip().lower()
+    except Exception:
+        th = (os.getenv("DEEPSEEK_THINKING") or "disabled").strip().lower()
+    if th in ("1", "on", "true", "yes", "enabled", "enable", "high", "max", "low"):
+        payload["thinking"] = {"type": "enabled"}
+        payload["max_tokens"] = int(max_tokens) + 8192
+        if th in ("high", "max", "low"):
+            payload["reasoning_effort"] = th
+    else:
+        payload["thinking"] = {"type": "disabled"}
 
     last_err: Exception | None = None
     tries = max(1, min(retries, 4))
+    n_empty = 0
     for attempt in range(tries):
         try:
             r = requests.post(url, headers=headers, json=payload, timeout=timeout)
@@ -359,11 +381,26 @@ def _deepseek_chat(
             if r.status_code in (429, 500, 502, 503, 504):
                 raise requests.HTTPError(f"{r.status_code} {r.text[:200]}", response=r)
             r.raise_for_status()
-            msg = (r.json().get("choices") or [{}])[0].get("message") or {}
+            data = r.json() or {}
+            ch0 = (data.get("choices") or [{}])[0] or {}
+            msg = ch0.get("message") or {}
             content = (msg.get("content") or "").strip()
             if content:
                 print(f"[llm] deepseek/{m} via {base}", flush=True)
                 return content
+            # 2026-11-18: 200 mà content rỗng — ghi RÕ lý do (trước: last_err=None → «thất bại …: None»),
+            # thử lại đúng 1 lần không JSON mode; length = hết max_tokens → không thử lại (cùng prompt vẫn rỗng).
+            n_empty += 1
+            fin = str(ch0.get("finish_reason") or "")
+            usage = data.get("usage") or {}
+            rc_len = len(str(msg.get("reasoning_content") or ""))
+            why = (f"DeepSeek ({m}) trả nội dung rỗng: finish_reason={fin or '?'} "
+                   f"prompt_tokens={usage.get('prompt_tokens')} completion_tokens={usage.get('completion_tokens')} "
+                   f"max_tokens={max_tokens} reasoning={rc_len} ký tự json_mode={'response_format' in payload}")
+            print(f"[llm] {why} ({n_empty})", flush=True)
+            if fin == "length" or n_empty >= 2 or attempt + 1 >= tries:
+                raise LLMEmptyResponse(why + (" — hết max_tokens: tăng max_tokens hoặc chia nhỏ input"
+                                              if fin == "length" else ""), finish_reason=fin, usage=usage)
             payload.pop("response_format", None)
             time.sleep(0.4)
         except LLMUnavailable:
@@ -377,13 +414,19 @@ def _deepseek_chat(
 
 
 def _chatgpt_settings() -> tuple[list[str], str, str]:
-    """(bases, key, default_model) cho Aurora pool."""
-    # machine-config: AURORA_BASE_URL, CHATGPT_BASE_URL, :3377 local, AURORA_FALLBACK_URLS (LAN)
-    bases: list[str] = list(_machine.aurora_base_urls())
-    now = time.time()   # port 2026-11-16 (V2 15/11): base vừa chết kết nối xuống cuối trong 60 s
-    alive = [b for b in bases if _DEAD_BASES.get(b, 0.0) <= now]
-    dead = [b for b in bases if _DEAD_BASES.get(b, 0.0) > now]
-    ordered_bases = alive + dead if alive else bases
+    """(bases, key, default_model) cho Aurora pool.
+    Chỉ dùng :3377 local, bỏ hoàn toàn các IP LAN 192.168.* để khi retry sẽ roll account khác trực tiếp trên :3377.
+    """
+    bases: list[str] = []
+    for k in ("AURORA_BASE_URL", "CHATGPT_BASE_URL"):
+        try:
+            v = (_cfg_get(k) or "").strip().rstrip("/")
+        except Exception:
+            v = (os.getenv(k) or "").strip().rstrip("/")
+        if v and not v.startswith("http://192.168.") and v not in bases:
+            bases.append(v)
+    if "http://127.0.0.1:3377/v1" not in bases:
+        bases.append("http://127.0.0.1:3377/v1")
     try:
         key = (_cfg_get("CHATGPT_API_KEY") or _cfg_get("CHATGPT_ACCESS_TOKEN") or "").strip()
     except Exception:
@@ -396,7 +439,7 @@ def _chatgpt_settings() -> tuple[list[str], str, str]:
         default_m = (_cfg_get("CHATGPT_MODEL") or "gpt-5-6-mini").strip()
     except Exception:
         default_m = (os.getenv("CHATGPT_MODEL") or "gpt-5-6-mini").strip()
-    return ordered_bases, key, default_m
+    return bases, key, default_m
 
 
 def _jwt_expired(token: str) -> bool:
@@ -528,7 +571,7 @@ def _chatgpt_chat(
                     wait = min(2 ** attempt, 4)
                     print(f"[llm] chatgpt lỗi {base} {chosen} ({attempt + 1}/{tries}): {e} — {wait}s", flush=True)
                     time.sleep(wait)
-    raise LLMUnavailable(f"Aurora/ChatGPT thất bại: {last_err} — {_machine.aurora_missing_hint()}")
+    raise LLMUnavailable(f"Aurora/ChatGPT thất bại: {last_err}") from last_err
 
 
 def aurora_upload_file(path: str | Path, purpose: str = "assistants") -> dict:
@@ -903,7 +946,7 @@ def chat(
         cloud_base = (_cfg_get("CLOUD_LLM_BASE_URL") or "").strip().rstrip("/")
         cloud_key = (_cfg_get("CLOUD_LLM_API_KEY") or "").strip()
         if not cloud_base:
-            cloud_base = _machine.cloud_llm_base_url()
+            cloud_base = ""  # 2026-11-17: bỏ IP LAN mặc định — phải đặt CLOUD_LLM_BASE_URL
         if not cloud_key or cloud_key == "sk-local":
             # fallback: LLM_* nếu đang trỏ 9router
             if "20128" in (base or "") and key and key != "sk-local":

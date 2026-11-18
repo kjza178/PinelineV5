@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `pineline/server/routes/queue.py` · **Lớp:** `misc` · **38 dòng** (29 code) · **1 hàm**, **0 class** · sha1 `d45810b0a6`
 
 > Queue API: /api/queue/* (+ alias /api/jobs/group) — LIVE registry. Thân handler giữ trong root `server.py` (cùng pattern jobs.attach). Module này chỉ đăng ký path → hàm trên server module.

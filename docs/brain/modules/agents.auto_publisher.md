@@ -2,28 +2,32 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `agents/auto_publisher.py` · **Lớp:** `publish` · **1555 dòng** (1341 code) · **36 hàm**, **0 class** · sha1 `bec50fc519`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `agents/auto_publisher.py` · **Lớp:** `publish` · **1567 dòng** (1353 code) · **36 hàm**, **0 class** · sha1 `cfc75147c7`
 
 > auto_publisher.py — Tự động hoá toàn trình: Sau khi render xong → Tự tạo Metadata SEO & Thumbnail 16:9 bằng Aurora AI → Tự Upload trực tiếp ngầm lên YouTube qua API.
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [agent_tele_cmd](./agent_tele_cmd.md), [fileio](./fileio.md), [film_db](./film_db.md), [job_queue](./job_queue.md), [meta_studio](./meta_studio.md)
-- **Được dùng bởi:** [http_routes.routes_uploader_settings](./http_routes.routes_uploader_settings.md)
-- **Được nhắc tên file `.py` (subprocess/script) bởi:** [auto_publisher](./auto_publisher.md), [scripts._tmp_extract_sigs_batch2](./scripts._tmp_extract_sigs_batch2.md)
+- **Gọi tới (import nội bộ):** [agents.agent_tele_cmd](./agents.agent_tele_cmd.md), [agents.meta_studio](./agents.meta_studio.md), [core.fileio](./core.fileio.md), [core.film_db](./core.film_db.md), [core.job_queue](./core.job_queue.md), [core.manifest](./core.manifest.md)
+- **Được dùng bởi:** [agents.agent_feeder](./agents.agent_feeder.md), [agents.agent_tele_cmd](./agents.agent_tele_cmd.md), [http_routes.routes_uploader_settings](./http_routes.routes_uploader_settings.md), [server](./server.md)
+- **Được nhắc tên file `.py` (subprocess/script) bởi:** [scripts._tmp_extract_sigs_batch2](./scripts._tmp_extract_sigs_batch2.md)
 - **Test:** `tests/test_auto_publisher_dedup.py`, `tests/test_meta_and_thumb.py`, `tests/test_upload_limit_stop.py`
-- **Thư viện ngoài:** `PIL`, `google`, `googleapiclient`, `manifest`
+- **Thư viện ngoài:** `PIL`, `google`, `googleapiclient`
 
 ```mermaid
 flowchart LR
   agents_auto_publisher[[agents.auto_publisher]]
+  agents_agent_feeder[agents.agent_feeder] --> agents_auto_publisher
+  agents_agent_tele_cmd[agents.agent_tele_cmd] --> agents_auto_publisher
   http_routes_routes_uploader_settings[http_routes.routes_uploader_settings] --> agents_auto_publisher
-  agents_auto_publisher --> agent_tele_cmd[agent_tele_cmd]
-  agents_auto_publisher --> fileio[fileio]
-  agents_auto_publisher --> film_db[film_db]
-  agents_auto_publisher --> job_queue[job_queue]
-  agents_auto_publisher --> meta_studio[meta_studio]
+  server[server] --> agents_auto_publisher
+  agents_auto_publisher --> agents_agent_tele_cmd[agents.agent_tele_cmd]
+  agents_auto_publisher --> agents_meta_studio[agents.meta_studio]
+  agents_auto_publisher --> core_fileio[core.fileio]
+  agents_auto_publisher --> core_film_db[core.film_db]
+  agents_auto_publisher --> core_job_queue[core.job_queue]
+  agents_auto_publisher --> core_manifest[core.manifest]
 ```
 
 ### Hàm & class top-level
@@ -59,15 +63,15 @@ flowchart LR
 | `_is_yt_upload_limit_error` | 805 | 8 | `err` | True nếu YouTube báo hết hạn mức upload ngày (uploadLimitExceeded). |
 | `_drain_publish_queue_loop` | 815 | 44 | `` | Vòng lặp lấy từng job từ hàng đợi ra xuất bản tuần tự cho đến khi hết. |
 | `publish_job` | 861 | 112 | `job_id, privacy, schedule_hours, force, allow_oversized` | Quy trình toàn diện: Sinh Metadata qua Aurora → Dựng Thumbnail 16:9 → Upload lên YouTube. |
-| `_publish_job_internal` | 975 | 375 ⚠️ | `job_id, privacy, schedule_hours, force` |  |
-| `_collect_and_enqueue_done_jobs` | 1352 | 75 | `` | Đồng bộ films.db, tự động giải cứu các job bị kẹt trạng thái 'uploading' mồ côi (không còn tiến trình giữ lock), |
-| `scan_and_publish_completed_jobs` | 1429 | 58 | `` | Quét và tự động xuất bản tất cả các job đã xong (done) nhưng chưa upload. |
-| `_scan_and_publish_impl` | 1489 | 40 | `` |  |
-| `_auto_publish_worker_loop` | 1531 | 9 | `` | Vòng lặp chạy ngầm tự động quét sau mỗi 60 giây. |
-| `start_worker` | 1542 | 9 | `` | Khởi động worker ngầm nếu chưa chạy. |
-| `stop_worker` | 1553 | 3 | `` | Dừng worker ngầm. |
+| `_publish_job_internal` | 975 | 387 ⚠️ | `job_id, privacy, schedule_hours, force` |  |
+| `_collect_and_enqueue_done_jobs` | 1364 | 75 | `` | Đồng bộ films.db, tự động giải cứu các job bị kẹt trạng thái 'uploading' mồ côi (không còn tiến trình giữ lock), |
+| `scan_and_publish_completed_jobs` | 1441 | 58 | `` | Quét và tự động xuất bản tất cả các job đã xong (done) nhưng chưa upload. |
+| `_scan_and_publish_impl` | 1501 | 40 | `` |  |
+| `_auto_publish_worker_loop` | 1543 | 9 | `` | Vòng lặp chạy ngầm tự động quét sau mỗi 60 giây. |
+| `start_worker` | 1554 | 9 | `` | Khởi động worker ngầm nếu chưa chạy. |
+| `stop_worker` | 1565 | 3 | `` | Dừng worker ngầm. |
 
-**Hàm dài ≥120 dòng:** `_publish_job_internal` (375, L975)
+**Hàm dài ≥120 dòng:** `_publish_job_internal` (387, L975)
 
 ### Config / env keys (1)
 
@@ -75,7 +79,7 @@ flowchart LR
 
 **File/artifact nhắc tới:** `.auto_publish_global.lock`, `.upload.lock`, `auto_publish_config.json`, `auto_publish_queue.json`, `auto_publish_state.json`, `client_secret.json`, `final.mp4`, `manifest.json`, `output.mp4`, `token.json`, `upload_history.jsonl`
 
-**Tín hiệu rủi ro (đếm tĩnh):** broad_except=43 · file_writes=2 · global_stmt=2 · sleep=3 · swallow_except=25 · threads=2
+**Tín hiệu rủi ro (đếm tĩnh):** broad_except=44 · file_writes=2 · global_stmt=2 · sleep=3 · swallow_except=25 · threads=2
 
 ### Lịch sử (từ docs/)
 

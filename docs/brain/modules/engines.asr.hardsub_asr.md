@@ -2,30 +2,35 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/asr/hardsub_asr.py` · **Lớp:** `asr` · **452 dòng** (391 code) · **12 hàm**, **0 class** · sha1 `d8d4491061`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/asr/hardsub_asr.py` · **Lớp:** `asr` · **452 dòng** (390 code) · **12 hàm**, **0 class** · sha1 `cd83dac659`
 
 > hardsub_asr.py — OCR hardsub chỉ để RÀ SOÁT / SỬA sub ZH (asr · srt). Một nhiệm vụ: RapidOCR đọc dải hardsub → so với asr.json / sub.zh → báo thiếu·sai → vá chữ ZH
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [core.manifest](./core.manifest.md), [engines.render](./engines.render.md)
-- **Được dùng bởi:** —
-- **Test:** ❌ chưa có test import trực tiếp
+- **Gọi tới (import nội bộ):** [core.manifest](./core.manifest.md), [engines.render](./engines.render.md), [engines.source_preflight](./engines.source_preflight.md)
+- **Được dùng bởi:** [engines.hs_ocr_fast](./engines.hs_ocr_fast.md), [engines.translate_simple.zh_ocr_target](./engines.translate_simple.zh_ocr_target.md), [engines.translate_simple.zh_source](./engines.translate_simple.zh_source.md), [server](./server.md)
+- **Test:** `tests/test_translate_simple_next.py`, `tests/test_translate_simple_next_review.py`
 - **Thư viện ngoài:** `rapidocr_onnxruntime`
 
 ```mermaid
 flowchart LR
   engines_asr_hardsub_asr[[engines.asr.hardsub_asr]]
+  engines_hs_ocr_fast[engines.hs_ocr_fast] --> engines_asr_hardsub_asr
+  engines_translate_simple_zh_ocr_target[engines.translate_simple.zh_ocr_target] --> engines_asr_hardsub_asr
+  engines_translate_simple_zh_source[engines.translate_simple.zh_source] --> engines_asr_hardsub_asr
+  server[server] --> engines_asr_hardsub_asr
   engines_asr_hardsub_asr --> core_manifest[core.manifest]
   engines_asr_hardsub_asr --> engines_render[engines.render]
+  engines_asr_hardsub_asr --> engines_source_preflight[engines.source_preflight]
 ```
 
 ### Hàm & class top-level
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_find_video` | 31 | 9 | `work_dir` |  |
+| `_find_video` | 36 | 4 | `work_dir` |  |
 | `_probe_size` | 42 | 11 | `video` |  |
 | `_norm_zh` | 55 | 4 | `s` |  |
 | `zh_sim` | 61 | 10 | `a, b` | Độ giống 0..1 (chuỗi đã chuẩn hóa). |
@@ -44,9 +49,10 @@ flowchart LR
 
 ### Lịch sử (từ docs/)
 
-- Fix logs: —
+- **Fix logs (1):**
+  - [Port V2→V5: preflight/chuẩn hoá video nguồn + extract_pcm bền + FireRed slice khoảng lặng + câu rác «None.» / ](../../fixes/2026-11-13-port-preflight-slice-junk.md)
 - **Reviews:** [_atoms_engines](../../reviews/_atoms_engines.md), [2026-11-06-v5-part-atoms](../../reviews/2026-11-06-v5-part-atoms.md), [2026-11-06-v5-func-catalog](../../reviews/2026-11-06-v5-func-catalog.md)
-- Nhắc trong CHANGELOG: **0** lần · DECISIONS: **0** lần
+- Nhắc trong CHANGELOG: **1** lần · DECISIONS: **0** lần
 
 <!-- AUTO:END -->
 

@@ -118,10 +118,23 @@ def _infer_job_pipeline(d: dict, wd: Path) -> str | None:
         st = {}
     if str(st.get("mode") or "").lower() == PIPELINE_SIMPLE or (isinstance(ag, dict) and ag.get("simple_park")):
         return PIPELINE_SIMPLE
-    if (wd / "script.json").exists() or st.get("started_at") \
-            or str(st.get("status") or "").lower() in ("running", "done", "error", "failed"):
+    # fix 2026-11-18: server đánh translate=running (mark_running, started_at) TRƯỚC khi hỏi luồng → job/part
+    # mới tinh bị suy «legacy» rồi khoá luôn (c7367a659c46_p01 chạy luồng cũ + upload Aurora). Chỉ tính
+    # dấu vết THẬT: script.json đã có câu VI, hoặc stage translate đã xong/lỗi.
+    if _script_has_vi(wd) or str(st.get("status") or "").lower() in ("done", "error", "failed"):
         return PIPELINE_LEGACY
     return None
+
+
+def _script_has_vi(wd: Path) -> bool:
+    sp = wd / "script.json"
+    if not sp.is_file():
+        return False
+    try:
+        rows = json.loads(sp.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return True                      # có file mà không đọc được → coi như có dấu vết (an toàn như cũ)
+    return isinstance(rows, list) and any(isinstance(r, dict) and (r.get("vi") or "").strip() for r in rows)
 
 
 def job_pipeline(work_dir, *, fresh: bool = False, stamp: bool = True) -> str:
@@ -242,6 +255,16 @@ def unreviewed_tolerance(n_rows: int) -> int:
 
 def missing_batch() -> int:
     return _int("SIMPLE_MISSING_BATCH", 4, 1, 30)
+
+
+def missing_small_max() -> int:
+    """2026-11-18: soát bổ sung còn ≤ N câu → lô nhỏ SIMPLE_MISSING_BATCH (câu khó / rác hay bị model lờ);
+    nhiều hơn (vd 81 câu OCR lượt B vừa đổi chữ) → lô thường SIMPLE_BATCH (trước: luôn lô 4 → 21 lần gọi)."""
+    return _int("SIMPLE_MISSING_SMALL_MAX", 5, 0, 1000)
+
+
+def missing_batch_for(n_left: int) -> int:
+    return missing_batch() if n_left <= missing_small_max() else max(missing_batch(), batch())
 
 
 def max_tokens() -> int:

@@ -9,9 +9,9 @@ set "AUTOPILOT_TICK_SEC=90"
 set "RUNWATCH_SEC=90"
 set "RUNWATCH_STUCK_MIN=30"
 set "RUNWATCH_MAX_HEAL=2"
-REM LLM /feed: base/key tu pineline.config.json (config.agent_llm); fallback openclaw
+REM LLM /feed: base/key tu pineline.config.json (config.agent_llm); khong fallback (openclaw da bo 2026-11-18)
 set "AGENT_MODEL=ollama/gemma4:31b-cloud"
-set "AGENT_FALLBACK_MODEL=openclaw"
+set "AGENT_FALLBACK_MODEL="
 set "PYTHONIOENCODING=utf-8"
 
 REM Pin Python 3.12 — PATH uu tien 3.15 sau update → thieu requests

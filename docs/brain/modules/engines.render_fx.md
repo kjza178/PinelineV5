@@ -2,15 +2,15 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/render_fx.py` · **Lớp:** `render` · **564 dòng** (477 code) · **32 hàm**, **0 class** · sha1 `33cbe711b1`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/render_fx.py` · **Lớp:** `render` · **564 dòng** (477 code) · **32 hàm**, **0 class** · sha1 `1ec3767563`
 
 > Helpers: uniqueness filters + library BGM paths (copyright-safe audio).
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [core.config](./core.config.md)
-- **Được dùng bởi:** [engines.render](./engines.render.md), [render](./render.md)
+- **Được dùng bởi:** [engines.render](./engines.render.md), [server](./server.md)
 - **Test:** `tests/test_layout_paths.py`
 - **Thư viện ngoài:** `PIL`
 
@@ -18,7 +18,7 @@
 flowchart LR
   engines_render_fx[[engines.render_fx]]
   engines_render[engines.render] --> engines_render_fx
-  render[render] --> engines_render_fx
+  server[server] --> engines_render_fx
   engines_render_fx --> core_config[core.config]
 ```
 

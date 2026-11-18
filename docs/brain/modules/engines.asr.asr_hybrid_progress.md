@@ -2,15 +2,15 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/asr/asr_hybrid_progress.py` · **Lớp:** `asr` · **144 dòng** (124 code) · **5 hàm**, **0 class** · sha1 `c1f2db1366`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/asr/asr_hybrid_progress.py` · **Lớp:** `asr` · **144 dòng** (124 code) · **5 hàm**, **0 class** · sha1 `fb7d0d864f`
 
 > asr_hybrid_progress.py — Đưa tiến độ sidecar (Nano/Para) vào stages.asr cho UI Hybrid. UI đọc manifest stages.asr; sidecar chỉ ghi asr.*.progress.json → UI kẹt 5%. Hàm này map % sidecar vào khoảng Hybrid và ghi/đè vào st
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [core.manifest](./core.manifest.md)
-- **Được dùng bởi:** [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md)
+- **Được dùng bởi:** [engines.asr.fun_asr_nano](./engines.asr.fun_asr_nano.md), [engines.asr.paraformer_zh](./engines.asr.paraformer_zh.md), [server](./server.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ```mermaid
@@ -18,6 +18,7 @@ flowchart LR
   engines_asr_asr_hybrid_progress[[engines.asr.asr_hybrid_progress]]
   engines_asr_fun_asr_nano[engines.asr.fun_asr_nano] --> engines_asr_asr_hybrid_progress
   engines_asr_paraformer_zh[engines.asr.paraformer_zh] --> engines_asr_asr_hybrid_progress
+  server[server] --> engines_asr_asr_hybrid_progress
   engines_asr_asr_hybrid_progress --> core_manifest[core.manifest]
 ```
 

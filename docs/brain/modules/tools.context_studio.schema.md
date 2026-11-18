@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `tools/context_studio/schema.py` · **Lớp:** `misc` · **129 dòng** (113 code) · **3 hàm**, **0 class** · sha1 `e077d40fad`
 
 > Heuristic number / name flags — không sửa transcript.
@@ -10,12 +10,13 @@
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [tools.context_studio.address_lexicon](./tools.context_studio.address_lexicon.md)
-- **Được dùng bởi:** [tools.context_studio.__main__](./tools.context_studio.__main__.md), [tools.context_studio.analyzer](./tools.context_studio.analyzer.md), [tools.context_studio.app_streamlit](./tools.context_studio.app_streamlit.md)
+- **Được dùng bởi:** [engines.translate_simple.stage_draft](./engines.translate_simple.stage_draft.md), [tools.context_studio.__main__](./tools.context_studio.__main__.md), [tools.context_studio.analyzer](./tools.context_studio.analyzer.md), [tools.context_studio.app_streamlit](./tools.context_studio.app_streamlit.md)
 - **Test:** ❌ chưa có test import trực tiếp
 
 ```mermaid
 flowchart LR
   tools_context_studio_schema[[tools.context_studio.schema]]
+  engines_translate_simple_stage_draft[engines.translate_simple.stage_draft] --> tools_context_studio_schema
   tools_context_studio___main__[tools.context_studio.__main__] --> tools_context_studio_schema
   tools_context_studio_analyzer[tools.context_studio.analyzer] --> tools_context_studio_schema
   tools_context_studio_app_streamlit[tools.context_studio.app_streamlit] --> tools_context_studio_schema

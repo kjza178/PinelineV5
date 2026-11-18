@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `scripts/check_batch5.py` · **Lớp:** `ops` · **347 dòng** (293 code) · **6 hàm**, **0 class** · sha1 `81925b4648`
 
 > Kiểm thử đợt 5 (agent an toàn): lệnh / bắt buộc, phân tầng tool + xác nhận ✅/❌, hg_auto_flow mode + chạy nền chống trùng, cắt kết quả tool, /stop không bị chặn. Không gọi LLM / Telegram / Hongguo thật — mọi I/O ngoài đều

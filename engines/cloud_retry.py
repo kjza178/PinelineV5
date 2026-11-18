@@ -118,6 +118,12 @@ def classify_cloud_retry(e: BaseException) -> str | None:
         return None
     if isinstance(e, ValueError):            # ReviewBadOutput / parse JSON → không phải lỗi mạng
         return None
+    try:
+        from engines.llm import LLMEmptyResponse
+        if isinstance(e, LLMEmptyResponse):  # 2026-11-18: 200 + content rỗng → gọi lại y hệt vẫn rỗng
+            return None
+    except Exception:  # noqa: BLE001
+        pass
     st = error_status(e)
     text = " | ".join(str(x) for x in _chain(e))
     if st == 429:

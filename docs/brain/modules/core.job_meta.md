@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `core/job_meta.py` · **Lớp:** `core` · **164 dòng** (146 code) · **5 hàm**, **0 class** · sha1 `d72619d52b`
 
 > Parse metadata hàng chờ (series/season UI) — dùng chung film_db sync + job_queue.
@@ -10,14 +10,13 @@
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** —
-- **Được dùng bởi:** [core.film_db](./core.film_db.md)
+- **Được dùng bởi:** —
 - **Được nhắc tên file `.py` (subprocess/script) bởi:** [restart_server](./restart_server.md)
 - **Test:** `tests/test_film_db_queue_meta.py`
 
 ```mermaid
 flowchart LR
   core_job_meta[[core.job_meta]]
-  core_film_db[core.film_db] --> core_job_meta
 ```
 
 ### Hàm & class top-level

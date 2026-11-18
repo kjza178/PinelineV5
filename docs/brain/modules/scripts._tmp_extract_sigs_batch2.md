@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `scripts/_tmp_extract_sigs_batch2.py` · **Lớp:** `ops` · **191 dòng** (165 code) · **5 hàm**, **0 class** · sha1 `b049403ef5`
 
 > One-shot AST signature extract for func-sigs batch2. Delete after use OK.

@@ -2,21 +2,22 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/playlist.py` · **Lớp:** `source` · **214 dòng** (182 code) · **5 hàm**, **0 class** · sha1 `d97cf6d1e9`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/playlist.py` · **Lớp:** `source` · **219 dòng** (187 code) · **5 hàm**, **0 class** · sha1 `73b718fba0`
 
 > playlist.py — Bóc 1 link thành DANH SÁCH video rồi tải hàng loạt. Vì sao tách riêng: Pineline theo kiến trúc "1 job = 1 video" (mỗi video 1 thư mục work/<hash>/ có manifest + resume riêng). Nên KHÔNG nhét vòng lặp tải nh
 
 ### Phụ thuộc
 
 - **Gọi tới (import nội bộ):** [engines.download](./engines.download.md)
-- **Được dùng bởi:** —
+- **Được dùng bởi:** [server](./server.md)
 - **Test:** ❌ chưa có test import trực tiếp
 - **Thư viện ngoài:** `yt_dlp`
 
 ```mermaid
 flowchart LR
   engines_playlist[[engines.playlist]]
+  server[server] --> engines_playlist
   engines_playlist --> engines_download[engines.download]
 ```
 
@@ -24,11 +25,11 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `_build_url_from_entry` | 37 | 14 | `entry, platform` | Lấy URL đầy đủ từ một entry playlist. extract_flat có khi chỉ trả id. |
-| `expand_meta` | 53 | 51 | `url, cookies, cookies_dir, cookies_from_browser, proxy` | Như expand nhưng trả THÊM metadata để gom nhóm: |
-| `expand` | 106 | 11 | `url, cookies, cookies_dir, cookies_from_browser, proxy` | Đọc link, trả danh sách URL video. Video đơn -> [url]; playlist -> [nhiều]. |
-| `batch_download` | 119 | 55 | `url, work_root, workers, conn, cookies, cookies_dir, cookies_from_b…` | Tải tất cả video của 1 link. Trả list kết quả {url, job_id, ok, error}. |
-| `main` | 176 | 35 | `argv` |  |
+| `_build_url_from_entry` | 42 | 14 | `entry, platform` | Lấy URL đầy đủ từ một entry playlist. extract_flat có khi chỉ trả id. |
+| `expand_meta` | 58 | 51 | `url, cookies, cookies_dir, cookies_from_browser, proxy` | Như expand nhưng trả THÊM metadata để gom nhóm: |
+| `expand` | 111 | 11 | `url, cookies, cookies_dir, cookies_from_browser, proxy` | Đọc link, trả danh sách URL video. Video đơn -> [url]; playlist -> [nhiều]. |
+| `batch_download` | 124 | 55 | `url, work_root, workers, conn, cookies, cookies_dir, cookies_from_b…` | Tải tất cả video của 1 link. Trả list kết quả {url, job_id, ok, error}. |
+| `main` | 181 | 35 | `argv` |  |
 
 **Tín hiệu rủi ro (đếm tĩnh):** broad_except=1 · pools=1
 

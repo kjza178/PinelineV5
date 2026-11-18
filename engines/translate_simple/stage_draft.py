@@ -148,16 +148,30 @@ def build_full_movie_plan(
     import engines.cloud_retry as cloud_retry
     from engines.llm import chat
 
+    mt = {"v": cfg.max_tokens()}
+
     def _call():
-        out = chat(
-            [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
-            model=model,
-            temperature=cfg.temperature(),
-            json_mode=True,
-            max_tokens=cfg.max_tokens(),
-            timeout=max(cfg.timeout(), 420),
-        )
-        return _decode(out)
+        # 2026-11-18: DeepSeek trả rỗng vì hết max_tokens (finish_reason=length) → thử lại 1 lần với gấp đôi
+        # (≤32768). Rỗng vì lý do khác → LLMEmptyResponse lên luôn: cloud_retry không lặp, build_plan rơi
+        # xuống file/sample (trước: «thất bại …: None» bị coi là 5xx → gửi lại cả phim tới 16 lần).
+        from engines.llm import LLMEmptyResponse
+        for _ in range(2):
+            try:
+                out = chat(
+                    [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
+                    model=model,
+                    temperature=cfg.temperature(),
+                    json_mode=True,
+                    max_tokens=mt["v"],
+                    timeout=max(cfg.timeout(), 420),
+                )
+                return _decode(out)
+            except LLMEmptyResponse as e:
+                if getattr(e, "finish_reason", "") != "length" or mt["v"] >= 32768:
+                    raise
+                mt["v"] = min(32768, mt["v"] * 2)
+                print(f"[simple-plan-a7] hết max_tokens → thử lại với max_tokens={mt['v']}", flush=True)
+        raise RuntimeError("A7: hết lượt thử max_tokens")
 
     try:
         data = cloud_retry.call_with_cloud_retry(

@@ -2,7 +2,7 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
 **File:** `scripts/gen_sample_assets.py` · **Lớp:** `ops` · **108 dòng** (88 code) · **4 hàm**, **0 class** · sha1 `98f843b4dc`
 
 > Tạo sample assets cho Pineline (grain / LUT / BGM). Chạy:  python scripts/gen_sample_assets.py - grain.png  : film grain loop (overlay)

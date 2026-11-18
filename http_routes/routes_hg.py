@@ -4,10 +4,6 @@ Tách từ server.py (đợt 7). Chỉ được nạp từ cuối server.py (sau
 định nghĩa): truy cập server qua `S.<tên>` để patch `server.<tên>` trong test vẫn có tác dụng."""
 from __future__ import annotations
 
-try:  # machine-config 11-11: key phụ thuộc máy (cổng/thư mục) — V5/V6 core/, V4 phẳng
-    from core import machine as _machine
-except ImportError:  # pragma: no cover
-    import machine as _machine  # type: ignore
 import json
 from pathlib import Path
 from fastapi.responses import FileResponse
@@ -84,7 +80,7 @@ def api_disk(base: str | None = None):
     except Exception:  # noqa: BLE001
         folder = ""
     if not folder:
-        folder = str(_machine.library_dir())
+        folder = r"D:\Lib"
     root = Path(folder)
     # lấy ổ chứa folder (D:\ …)
     drive = root.anchor or str(root)[:3] or "D:\\"
@@ -748,6 +744,44 @@ def hg_library_open(body: dict | None = None):
         return _hg_err(e)
 
 
+@router.post("/api/hg/library/normalize")
+def hg_library_normalize(body: dict | None = None):
+    """Chuẩn hóa file video đã gộp về Full HD 1080p (NVENC + AAC 48k).
+    2026-11-17: chạy NỀN (lib_normalize) — trả ngay; tiến độ ở GET /api/hg/library/normalize/status."""
+    import agents.hongguo_bridge as hg
+    import engines.lib_normalize as lib_normalize
+    body = body or {}
+    name = str(body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"ok": False, "error": "Thiếu tên thư mục cần chuẩn hóa"}, status_code=400)
+    root = Path(r"D:\Lib")
+    folder = hg.safe_child(root, name)
+    if folder is None or not folder.is_dir():
+        return JSONResponse({"ok": False, "error": f"Không tìm thấy thư mục '{name}' trong D:\\Lib"}, status_code=404)
+    cands = [folder / "merged.mp4", *sorted(folder.glob("*(merged).mp4"))]
+    mp = next((c for c in cands if c.is_file()), None)
+    if mp is None:
+        mp4s = [f for f in folder.glob("*.mp4") if not f.name.startswith("S01E") and not f.name.startswith("第")
+                and ".norm." not in f.name and f.stat().st_size > 50 * 1024 * 1024]
+        if mp4s:
+            mp = max(mp4s, key=lambda f: f.stat().st_size)
+    if not mp or not mp.is_file():
+        return JSONResponse({"ok": False, "error": f"Không tìm thấy file video (merged.mp4) trong '{name}'"}, status_code=404)
+    try:
+        # 2026-11-18: Films UI gọi thẳng sidecar :8802 (chạy + log ở đó); route này giữ cho tương thích.
+        lib_normalize.set_log_dir(S.WORK_ROOT / "logs")
+        return {**lib_normalize.enqueue([name], force=True, front=True), "file": mp.name}
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@router.get("/api/hg/library/normalize/status")
+def hg_library_normalize_status(name: str | None = None):
+    """Tiến độ chuẩn hóa: name=… → 1 bộ; không name → mọi bộ đã chạy từ lúc server bật."""
+    import engines.lib_normalize as lib_normalize
+    return lib_normalize.status(name)
+
+
 @router.post("/api/hg/library/delete")
 def hg_library_delete(body: dict | None = None):
     import agents.hongguo_bridge as hg
@@ -907,11 +941,15 @@ def meta_ai_image(body: dict):
         poster_name = str(body.get("poster_name") or "").strip()
         if not prompt:
             return JSONResponse({"ok": False, "error": "Thiếu prompt"}, status_code=400)
+        allow_edits = body.get("allow_edits")
+        if allow_edits is None and body.get("skip_edits"):
+            allow_edits = False
         img_bytes = meta_studio.generate_ai_image(
             prompt,
             timeout=300,
             job_id=job_id,
             poster_name=poster_name,
+            allow_edits=allow_edits,
         )
         if not img_bytes:
             return JSONResponse(

@@ -15,6 +15,7 @@ Telegram (user trong TELEGRAM_ALLOWED_USERS):
   /running      — job đang chạy (stage, %, ETA, treo?)
   /feed [...]   — tự thêm job khi hết (yêu cầu bằng lời → spec)
   /lib [...]    — thư viện chưa làm + nút Thêm/Ưu tiên/Bỏ qua/Ghép
+  /qa <job>     — câu bị cờ QA + đề xuất + nút; reply `?` / `#số ?` vào tin HOLD QA = xem ngữ cảnh
   /restartserver
   autopilot on|off  (plain text cũng được)
 
@@ -583,6 +584,83 @@ def _agent_ask(msg: str, uid: str = "") -> dict:
     return d
 
 
+# 2026-11-17 qaask: câu hỏi HOLD QA của Brain (agent_qa_ask) — nút ✅/⏭/▶️ + reply câu VI mới.
+_QA_MARK = "HOLD QA"
+
+
+def _qa_post(body: dict) -> dict:
+    try:
+        from agents.agent_autopilot import _post as _ap_post
+        return _ap_post(BASE, "/api/agent/qa-answer", body, timeout=60,
+                        headers={"X-Pineline-Caller": "user", "X-Pineline-Source": "telegram"})
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
+def _qa_strip_buttons(d: dict) -> None:
+    """Hết câu chờ → gỡ nút trên mọi tin hỏi của job (tránh bấm lại)."""
+    for m in d.get("msgs") or []:
+        tg_api("editMessageReplyMarkup", {"chat_id": str(m.get("chat_id")), "message_id": str(m.get("message_id")),
+                                          "reply_markup": json.dumps({"inline_keyboard": []})})
+
+
+def _qa_show(uid: str, ref: str) -> None:
+    """/qa <job>: hiện lại câu bị cờ + đề xuất + 3 nút (có thể mất ~1–2' nếu phải nhờ LLM đề xuất)."""
+    if not ref:
+        tg_api("sendMessage", {"chat_id": uid, "text": "Dùng: /qa <job_id> (hoặc ≥4 ký tự đầu)"})
+        return
+    try:
+        from agents.agent_autopilot import _post as _ap_post
+        d = _ap_post(BASE, "/api/agent/qa-show", {"job_id": ref}, timeout=300)
+    except Exception as e:  # noqa: BLE001
+        d = {"ok": False, "error": str(e)}
+    if not d.get("ok"):
+        tg_api("sendMessage", {"chat_id": uid, "text": f"❌ {d.get('error') or 'Lỗi'}"[:3500]})
+        return
+    payload = {"chat_id": uid, "text": str(d.get("text") or d.get("message") or "")[:3900],
+               "disable_web_page_preview": "1"}
+    if d.get("keyboard"):
+        payload["reply_markup"] = json.dumps(d["keyboard"], ensure_ascii=False)
+    tg_api("sendMessage", payload)
+
+
+def _qa_callback(uid: str, cq: dict, data: str) -> None:
+    _, action, jid = (data.split(":", 2) + ["", ""])[:3]
+    d = _qa_post({"job_id": jid, "action": action, "chat_id": uid, "by": f"telegram:{uid}"})
+    text = ("✅ " + str(d.get("message") or "")) if d.get("ok") else f"❌ {d.get('error') or 'Lỗi'}"
+    if d.get("ok") and d.get("release"):
+        rs = d.get("resume") or {}
+        if rs and not rs.get("ok", True):
+            text += f"\n⚠️ Xếp lại job lỗi: {rs.get('error')} — bấm Chạy tiếp trên UI."
+        _qa_strip_buttons(d)
+    tg_api("sendMessage", {"chat_id": uid, "text": text[:3500], "disable_web_page_preview": "1",
+                           "reply_to_message_id": str((cq.get("message") or {}).get("message_id") or "")})
+
+
+def _qa_reply(uid: str, msg: dict, text: str) -> bool:
+    """Reply vào tin HOLD QA → gửi câu VI mới. True = đã xử lý (không đưa sang agent chat)."""
+    rep = msg.get("reply_to_message") or {}
+    if _QA_MARK not in str(rep.get("text") or ""):
+        return False
+    m = re.search(_QA_MARK + r"\)?\s+([0-9A-Za-z_\-]{4,})", str(rep.get("text") or ""))
+    d = _qa_post({"job_id": m.group(1) if m else None, "reply_to": rep.get("message_id"), "chat_id": uid,
+                  "text": text, "by": f"telegram:{uid}"})
+    if d.get("ok") and d.get("matched") is False:
+        return False
+    if d.get("ok") and d.get("context"):
+        out = str(d.get("message") or "")
+    else:
+        out = ("✍️ " + str(d.get("message") or "")) if d.get("ok") else f"❌ {d.get('error') or 'Lỗi'}"
+    if d.get("ok") and d.get("release"):
+        rs = d.get("resume") or {}
+        if rs and not rs.get("ok", True):
+            out += f"\n⚠️ Xếp lại job lỗi: {rs.get('error')} — bấm Chạy tiếp trên UI."
+        _qa_strip_buttons(d)
+    tg_api("sendMessage", {"chat_id": uid, "text": out[:3500], "disable_web_page_preview": "1",
+                           "reply_to_message_id": str(msg.get("message_id") or "")})
+    return True
+
+
 def _confirm_callback(uid: str, cq: dict, data: str) -> None:
     _, cid, yn = (data.split(":") + ["", ""])[:3]
     d = agent_confirm(BASE, cid, yn == "y", caller="user", source="telegram")   # agentI2: người bấm ✅
@@ -670,6 +748,7 @@ def handle_command(text: str, uid: str = "") -> str:
             "/new — Làm mới phiên chat (xóa bộ nhớ ngữ cảnh)\n"
             "/hg — Lệnh Hongguo (rank / search / series / auto / status / lib / merge / clean)\n"
             "/lib — Thư viện chưa làm (gợi ý + nút Thêm / Ưu tiên / Ghép)\n"
+            "/qa <job> — Câu bị cờ QA (ZH/VI/đề xuất) + nút Áp/Bỏ cờ/Chạy tiếp; reply `?` xem ngữ cảnh\n"
             "/films — Thống kê database phim đã làm\n"
             "/film <job_id> — Chi tiết + lịch sử 1 phim\n"
             "/feed — Tự động chọn và thêm job theo tiêu chí\n"
@@ -890,7 +969,7 @@ def _fetch_poster_bytes(name: str) -> bytes | None:
     # 2. Thử gọi Hongguo Downloader 8000
     try:
         import agents.hongguo_bridge as hg
-        data, _ = hg.fetch_poster(name, hg.DEFAULT_BASE)
+        data, _ = hg.fetch_poster(name, "http://127.0.0.1:8000")
         if data and len(data) > 100:
             return data
     except Exception:
@@ -1108,6 +1187,13 @@ class CtrlHandler(BaseHTTPRequestHandler):
         if path in ("/api/models", "/api/llm/models"):
             import engines.llm as llm
             self._json(200, llm.list_available_models())
+            return
+        if path == "/api/hg/library/normalize/status":
+            # 2026-11-18: hàng đợi chuẩn hóa chạy trong sidecar → trả thẳng (kèm log)
+            from urllib.parse import parse_qs, urlsplit
+            import engines.lib_normalize as lib_normalize
+            qs = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+            self._json(200, lib_normalize.status(qs.get("name") or None))
             return
         if path == "/api/hg/poster":
             # Proxy poster → :8801 / Hongguo / local (Films UI trên :8802)
@@ -1412,6 +1498,34 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 tmt = importlib.reload(tmt)
                 items = list(body.get("items") or [])
                 self._json(200, tmt.translate_titles(items))
+            except Exception as e:  # noqa: BLE001
+                self._json(500, {"ok": False, "error": str(e)})
+            return
+        if path in ("/api/hg/library/normalize", "/api/hg/library/normalize/batch",
+                    "/api/hg/library/normalize/cancel"):
+            # 2026-11-18: chuẩn hóa thư viện chạy NGAY TRONG sidecar :8802 (log ở console :8802 + Films UI,
+            # không làm rối :8801). 📐 1 mùa = bắt buộc chạy, lên đầu hàng; «đã tick» = kiểm → bỏ qua mùa đã chuẩn.
+            try:
+                import engines.lib_normalize as lib_normalize
+                if path.endswith("/cancel"):
+                    self._json(200, lib_normalize.cancel_queued())
+                elif path.endswith("/batch"):
+                    names = [str(x) for x in (body.get("names") or []) if str(x).strip()]
+                    if not names:
+                        self._json(400, {"ok": False, "error": "chưa tick mùa nào"})
+                    else:
+                        self._json(200, lib_normalize.enqueue(names, force=bool(body.get("force"))))
+                else:
+                    name = str(body.get("name") or "").strip()
+                    if not name:
+                        self._json(400, {"ok": False, "error": "Thiếu tên thư mục cần chuẩn hóa"})
+                    else:
+                        _p, err = lib_normalize.find_merged(name)
+                        if _p is None:
+                            self._json(404, {"ok": False, "error": err})
+                        else:
+                            self._json(200, {**lib_normalize.enqueue([name], force=True, front=True),
+                                             "file": _p.name})
             except Exception as e:  # noqa: BLE001
                 self._json(500, {"ok": False, "error": str(e)})
             return
@@ -1849,11 +1963,15 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             if not prompt:
                 self._json(400, {"ok": False, "error": "Thiếu prompt"})
                 return
+            allow_edits = body.get("allow_edits")
+            if allow_edits is None and body.get("skip_edits"):
+                allow_edits = False
             img_bytes = meta_studio.generate_ai_image(
                 prompt,
                 timeout=300,
                 job_id=job_id,
                 poster_name=poster_name,
+                allow_edits=allow_edits,
             )
             if not img_bytes:
                 self._json(500, {"ok": False, "error": "Không sinh được ảnh (timeout/lỗi GPT local :3377 hoặc Aurora)"})
@@ -2084,6 +2202,10 @@ def _on_callback(cq: dict, allow: set[str]) -> None:
     print(f"[tele] ⎆ {uid}: {data}", flush=True)
     tg_api("answerCallbackQuery", {"callback_query_id": cq.get("id"), "text": "Đang xử lý…"})
     try:
+        if data.startswith("qa:"):
+            threading.Thread(target=_qa_callback, args=(uid, cq, data), name="qa-answer",
+                             daemon=True).start()
+            return
         if data.startswith("agc:"):
             threading.Thread(target=_confirm_callback, args=(uid, cq, data), name="agent-confirm",
                              daemon=True).start()
@@ -2208,6 +2330,9 @@ def telegram_loop(stop: threading.Event) -> None:
                 if not text or uid not in allow:
                     continue
                 print(f"[tele] ← {uid}: {text[:80]}", flush=True)
+                if msg.get("reply_to_message") and not text.startswith("/"):
+                    if _qa_reply(uid, msg, text):
+                        continue
                 if is_priority_cmd(text):
                     _handle_tg_text(uid, text)
                 else:
@@ -2245,6 +2370,9 @@ def _handle_tg_text(uid: str, text: str) -> None:
         kind, hint = _slash_hint(text)
         if kind:
             reply = hint if kind == "hint" else _agent_reply(text, uid)
+        elif re.match(r"^/qa(@\S+)?(\s|$)", text, re.I):
+            _qa_show(uid, text.split(maxsplit=1)[1].strip() if " " in text.strip() else "")
+            return
         elif re.match(r"^/(lib|thuvien|library)(@\S+)?(\s|$)", text, re.I):
             reply, buttons = feeder.lib_command(BASE, text.split(maxsplit=1)[1] if " " in text else "")
             add_user_history(uid, "user", text)

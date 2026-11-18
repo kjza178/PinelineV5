@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 try:  # V5/V6: package core/ ; V4: module phẳng config.py
     from core import config as _config  # type: ignore
 except ImportError:  # pragma: no cover - V4
-    import config as _config  # type: ignore
+    import core.config as _config  # type: ignore
 
 
 # Key máy → (mặc định, mô tả ngắn). Dùng cho config.example.json + doctor.

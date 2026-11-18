@@ -2,8 +2,8 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `engines/asr/paraformer_zh.py` · **Lớp:** `asr` · **309 dòng** (275 code) · **2 hàm**, **0 class** · sha1 `b6b09ddaf2`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `engines/asr/paraformer_zh.py` · **Lớp:** `asr` · **314 dòng** (280 code) · **2 hàm**, **0 class** · sha1 `fd7fd78e48`
 
 > paraformer_zh.py — STAGE ASR bằng FunASR Paraformer-zh (timestamp tốt cho phụ đề/TTS). Model : paraformer-zh (+ fsmn-vad + ct-punc) Đầu vào : work/<job>/source.mp4
 
@@ -34,10 +34,10 @@ flowchart LR
 
 | Tên | Dòng | Dài | Tham số | Docstring |
 |---|---:|---:|---|---|
-| `run_asr_paraformer` | 45 | 245 ⚠️ | `work_dir, device, force, hub, sidecar, slice_mode` |  |
-| `main` | 292 | 14 | `argv` |  |
+| `run_asr_paraformer` | 50 | 245 ⚠️ | `work_dir, device, force, hub, sidecar, slice_mode` |  |
+| `main` | 297 | 14 | `argv` |  |
 
-**Hàm dài ≥120 dòng:** `run_asr_paraformer` (245, L45)
+**Hàm dài ≥120 dòng:** `run_asr_paraformer` (245, L50)
 
 ### Config / env keys (2)
 

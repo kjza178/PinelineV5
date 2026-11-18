@@ -2,24 +2,26 @@
 
 [← Index](../generated/module-index.md) · [Brain home](../README.md)
 
-<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-11 02:38. Đừng sửa tay khối này. -->
-**File:** `tools/test_channel.py` · **Lớp:** `publish` · **1283 dòng** (1078 code) · **32 hàm**, **0 class** · sha1 `6626517662`
+<!-- AUTO:START — sinh bởi scripts/brain_build.py 2026-11-17 19:05. Đừng sửa tay khối này. -->
+**File:** `tools/test_channel.py` · **Lớp:** `publish` · **1444 dòng** (1217 code) · **38 hàm**, **0 class** · sha1 `0a72738c21`
 
 > test_channel.py — Quản lý Kênh Phụ Test (Burner Channel) độc lập trong Pineline. Chức năng: - Đăng nhập Google OAuth Kênh Phụ / Gmail Test riêng (tách biệt hoàn toàn với kênh Sage Review).
 
 ### Phụ thuộc
 
-- **Gọi tới (import nội bộ):** [film_db](./film_db.md)
+- **Gọi tới (import nội bộ):** [core.film_db](./core.film_db.md), [engines.check_block](./engines.check_block.md), [tools.lib_check](./tools.lib_check.md)
 - **Được dùng bởi:** [http_routes.routes_films](./http_routes.routes_films.md)
-- **Được nhắc tên file `.py` (subprocess/script) bởi:** [agents.test_channel](./agents.test_channel.md), [test_channel](./test_channel.md)
+- **Được nhắc tên file `.py` (subprocess/script) bởi:** [agents.test_channel](./agents.test_channel.md)
 - **Test:** ❌ chưa có test import trực tiếp
-- **Thư viện ngoài:** `check_block`, `google`, `google_auth_oauthlib`, `googleapiclient`, `lib_check`
+- **Thư viện ngoài:** `google`, `google_auth_oauthlib`, `googleapiclient`
 
 ```mermaid
 flowchart LR
   tools_test_channel[[tools.test_channel]]
   http_routes_routes_films[http_routes.routes_films] --> tools_test_channel
-  tools_test_channel --> film_db[film_db]
+  tools_test_channel --> core_film_db[core.film_db]
+  tools_test_channel --> engines_check_block[engines.check_block]
+  tools_test_channel --> tools_lib_check[tools.lib_check]
 ```
 
 ### Hàm & class top-level
@@ -30,34 +32,40 @@ flowchart LR
 | `_utc_now` | 97 | 2 | `` |  |
 | `_utc_now_plus_minutes` | 101 | 2 | `minutes` |  |
 | `_today_utc` | 105 | 2 | `` |  |
-| `get_channel_limit_state` | 113 | 11 | `` | Kiểm tra xem kênh YouTube đã bị dính uploadLimitExceeded hôm nay chưa. |
-| `mark_channel_limit_reached` | 126 | 9 | `channel_title` | Đánh dấu Kênh YouTube chạm giới hạn upload hôm nay. |
-| `get_projects_health` | 137 | 8 | `` | Đọc dữ liệu kiểm tra tính khả dụng của từng Project. |
-| `update_project_health` | 147 | 35 | `project_id, api_enabled, channel_title, channel_id, email, enable_u…` | Cập nhật trạng thái API của Project. |
-| `verify_all_projects_health` | 184 | 75 | `force` | Kiểm tra thực tế trạng thái YouTube API và kênh kết nối cho từng Project. |
-| `get_exhausted_projects` | 261 | 7 | `` |  |
-| `mark_project_exhausted` | 270 | 4 | `project_id` |  |
-| `reset_exhausted_projects` | 276 | 14 | `project_id` | Reset cờ hết quota 429 hoặc khóa upload cho project cụ thể hoặc toàn bộ. |
-| `list_projects` | 292 | 40 | `` |  |
-| `get_today_uploads_count` | 338 | 65 | `force` | Đếm số video đã upload trong ngày trên Kênh Test qua YouTube Data API (cache 120s, tốn chỉ 1-2 quota units). |
-| `get_status` | 405 | 27 | `` | Kiểm tra trạng thái kết nối Kênh Phụ Test và danh sách Projects. |
-| `disconnect` | 434 | 11 | `` | Ngắt kết nối Kênh Phụ Test. |
-| `get_auth_url` | 447 | 50 | `redirect_uri, project_id` | Tạo URL đăng nhập Google OAuth cho Project được chọn hoặc project chưa kết nối tiếp theo. |
-| `finish_oauth` | 499 | 92 | `code, redirect_uri, project_id` | Hoàn tất đăng nhập OAuth và lưu token cho Project tương ứng. |
-| `get_available_service` | 593 | 78 | `` | Lấy YouTube service từ project khả dụng đầu tiên trong pool (chưa hết quota hôm nay và đã bật API). |
-| `get_read_service` | 673 | 19 | `` | Lấy YouTube service từ bất kỳ project nào đã kết nối để đọc metadata (chỉ tốn 1 quota unit, không phụ thuộc quota upload). |
-| `get_youtube_service` | 694 | 4 | `` | Lấy YouTube API service khả dụng. |
-| `upload_test_sample` | 702 | 66 | `name, sample_path, title_vi` | Upload clip mẫu 90s lên Kênh Phụ Test ở chế độ Unlisted, tự động xoay vòng Project khi gặp Quota 429. |
-| `delete_test_video` | 770 | 20 | `video_id` | Xoá video test trên YouTube sau khi đã kiểm tra xong. |
-| `wait_and_check_test_video` | 792 | 84 | `video_id, name, max_wait_sec` | Chờ YouTube xử lý xong video và kiểm tra bản quyền Content ID chính xác. |
-| `recheck_single` | 880 | 77 | `name` | Kiểm tra bản quyền Content ID của 1 video đã upload lên Kênh Phụ. |
-| `check_and_process_pending_rechecks` | 959 | 26 | `force` | Quét và kiểm tra lại các video đang chờ (mặc định kiểm tra những video đã qua 15p). |
-| `start_recheck_daemon` | 989 | 18 | `` | Khởi động daemon định kỳ kiểm tra các video đến hạn 5 phút. |
-| `run_full_test_for_season` | 1011 | 99 | `name, auto_delete, wait_for_result, title_vi` | Thực hiện quy trình test 1 bộ phim: |
-| `_batch_worker` | 1112 | 116 | `names, auto_delete, title_vi_map` |  |
-| `stop_batch_test` | 1230 | 8 | `` | Yêu cầu dừng Test All sau item hiện tại (không kill giữa upload). |
-| `start_batch_test` | 1240 | 27 | `names, limit, auto_delete, title_vi_map` | Bắt đầu chạy Test All hàng loạt ngầm. |
-| `get_batch_progress` | 1269 | 11 | `` | Lấy tiến độ Test All hiện tại và thống kê số video đang chờ 15p. |
+| `_quota_day` | 109 | 8 | `` | Ngày reset hạn mức YouTube Data API (Pacific), không dùng UTC/VN. |
+| `_classify_yt_block_error` | 119 | 10 | `err_str` | Chỉ nhận diện lỗi cứng. CẤM khớp chữ 'quota'/'429' mơ hồ (false positive). |
+| `get_channel_limit_state` | 138 | 11 | `` | Kiểm tra xem kênh YouTube đã bị dính uploadLimitExceeded hôm nay chưa. |
+| `mark_channel_limit_reached` | 151 | 9 | `channel_title` | Đánh dấu Kênh YouTube chạm giới hạn upload hôm nay. |
+| `get_projects_health` | 162 | 8 | `` | Đọc dữ liệu kiểm tra tính khả dụng của từng Project. |
+| `update_project_health` | 172 | 35 | `project_id, api_enabled, channel_title, channel_id, email, enable_u…` | Cập nhật trạng thái API của Project. |
+| `verify_all_projects_health` | 209 | 75 | `force` | Kiểm tra thực tế trạng thái YouTube API và kênh kết nối cho từng Project. |
+| `_load_exhausted_raw` | 286 | 8 | `` |  |
+| `_save_exhausted_raw` | 296 | 3 | `data` |  |
+| `_normalize_exhausted_entry` | 301 | 24 | `val` | Chuẩn hoá entry → {day, reason, at} hoặc None nếu hết hạn / rác. |
+| `get_exhausted_projects` | 327 | 20 | `` | Map project_id → day (string) cho tương thích chỗ cũ; đã purge stale. |
+| `get_exhausted_meta` | 349 | 9 | `` | Map project_id → {day, reason, at} sau purge. |
+| `mark_project_exhausted` | 360 | 7 | `project_id, reason` |  |
+| `reset_exhausted_projects` | 369 | 14 | `project_id` | Reset cờ hết quota / khóa upload cho project cụ thể hoặc toàn bộ. |
+| `list_projects` | 385 | 42 | `` |  |
+| `get_today_uploads_count` | 433 | 65 | `force` | Đếm số video đã upload trong ngày trên Kênh Test qua YouTube Data API (cache 120s, tốn chỉ 1-2 quota units). |
+| `get_status` | 500 | 27 | `` | Kiểm tra trạng thái kết nối Kênh Phụ Test và danh sách Projects. |
+| `disconnect` | 529 | 11 | `` | Ngắt kết nối Kênh Phụ Test. |
+| `get_auth_url` | 542 | 55 | `redirect_uri, project_id` | Tạo URL đăng nhập Google OAuth cho Project được chọn hoặc project chưa kết nối tiếp theo. |
+| `finish_oauth` | 599 | 93 | `code, redirect_uri, project_id` | Hoàn tất đăng nhập OAuth và lưu token cho Project tương ứng. |
+| `get_available_service` | 694 | 95 | `project_id, force` | Lấy YouTube service từ pool (hoặc đúng 1 project nếu truyền project_id). |
+| `get_read_service` | 791 | 19 | `` | Lấy YouTube service từ bất kỳ project nào đã kết nối để đọc metadata (chỉ tốn 1 quota unit, không phụ thuộc quota upload). |
+| `get_youtube_service` | 812 | 4 | `` | Lấy YouTube API service khả dụng. |
+| `upload_test_sample` | 820 | 101 | `name, sample_path, title_vi, project_id` | Upload clip mẫu 90s Unlisted. Có project_id → chỉ dùng account đó (không xoay vòng đốt cờ các acc khác). |
+| `delete_test_video` | 923 | 20 | `video_id` | Xoá video test trên YouTube sau khi đã kiểm tra xong. |
+| `wait_and_check_test_video` | 945 | 84 | `video_id, name, max_wait_sec` | Chờ YouTube xử lý xong video và kiểm tra bản quyền Content ID chính xác. |
+| `recheck_single` | 1033 | 77 | `name` | Kiểm tra bản quyền Content ID của 1 video đã upload lên Kênh Phụ. |
+| `check_and_process_pending_rechecks` | 1112 | 26 | `force` | Quét và kiểm tra lại các video đang chờ (mặc định kiểm tra những video đã qua 15p). |
+| `start_recheck_daemon` | 1142 | 18 | `` | Khởi động daemon định kỳ kiểm tra các video đến hạn 5 phút. |
+| `run_full_test_for_season` | 1164 | 107 | `name, auto_delete, wait_for_result, title_vi, project_id` | Thực hiện quy trình test 1 bộ phim: |
+| `_batch_worker` | 1273 | 116 | `names, auto_delete, title_vi_map` |  |
+| `stop_batch_test` | 1391 | 8 | `` | Yêu cầu dừng Test All sau item hiện tại (không kill giữa upload). |
+| `start_batch_test` | 1401 | 27 | `names, limit, auto_delete, title_vi_map` | Bắt đầu chạy Test All hàng loạt ngầm. |
+| `get_batch_progress` | 1430 | 11 | `` | Lấy tiến độ Test All hiện tại và thống kê số video đang chờ 15p. |
 
 ### Config / env keys (2)
 
@@ -65,7 +73,7 @@ flowchart LR
 
 **File/artifact nhắc tới:** `channel.json`, `channel_limit.json`, `client_secret.json`, `code_verifier.txt`, `current_oauth_project.txt`, `exhausted.json`, `projects.json`, `projects_health.json`, `token.json`
 
-**Tín hiệu rủi ro (đếm tĩnh):** broad_except=31 · file_writes=15 · global_stmt=4 · sleep=6 · swallow_except=15 · threads=2
+**Tín hiệu rủi ro (đếm tĩnh):** broad_except=35 · file_writes=11 · global_stmt=4 · sleep=6 · swallow_except=16 · threads=2
 
 ### Lịch sử (từ docs/)
 
