@@ -1137,54 +1137,90 @@ def _publish_job_internal(
             final_title = format_youtube_title(final_title, clean_name=title_vi, season=season_no)
             final_desc = meta_res.get("description") or f"{title_vi} - Trọn bộ thuyết minh chất lượng cao."
             final_tags = meta_res.get("tags") or [title_vi, "Phim Thuyết Minh", "Manhua Tiếng Việt"]
-            # finalize đã sanitize hook + badge NEW/HOT + prompt AI có chữ 3D
-            hooks = meta_res.get("hook_texts") or meta_studio.hooks_from_series_title(
-                title_vi or series_name, title_zh or ""
-            )
+            # Poster = ref nhân vật; chữ thumb = neo TITLE series (không hook LLM lệch subplot)
+            concept = meta_res.get("thumbnail_concept") if isinstance(meta_res.get("thumbnail_concept"), dict) else {}
+            typo = meta_res.get("typography_direction") if isinstance(meta_res.get("typography_direction"), dict) else {}
+            hooks = meta_studio.hooks_from_series_title(title_vi or series_name, title_zh or "")
             badge_txt = meta_studio.pick_badge_text(
                 meta_res.get("badge_text"), job_id=job_id, title_vi=title_vi or series_name,
             )
-            sub_txt = (meta_res.get("sub_text") or series_name or title_vi or "").strip()
-            ai_prompt = meta_res.get("master_image_prompt") or meta_res.get("ai_image_prompt") or ""
-            if "INTEGRATED 3D VIETNAMESE TYPOGRAPHY" not in (ai_prompt or ""):
-                ai_prompt = meta_studio.build_master_image_prompt(
-                    title_vi=title_vi or series_name,
-                    title_zh=title_zh or "",
-                    story_moment=str((meta_res.get("thumbnail_concept") or {}).get("story_moment") or ""),
-                    visual_dna=str((meta_res.get("thumbnail_concept") or {}).get("visual_dna") or ""),
-                    palette=str((meta_res.get("thumbnail_concept") or {}).get("selected_concept") or ""),
-                    layout=str((meta_res.get("thumbnail_concept") or {}).get("layout") or ""),
-                    hook_texts=hooks,
-                    badge_text=badge_txt,
-                    sub_text=sub_txt,
-                )
+            sub_txt = (series_name or title_vi or "").strip()
+            # Always rebuild: bỏ story/visual_dna LLM (dễ bịa «cấm địa» khi phim là trường học)
+            # và ép hook = title; palette/layout từ meta chỉ giữ màu/bố cục an toàn.
+            ai_prompt = meta_studio.build_master_image_prompt(
+                title_vi=title_vi or series_name,
+                title_zh=title_zh or "",
+                story_moment="dramatic key moment matching the attached poster cast and this series title",
+                visual_dna="",
+                palette=str(
+                    concept.get("selected_concept")
+                    or typo.get("color")
+                    or concept.get("visual_conflict")
+                    or ""
+                ),
+                layout=str(concept.get("layout") or typo.get("layout") or ""),
+                emotional_trigger="",
+                hook_texts=hooks,
+                badge_text=badge_txt,
+                sub_text=sub_txt,
+                font_material=str(typo.get("effects") or typo.get("font_style") or ""),
+                trust_hooks=True,
+                typo_color=str(typo.get("color") or ""),
+                typo_integration=str(typo.get("graphic_integration") or ""),
+            )
 
             update_auto_state(current_stage="thumbnail", progress_percent=35)
 
-            # AI vẽ luôn chữ 3D (NEW/HOT + hook neo tên) — không dùng Pillow overlay
-            print(f"[auto-publish] {job_id}: Đang tạo Thumbnail 16:9 (AI typography)...", flush=True)
+            # Ref = POSTER ONLY (không frame video lệch cast) + typo title Latin
+            print(
+                f"[auto-publish] {job_id}: Thumbnail 16:9 — poster-only ref + typo title "
+                f"«{hooks[0]} / {hooks[1] if len(hooks) > 1 else ''}»…",
+                flush=True,
+            )
             from agents.agent_tele_cmd import _fetch_poster_bytes
             poster_bytes = _fetch_poster_bytes(poster_name)
+            ref_list: list[bytes] = []
+            try:
+                ref_list = list(
+                    meta_studio.get_job_reference_images(
+                        job_id=job_id, poster_name=poster_name, include_video_frame=False
+                    )
+                    or []
+                )
+            except Exception as e_ref:
+                print(f"[auto-publish] {job_id}: get_job_reference_images: {e_ref}", flush=True)
+            if poster_bytes:
+                ref_list = [poster_bytes]  # poster thắng mọi nguồn khác
+            elif ref_list:
+                ref_list = ref_list[:1]
+            else:
+                ref_list = []
 
             ai_img_bytes = None
             if cfg.get("generate_ai_thumb") and ai_prompt:
                 try:
                     print(
-                        f"[auto-publish] {job_id}: Aurora edits 16:9 badge={badge_txt} "
-                        f"hooks={hooks[0]}/{hooks[1] if len(hooks)>1 else ''}...",
+                        f"[auto-publish] {job_id}: AI thumb badge={badge_txt} "
+                        f"hooks={hooks[0]}/{hooks[1] if len(hooks)>1 else ''} "
+                        f"refs={len(ref_list)} allow_edits={'1' if ref_list else '0'}…",
                         flush=True,
                     )
                     touch_active_locks()
+                    # Có ảnh gốc → chỉ /images/edits (không generations — tránh bịa nhân vật lệch poster).
+                    # Không có ref → generations thuần. Timeout rộng vì edits thường 1.5–2.5 phút.
                     ai_img_bytes = meta_studio.generate_ai_image(
                         ai_prompt,
-                        timeout=150,
+                        timeout=300,
                         job_id=job_id,
                         poster_name=poster_name,
-                        ref_images=poster_bytes if poster_bytes else None,
+                        ref_images=ref_list or None,
+                        allow_edits=True if ref_list else False,
+                        fallback_generations=False if ref_list else True,
                     )
                 except Exception as e_ai:
-                    print(f"[auto-publish] {job_id}: Lỗi sinh ảnh AI Aurora ({e_ai}) — chuyển sang fallback", flush=True)
+                    print(f"[auto-publish] {job_id}: Lỗi sinh ảnh AI Aurora ({e_ai})", flush=True)
 
+            thumb_ok = False
             if ai_img_bytes:
                 try:
                     from PIL import Image
@@ -1201,6 +1237,7 @@ def _publish_job_internal(
                         im = im.crop((0, (im.height - new_h) // 2, im.width, (im.height + new_h) // 2))
                     im = im.resize((tw, th), Image.Resampling.LANCZOS)
                     im.save(thumb_path, format="JPEG", quality=95, optimize=True)
+                    thumb_ok = thumb_path.is_file()
                     print(
                         f"[auto-publish] {job_id}: Đã lưu Master Thumbnail AI 16:9 "
                         f"({thumb_path.stat().st_size // 1024} KB)",
@@ -1210,23 +1247,32 @@ def _publish_job_internal(
                     print(f"[auto-publish] {job_id}: Lỗi lưu ảnh AI ({e_save_ai})", flush=True)
                     ai_img_bytes = None
 
-            if not ai_img_bytes:
-                print(f"[auto-publish] {job_id}: Không tạo được ảnh AI Aurora -> KHÔNG dùng thumbnail fallback (để mặc định YouTube, người dùng sẽ tự cập nhật sau).", flush=True)
+            # Không Pillow. Có ref → chỉ /images/edits (ảnh gốc + image gen). Fail → YouTube mặc định.
+            if not thumb_ok:
+                why = (
+                    "edits fail/echo (có ảnh gốc — không generations, không Pillow)"
+                    if ref_list
+                    else "AI generations fail / không prompt"
+                )
+                print(
+                    f"[auto-publish] {job_id}: Không tạo được thumbnail ({why}) → YouTube mặc định.",
+                    flush=True,
+                )
                 thumb_path = None
 
-            # Tự động lưu lại làm mẫu Master Thumbnail & Tags cho toàn bộ Series này nếu có ảnh AI thành công
-            if ai_img_bytes and thumb_path and thumb_path.is_file():
+            # Tự động lưu lại làm mẫu Master Thumbnail & Tags cho toàn bộ Series này nếu có ảnh thành công
+            if thumb_ok and thumb_path and thumb_path.is_file():
                 meta_studio.save_series_thumbnail(series_key, thumb_path, series_name=series_name)
             meta_studio.save_series_meta(series_key, {
                 "series_key": series_key,
                 "series_name": series_name,
-                "thumb_filename": f"series_{series_key}.jpg" if (ai_img_bytes and thumb_path) else "",
+                "thumb_filename": f"series_{series_key}.jpg" if (thumb_ok and thumb_path) else "",
                 "tags": final_tags,
                 "description": final_desc,
-                "best_hook": meta_res.get("hook_texts", [""])[0] if meta_res.get("hook_texts") else "",
+                "best_hook": (hooks[0] if hooks else "") or "",
                 "created_by_job": job_id,
             }, series_name=series_name)
-            if ai_img_bytes and thumb_path:
+            if thumb_ok and thumb_path:
                 print(f"[auto-publish] {job_id}: Đã lưu mẫu Master Thumbnail & Tags cho toàn bộ Series «{series_name}»!", flush=True)
 
             update_auto_state(current_stage="uploading", progress_percent=60)

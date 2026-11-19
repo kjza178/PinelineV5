@@ -4,8 +4,21 @@ Mới nhất trên cùng. Mỗi mục: file/hàm — thay đổi — cần resta
 
 
 
+## 2026-11-19 — Port từ V2: xoá job sạch đĩa + dọn orphan, gộp job có tiến độ, thumb poster-only
+
+- `scripts/sync_from_v2.py --apply` (backup `.backup_sync_20261118_184x/`): 9 module — `film_db` (rmtree robust + báo `work_failed`, xoá parent kèm `_pNN`, `list_orphan_work_dirs`/`purge_orphan_work_dirs`), `agent_tele_cmd` (mặc định `delete_work=True`, `include_parts`, `GET/POST /films/orphan-work`, `POST /films/purge-orphan-work`, gộp job chạy nền + `GET /films/combine/status`), `films_combine` (mới), `agent_feeder` (progress gộp), và các sửa thumb 18/11 của V2 (`auto_publisher`, `meta_studio`, `routes_hg`: poster-only, edits không Pillow, `decode_poster_b64`) + `routes_films`/`routes_ui` (GET /films = JSON). Phải port cùng vì `agent_tele_cmd` V2 gọi `meta_studio.decode_poster_b64` / `films_combine`.
+- `films_ui.html` chép từ V2 (banner orphan, tick xoá đĩa + kèm part, khung 🔗 gộp).
+- Test: `test_films_delete_orphan` (4), `test_films_combine_progress` (3) qua; `test_meta_and_thumb`, `test_meta_ref_upload`, `test_autopub_ref_typo` chép từ V2 (cần thư viện google → chạy trên Windows). tree_audit ERROR=0.
+- Orphan đĩa V4/V5 chưa dọn — dùng banner «Xoá orphan trên đĩa» khi muốn. **Cần restart :880x (server) + sidecar của bản này.**
+
 ## 2026-11-18 — Port từ V2: DeepSeek flash + HOLD QA hỏi Telegram + chuẩn hóa nhiều mùa
 
+- **Aurora = DỰ PHÒNG thật cho soát simple** (user 22:41 — «Aurora chỉ chạy khi DeepSeek không hoạt động»): trước đây `review_backup=aurora_parallel` (Config Batch `REVIEW_BACKUP`) ép `_resolve_review_model` → `AURORA_REVIEW_MODEL` (chatgpt/gpt-6) soát TOÀN BỘ, DeepSeek không chạy (vd 7dd93f48f052: 2648 câu × lô 200 qua Aurora).
+  - `translate_simple/cfg.review_model`: model chính = `SIMPLE_MODEL` / `REVIEW_MODEL` (DeepSeek), không đọc queue_opts. MỚI `cfg.backup_model(work_dir)` = `AURORA_REVIEW_MODEL` khi job bật `aurora_parallel`; `cfg.backup_batch()` (`SIMPLE_BACKUP_BATCH`=30).
+  - `stage_review.run(backup_model=)`: lượt chính bằng DeepSeek; câu còn chưa rv (lô lỗi sau retry / rỗng / bỏ sót) → làm lại bằng Aurora lô ≤30, workers theo Aurora; log `[simple-review] N câu … lỗi/bỏ sót → dự phòng chatgpt/gpt-6`, stats `backup={model,n,ok}`. Không bật → thử lại cùng model như cũ.
+  - `pipeline`: truyền backup cho review chính + soát bổ sung; in `[simple] soát chính … · dự phòng …`.
+  - Nhãn UI/Config Batch: «Aurora GPT∥» → «Aurora dự phòng». Luồng legacy giữ nghĩa cũ.
+  - Test `tests/test_review_backup.py` (3) + `test_review_parallel_workers` (legacy) vẫn qua. V2/V4/V5. **Cần restart :8801.**
 - **Agent chat: thử lại khi lỗi tạm, không fallback** (user 19:43): `agent_core._chat_turn` thử lại CÙNG model `AGENT_RETRIES` lần (mặc định 2, chờ `AGENT_RETRY_WAIT`=3 s × lượt) khi lỗi tạm (HTTP 429/5xx, Aurora «Error in message stream», timeout, mất kết nối); 4xx/lỗi khác → báo lỗi ngay. Test `tests/test_agent_retry.py`. V2/V4/V5. **Cần restart :8801/:8802.**
 - **Bỏ fallback `openclaw` của Agent chat** (user 19:00): `AGENT_FALLBACK_MODEL=openclaw` → `set "AGENT_FALLBACK_MODEL="` trong run_v2.bat / run_tele_cmd.bat (V4: run_tele_cmd.bat; V5: apps/run_tele_cmd.bat); `scripts/check_batch2.py` kiểm ngược lại. Lý do: combo openclaw nằm trên 9router LAN 192.168.31.247 (đã bỏ 17/11) và `agent_core._chat_turn` gửi model fallback tới CÙNG base Aurora :3377 → luôn lỗi, chỉ thêm 1 lần thử vô ích. **Cần restart :8801/:8802 (mở lại cửa sổ .bat)** để hết env cũ.
 - **Soát bổ sung chia lô theo số câu** (user 18:54): `translate_simple/pipeline._review_missing` dùng `cfg.missing_batch_for(n)` — còn ≤ `SIMPLE_MISSING_SMALL_MAX` (5) câu → lô `SIMPLE_MISSING_BATCH` (4) như cũ (câu rác/khó); nhiều hơn → lô thường `SIMPLE_BATCH` (30). c7367a659c46_p01: 81 câu OCR lượt B đổi chữ trước đi 21 lô × 4 (mỗi lô kèm cả plan) → nay 3 lô. Test `tests/test_missing_batch.py`. V2/V4/V5. **Cần restart :8801.**

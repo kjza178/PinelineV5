@@ -1,7 +1,7 @@
 """Trang UI: /, /ui3, /ui4, /hongguo, /hongguo2, /films/ui, /studio, /v5-map.
 
 /hongguo2 = skin WinUI 2.x (Browse/Ranking/New/Library).
-/films|/film|/films/ui = films_ui.html · /studio = index3 (Lồng tiếng Studio).
+/film|/films/ui = films_ui.html · GET /films = JSON DB (routes_films) · /studio = index3.
 
 Tách từ server.py (đợt 7). Chỉ được nạp từ cuối server.py (sau khi mọi hàm/model lõi đã
 định nghĩa): truy cập server qua `S.<tên>` để patch `server.<tên>` trong test vẫn có tác dụng."""
@@ -89,9 +89,12 @@ def ui_hongguo2():
 
 @router.get("/films/ui", response_class=HTMLResponse)
 @router.get("/film", response_class=HTMLResponse)
-@router.get("/films", response_class=HTMLResponse)
 def ui_films():
-    """Films UI (thư viện phim / mùa mới) — cùng host :8801."""
+    """Films UI (thư viện phim / mùa mới) — cùng host :8801.
+
+    Không gắn `/films` ở đây: GET `/films` phải là JSON DB (routes_films /
+    sidecar :8802). Trước đây HTML đè API → tab Đã làm trên :8801 không load.
+    """
     return _html_file("films_ui.html")
 
 

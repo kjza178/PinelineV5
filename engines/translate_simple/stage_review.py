@@ -269,7 +269,8 @@ def apply_result(store: ScriptStore, rows: list[dict], job: dict, res: dict[int,
 
 
 def run(store: ScriptStore, pv: PlanView, *, model: str | None, stop_check=None, progress=None,
-        rereview: bool = False, pair_sink: list | None = None, batch: int | None = None) -> dict:
+        rereview: bool = False, pair_sink: list | None = None, batch: int | None = None,
+        backup_model: str | None = None) -> dict:
     """Review mọi câu chưa rv (rereview=True: mọi câu). Lô lỗi → thử lại 1 lượt lô nhỏ (½), tuần tự.
     Câu rác (junk=1, fix 2026-11-13) không bao giờ gửi. batch: cỡ lô (mặc định SIMPLE_BATCH).
     Trả thống kê {n_todo, n_ok, n_fail_lots, n_left}."""
@@ -289,14 +290,16 @@ def run(store: ScriptStore, pv: PlanView, *, model: str | None, stop_check=None,
     ctx = cfg.ctx()
     lock = threading.Lock()
 
-    def _do(job: dict, step: str) -> int:
+    def _do(job: dict, step: str, use_model: str | None = None) -> int:
         if stop_check and stop_check():
             raise RuntimeError("stopped by user")
         lot = [rows[p] for p in job["pos"]]
         want = {int(r["i"]) for r in lot}
         system, user = build_prompt(lot, job["before"], job["after"], pv)
+        m_use = use_model or model
         try:
-            res = call_llm(system, user, want, model=model, stop_check=stop_check, label="[simple-review]",
+            res = call_llm(system, user, want, model=m_use, stop_check=stop_check,
+                           label="[simple-review]" if m_use == model else "[simple-review-backup]",
                            pair_sink=pair_sink)
         except Exception as e:  # noqa: BLE001
             if "stopped by user" in str(e).lower():
@@ -346,22 +349,35 @@ def run(store: ScriptStore, pv: PlanView, *, model: str | None, stop_check=None,
     # lượt thử lại: câu còn chưa rv (lô lỗi hoặc LLM bỏ sót) — lô ½, chạy song song + báo progress
     stats["n_fail_lots"] = len(failed)
     left_idx = [p for p in todo_idx if not rows[p].get("rv")]
+    rmodel = None
     if left_idx:
         small = max(4, batch // 2)
+        rw = min(workers, max(1, len(left_idx)))
+        step = "review-retry"
+        if backup_model and backup_model != model:
+            # 2026-11-18: dự phòng thật — câu model chính (DeepSeek) chưa soát được → làm lại bằng Aurora
+            rmodel, step = backup_model, "review-backup"
+            small = cfg.backup_batch() if hasattr(cfg, "backup_batch") else 30
+            try:
+                rw = min(cfg.workers(backup_model), max(1, len(left_idx)))
+            except TypeError:
+                rw = min(cfg.workers(), max(1, len(left_idx)))
+            print(f"[simple-review] {len(left_idx)} câu {model} lỗi/bỏ sót ({stats['n_fail_lots']} lô) → "
+                  f"dự phòng {backup_model}", flush=True)
         retry = make_jobs(rows, left_idx, small, ctx)
-        rw = min(workers, len(retry))
-        print(f"[simple-review] thử lại {len(left_idx)} câu chưa rv ({len(retry)} lô × ≤{small}, workers={rw})",
-              flush=True)
+        rw = min(rw, len(retry))
+        print(f"[simple-review] thử lại {len(left_idx)} câu chưa rv bằng {rmodel or model} "
+              f"({len(retry)} lô × ≤{small}, workers={rw})", flush=True)
         done_r = 0
         if rw <= 1:
             for j in retry:
-                _do(j, "review-retry")
+                _do(j, step, rmodel)
                 done_r += 1
                 if progress:
                     progress(f"review-retry lô {done_r}/{len(retry)}")
         else:
             with ThreadPoolExecutor(max_workers=rw, thread_name_prefix="simple-rv-retry") as ex:
-                futs_r = {ex.submit(_do, j, "review-retry"): j for j in retry}
+                futs_r = {ex.submit(_do, j, step, rmodel): j for j in retry}
                 for f in as_completed(futs_r):
                     f.result()
                     done_r += 1
@@ -369,4 +385,7 @@ def run(store: ScriptStore, pv: PlanView, *, model: str | None, stop_check=None,
                         progress(f"review-retry lô {done_r}/{len(retry)}")
     stats["n_left"] = sum(1 for p in todo_idx if not rows[p].get("rv"))
     stats["n_ok"] = len(todo_idx) - stats["n_left"]
+    if rmodel:
+        stats["backup"] = {"model": rmodel, "n": len(left_idx),
+                           "ok": len(left_idx) - sum(1 for p in left_idx if not rows[p].get("rv"))}
     return stats

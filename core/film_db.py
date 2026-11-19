@@ -621,48 +621,262 @@ def get(job_id: str) -> dict | None:
         return d
 
 
-def delete_film(job_id: str, delete_work: bool = True) -> dict:
-    """Xoá 1 film khỏi database và tuỳ chọn xoá thư mục work trên ổ đĩa."""
+# Job auto-split: <parent>_p01 / _p02 … (cùng quy ước server/auto_publisher).
+_RE_SPLIT_PART_ID = re.compile(r"^(.+)_p(\d{2,})$", re.I)
+_WORK_SKIP_ORPHANS = frozenset({"logs", "tmp", "temp", ".cache"})
+
+
+def split_parent_id(job_id: str) -> str | None:
+    """`abc_p01` → `abc`; job thường → None."""
+    m = _RE_SPLIT_PART_ID.match(str(job_id or "").strip())
+    return m.group(1) if m else None
+
+
+def expand_delete_ids(job_ids: list[str], *, include_parts: bool = True) -> list[str]:
+    """Khi xoá parent Full → kèm mọi `_pNN` còn trên đĩa/DB. Xoá 1 part → không kéo parent."""
+    ids = [str(x).strip() for x in (job_ids or []) if str(x).strip()]
+    if not ids:
+        return []
+    out: set[str] = set(ids)
+    if not include_parts:
+        return sorted(out)
+    parents = [jid for jid in ids if not split_parent_id(jid)]
+    if not parents:
+        return sorted(out)
+    try:
+        root = WORK.resolve()
+    except OSError:
+        root = WORK
+    for parent in parents:
+        for p in WORK.glob(f"{parent}_p*"):
+            try:
+                if not p.is_dir():
+                    continue
+                if p.resolve().parent != root and p.parent != WORK:
+                    continue
+            except OSError:
+                continue
+            if _RE_SPLIT_PART_ID.match(p.name) and p.name.startswith(parent + "_p"):
+                out.add(p.name)
+        try:
+            with connect() as con:
+                rows = con.execute(
+                    "SELECT job_id FROM films WHERE job_id LIKE ?",
+                    (f"{parent}_p%",),
+                ).fetchall()
+            for (jid,) in rows:
+                if _RE_SPLIT_PART_ID.match(jid) and jid.startswith(parent + "_p"):
+                    out.add(jid)
+        except Exception:  # noqa: BLE001
+            pass
+    return sorted(out)
+
+
+def _robust_rmtree(folder: Path) -> tuple[bool, str]:
+    """Xoá thư mục work trên Windows (file khoá/readonly). → (ok, error)."""
+    import stat
+    import subprocess
+
+    if not folder.is_dir():
+        return True, ""
+
+    def _fix_perm(func, fpath, _exc_info):
+        try:
+            os.chmod(fpath, stat.S_IWRITE)
+            func(fpath)
+        except Exception:
+            pass
+
+    try:
+        shutil.rmtree(folder, onerror=_fix_perm)
+    except Exception:
+        try:
+            shutil.rmtree(folder, ignore_errors=True)
+        except Exception:
+            pass
+    if folder.exists():
+        try:
+            subprocess.run(
+                ["cmd", "/c", "rmdir", "/s", "/q", str(folder)],
+                capture_output=True,
+                timeout=120,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception as e:  # noqa: BLE001
+            return False, str(e)
+    if folder.exists():
+        return False, "thư mục vẫn còn sau rmtree (file đang mở/khoá?)"
+    return True, ""
+
+
+def _delete_work_dir(jid: str) -> tuple[bool, str]:
+    """Xoá work/<jid> nếu là con trực tiếp của WORK (junction OK)."""
+    jid = str(jid or "").strip()
+    if not jid or jid in (".", "..") or any(c in jid for c in "/\\"):
+        return False, "job_id không hợp lệ"
+    try:
+        root = WORK.resolve()
+        p = (WORK / jid).resolve()
+    except OSError as e:
+        return False, str(e)
+    try:
+        p.relative_to(root)
+    except ValueError:
+        return False, "path ngoài work/"
+    if p == root or p.parent != root:
+        return False, "không phải thư mục job trực tiếp"
+    if not p.is_dir():
+        return True, ""  # đã không còn
+    return _robust_rmtree(p)
+
+
+def delete_film(
+    job_id: str,
+    delete_work: bool = True,
+    *,
+    include_parts: bool = True,
+) -> dict:
+    """Xoá 1 film khỏi database và tuỳ chọn xoá thư mục work trên ổ đĩa.
+
+    include_parts: nếu job là parent Full → xoá luôn các `_pNN` liên quan (DB + đĩa).
+    """
     jid = str(job_id or "").strip()
     if not jid:
         return {"ok": False, "error": "job_id không hợp lệ"}
-    work_deleted = False
-    if delete_work:
-        try:
-            root = WORK.resolve()
-            p = (WORK / jid).resolve()
-            if (p.parent == root or p.parent == WORK) and p.is_dir():
-                shutil.rmtree(p)
-                work_deleted = True
-        except Exception as e:
-            pass
-    with _lock, connect() as con:
-        con.execute("DELETE FROM events WHERE job_id=?", (jid,))
-        n = con.execute("DELETE FROM films WHERE job_id=?", (jid,)).rowcount
-    return {"ok": True, "job_id": jid, "deleted": bool(n), "work_deleted": work_deleted}
+    return delete_films([jid], delete_work=delete_work, include_parts=include_parts)
 
 
-def delete_films(job_ids: list[str], delete_work: bool = True) -> dict:
-    """Xoá nhiều film theo danh sách job_id."""
-    ids = [str(x).strip() for x in job_ids if str(x).strip()]
-    if not ids:
+def delete_films(
+    job_ids: list[str],
+    delete_work: bool = True,
+    *,
+    include_parts: bool = True,
+) -> dict:
+    """Xoá nhiều film theo danh sách job_id.
+
+    Mặc định kèm part `_pNN` khi xoá parent (tránh orphan vài GB trên đĩa).
+    Lỗi xoá đĩa KHÔNG nuốt im — trả `work_failed` / `work_errors`.
+    """
+    raw = [str(x).strip() for x in (job_ids or []) if str(x).strip()]
+    if not raw:
         return {"ok": False, "deleted_count": 0, "deleted_ids": [], "error": "Danh sách rỗng"}
-    work_deleted_count = 0
+    ids = expand_delete_ids(raw, include_parts=include_parts)
+    work_deleted: list[str] = []
+    work_failed: list[dict] = []
     if delete_work:
-        root = WORK.resolve()
         for jid in ids:
-            try:
-                p = (WORK / jid).resolve()
-                if (p.parent == root or p.parent == WORK) and p.is_dir():
-                    shutil.rmtree(p)
-                    work_deleted_count += 1
-            except Exception:
-                pass
+            ok, err = _delete_work_dir(jid)
+            if ok:
+                # chỉ đếm khi trước đó có thư mục hoặc xoá thành công (đã sạch)
+                p = WORK / jid
+                if not p.is_dir():
+                    work_deleted.append(jid)
+            else:
+                work_failed.append({"job_id": jid, "error": err})
     with _lock, connect() as con:
         placeholders = ",".join("?" * len(ids))
         con.execute(f"DELETE FROM events WHERE job_id IN ({placeholders})", ids)
         n = con.execute(f"DELETE FROM films WHERE job_id IN ({placeholders})", ids).rowcount
-    return {"ok": True, "deleted_count": n, "work_deleted_count": work_deleted_count, "deleted_ids": ids}
+    return {
+        "ok": True,
+        "deleted_count": n,
+        "work_deleted_count": len(work_deleted),
+        "work_deleted": work_deleted,
+        "work_failed": work_failed,
+        "work_failed_count": len(work_failed),
+        "deleted_ids": ids,
+        "requested_ids": raw,
+        "expanded_parts": [x for x in ids if x not in raw],
+    }
+
+
+def list_orphan_work_dirs(*, limit: int = 500) -> dict:
+    """Thư mục work/<id> còn trên đĩa nhưng không còn dòng films (sau xoá DB / rmtree hụt)."""
+    try:
+        with connect() as con:
+            db_ids = {r[0] for r in con.execute("SELECT job_id FROM films").fetchall()}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e), "items": [], "count": 0}
+    items: list[dict] = []
+    if not WORK.is_dir():
+        return {"ok": True, "items": [], "count": 0, "total_mb": 0.0}
+    try:
+        root = WORK.resolve()
+    except OSError:
+        root = WORK
+    for p in sorted(WORK.iterdir(), key=lambda x: x.name.lower()):
+        if not p.is_dir() or p.name in _WORK_SKIP_ORPHANS:
+            continue
+        try:
+            if p.resolve().parent != root:
+                continue
+        except OSError:
+            continue
+        if p.name in db_ids:
+            continue
+        n_files = 0
+        sz = 0
+        try:
+            for f in p.rglob("*"):
+                if f.is_file():
+                    n_files += 1
+                    try:
+                        sz += f.stat().st_size
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        items.append({
+            "job_id": p.name,
+            "is_part": bool(split_parent_id(p.name)),
+            "files": n_files,
+            "size_mb": round(sz / (1024 * 1024), 1),
+            "has_manifest": (p / "manifest.json").is_file(),
+        })
+        if len(items) >= max(1, int(limit or 500)):
+            break
+    total_mb = round(sum(x["size_mb"] for x in items), 1)
+    return {
+        "ok": True,
+        "items": items,
+        "count": len(items),
+        "total_mb": total_mb,
+        "parts": sum(1 for x in items if x["is_part"]),
+    }
+
+
+def purge_orphan_work_dirs(
+    job_ids: list[str] | None = None,
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """Xoá thư mục work orphan (không còn trong films.db)."""
+    listed = list_orphan_work_dirs(limit=5000)
+    if not listed.get("ok"):
+        return listed
+    allow = {x["job_id"] for x in listed.get("items") or []}
+    if job_ids is None:
+        targets = sorted(allow)
+    else:
+        targets = [str(x).strip() for x in job_ids if str(x).strip() and str(x).strip() in allow]
+    if dry_run:
+        mb = sum(x["size_mb"] for x in (listed.get("items") or []) if x["job_id"] in set(targets))
+        return {"ok": True, "dry_run": True, "count": len(targets), "ids": targets, "total_mb": round(mb, 1)}
+    deleted: list[str] = []
+    failed: list[dict] = []
+    for jid in targets:
+        ok, err = _delete_work_dir(jid)
+        if ok and not (WORK / jid).is_dir():
+            deleted.append(jid)
+        else:
+            failed.append({"job_id": jid, "error": err or "vẫn còn"})
+    return {
+        "ok": True,
+        "deleted_count": len(deleted),
+        "deleted": deleted,
+        "failed": failed,
+        "failed_count": len(failed),
+    }
 
 
 def purge_missing(only_pending_failed: bool = False) -> dict:

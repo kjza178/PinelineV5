@@ -91,7 +91,8 @@ def hooks_from_series_title(title_vi: str, title_zh: str = "") -> list[str]:
     if not raw:
         return ["TRỌN BỘ", "THUYẾT MINH"]
 
-    parts = [p.strip(" -_()[]") for p in re.split(r"[:：|–—]", raw) if p.strip(" -_()[]")]
+    # Tách cả dấu phẩy (vd «Nguyên Anh rồi, bạn lại bảo… nhập học»)
+    parts = [p.strip(" -_()[]") for p in re.split(r"[:：|–—,，]", raw) if p.strip(" -_()[]")]
     if len(parts) >= 2:
         a, b = parts[0], parts[1]
         bw = b.split()
@@ -223,7 +224,21 @@ def build_master_image_prompt(
     badge = pick_badge_text(badge_text, title_vi=title_vi)
     sub = (sub_text or title).strip()[:48]
     moment = (story_moment or emotional_trigger or "decisive confrontation from the plot").strip()
-    dna = (visual_dna or "main character faithful to reference image").strip()
+    # visual_dna chỉ dùng làm gợi ý TƯ THẾ / KHÍ / HÀNH ĐỘNG — không mô tả lại mặt/áo
+    # (ngoại hình 100% từ ảnh gốc đính kèm). Nếu DNA toàn quần áo/mặt → bỏ, lấy story/emotion.
+    def _pose_only_hint(dna: str, emo: str, mom: str) -> str:
+        raw = (dna or "").strip()
+        low = raw.lower()
+        appearance_marks = (
+            "coat", "armor", "hair", "eyes", "outfit", "wearing", "robe", "dress",
+            "helmet", "face", "male", "female", "girl", "boy", "áo", "tóc", "mắt",
+            "faithful to reference", "reference poster", "reference image",
+        )
+        if raw and sum(1 for k in appearance_marks if k in low) >= 2:
+            raw = ""
+        return (raw or emo or mom or "decisive pose matching the story moment").strip()
+
+    pose_hint = _pose_only_hint(visual_dna or "", emotional_trigger or "", story_moment or "")
     colors = (palette or "palette matching the film's real setting, not generic fire-gold").strip()
     lay = (layout or "character on the right third, bold 3D text on the left").strip()
     mat = (font_material or "premium 3D stylized display typography matching the reference atmosphere").strip()
@@ -237,33 +252,48 @@ def build_master_image_prompt(
         return " · ".join(list(s.replace(" ", "  ")))
 
     return (
-        "REFERENCE IMAGE MANDATE: Strictly preserve the exact facial features, hairstyle, hair color, "
-        "gender, outfit design, and 3D/2D rendering style of the main character from the attached "
-        "reference image(s).\n\n"
+        "REFERENCE IMAGE MANDATE (APPEARANCE SOURCE OF TRUTH): The attached original poster/frame "
+        "is the ONLY source for who the character is. Copy exact facial features, hairstyle, hair color, "
+        "gender, age, outfit, accessories, and 3D/2D art style from the reference. "
+        "Do NOT invent a different costume, armor color, or face from text descriptions.\n\n"
+        "POSTER TEXT CLEANUP (CRITICAL): The reference may contain Chinese titles, season marks "
+        "(第X季), vertical calligraphy, or platform watermarks. You MUST REMOVE / paint out ALL of "
+        "that source text. The final thumbnail must NOT keep Chinese characters from the poster.\n\n"
         f"Create a high-CTR 16:9 horizontal YouTube thumbnail for the donghua «{title}».\n\n"
         f"STORY MOMENT (must match real plot, not a generic trope):\n{moment}\n\n"
-        f"CHARACTER & POSE:\n{dna}\n"
-        "Diverse pose matching THIS film — do NOT default to open palm shooting fire at camera.\n\n"
+        "POSE / ACTION / ENERGY (appearance still 100% from reference — this block is ONLY body language):\n"
+        f"{pose_hint}\n"
+        "Recompose into a dramatic 16:9 pose matching THIS film. "
+        "Do NOT default to open palm shooting fire at camera. "
+        "Do NOT rewrite outfit or face from this pose hint.\n\n"
         f"ENVIRONMENT & COLOR PALETTE:\n{colors}\n{lay}\n\n"
-        "INTEGRATED 3D LATIN TYPOGRAPHY (LEFT / TOP-LEFT — NO VIETNAMESE DIACRITICS):\n"
+        "INTEGRATED 3D LATIN TYPOGRAPHY (LEFT / TOP-LEFT — FROM SERIES TITLE, FLEXIBLE & BEAUTIFUL):\n"
         "Image models corrupt Vietnamese tone marks (ă â ê ô ơ ư ạ ệ…). "
-        "Therefore ALL on-image text MUST be ASCII uppercase Latin ONLY.\n"
+        "Therefore ALL on-image text MUST be ASCII uppercase Latin ONLY "
+        "(Vietnamese title stripped of diacritics).\n"
+        "Typography must feel custom for THIS title — not a generic fire-gold stamp reused every film.\n"
         f"- Top badge ribbon EXACTLY: \"{badge}\" "
         "(NEW or HOT only — NEVER 'TRỌN BỘ THUYẾT MINH')\n"
-        f"- Main 3D Headline EXACTLY two lines (copy character-perfect, do not invent letters):\n"
+        f"- Main 3D Headline EXACTLY two lines derived from the series title "
+        "(copy character-perfect, do not invent letters):\n"
         f"  1) \"{line1}\"\n"
         f"  2) \"{line2}\"\n"
         f"  Letter check line1: {_spell(line1)}\n"
         f"  Letter check line2: {_spell(line2)}\n"
-        f"- DIVERSE TYPOGRAPHY STYLING & MATERIAL (Tailored to Reference Background):\n"
+        f"- DIVERSE TYPOGRAPHY STYLING & MATERIAL (Tailored to Reference Background + Title Mood):\n"
         f"  * Material & Palette: {mat}; Colors: {color_desc}.\n"
-        f"  * Diverse Typography Styles: Use varied 3D lettering (e.g. fractured ice crystal, brushed titanium, ancient engraved jade, molten lava core, or mirror chrome) instead of generic flat gold.\n"
-        f"  * Reference Background Integration: {integ}. Letters MUST react to the reference image background lighting (directional rim glow, atmospheric mist weaving around letters, deep contact shadows) so text seamlessly fuses with the scene yet punches out with razor-sharp mobile readability.\n"
+        f"  * Diverse Typography Styles: Pick ONE distinctive treatment that fits this film "
+        "(fractured ice, brushed titanium, engraved jade, molten core, mirror chrome, brush calligraphy 3D, "
+        "neon cyber edge, stone bas-relief) — avoid flat generic gold every time.\n"
+        f"  * Reference Background Integration: {integ}. Letters MUST react to the reference image "
+        "background lighting (directional rim glow, atmospheric mist around letter feet, deep contact "
+        "shadows) so text fuses with the scene yet stays razor-sharp on mobile.\n"
         f"- Bottom subtitle banner EXACTLY: \"{sub_img}\"\n"
         "Do NOT add extra words. Do NOT restore diacritics. Do NOT write Chinese characters.\n"
         "Avoid cluttered HUD/stat bars unless the plot is literally a system/RPG panel moment.\n\n"
         "QUALITY: 16:9 widescreen, Unreal Engine 5 / premium Chinese 3D donghua key art, "
-        "high contrast, rich depth of field, clear focal hierarchy."
+        "high contrast, rich depth of field, clear focal hierarchy — character from reference + "
+        "dominant Latin title typography."
     )
 
 
@@ -1176,6 +1206,25 @@ def extract_job_summary(job_id: str, max_chars: int = 5500) -> str:
     return (prefix + "\n\n".join(sections)).strip()
 
 
+def decode_poster_b64(raw) -> bytes | None:
+    """Decode poster_b64 / data-URL từ Meta UI «Up ảnh gốc»."""
+    import base64
+
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    if "," in s and s.lower().startswith("data:"):
+        s = s.split(",", 1)[1]
+    s = re.sub(r"\s+", "", s)
+    try:
+        data = base64.b64decode(s, validate=False)
+    except Exception:
+        return None
+    if not data or len(data) < 64:
+        return None
+    return data
+
+
 def _normalize_ref_jpeg(raw_bytes: bytes, max_dim: int = 1024) -> bytes | None:
     """Chuẩn hoá ảnh tham chiếu (Poster hoặc Frame) về RGB JPEG <= 1024px để gửi lên Aurora /v1/images/edits."""
     if not raw_bytes or len(raw_bytes) < 100:
@@ -1237,9 +1286,17 @@ def _extract_best_video_frame(video_path: Path) -> bytes | None:
     return best_jpeg
 
 
-def get_job_reference_images(job_id: str = "", poster_name: str = "") -> list[bytes]:
-    """Lấy danh sách ảnh gốc tham chiếu (Poster gốc + Khung hình sắc nét trong phim) của Job
-    để truyền vào Aurora /v1/images/edits giúp giữ đúng khuôn mặt, trang phục và art style nhân vật.
+def get_job_reference_images(
+    job_id: str = "",
+    poster_name: str = "",
+    *,
+    include_video_frame: bool = False,
+) -> list[bytes]:
+    """Ảnh tham chiếu cho Aurora /images/edits.
+
+    Mặc định **chỉ poster** (cast/art style đúng). Frame video dễ lệch cast
+    (vd poster = trio trường học, frame = nhân vật phụ cổ trang) → làm thumb
+    bịa nhân vật — chỉ bật ``include_video_frame=True`` khi cố ý.
     """
     refs: list[bytes] = []
     work_dir = (ROOT / "work" / str(job_id).strip()) if job_id else None
@@ -1257,7 +1314,7 @@ def get_job_reference_images(job_id: str = "", poster_name: str = "") -> list[by
         except Exception:
             pass
 
-    # 1. Tìm Poster gốc từ thư mục nguồn (D:\Lib hoặc D:\Lib_trash) hoặc API Hongguo
+    # 1. Poster gốc từ thư mục nguồn / Hongguo
     poster_bytes: bytes | None = None
     if orig_path_str:
         src_folder = Path(orig_path_str).parent
@@ -1293,8 +1350,8 @@ def get_job_reference_images(job_id: str = "", poster_name: str = "") -> list[by
     if poster_bytes:
         refs.append(poster_bytes)
 
-    # 2. Trích xuất thêm 1 khung hình thực tế từ video (output.mp4 / video gốc) để AI thấy rõ nhân vật trong phim
-    if work_dir and work_dir.is_dir():
+    # 2. Frame video — tắt mặc định (cast frame ≠ poster → edits lệch)
+    if include_video_frame and work_dir and work_dir.is_dir():
         vid_candidates = [
             work_dir / "output.mp4",
             work_dir / "video.mp4",
@@ -1309,7 +1366,7 @@ def get_job_reference_images(job_id: str = "", poster_name: str = "") -> list[by
                     refs.append(frame_bytes)
                     break
 
-    return refs[:2]
+    return refs[:2] if include_video_frame else refs[:1]
 
 
 def _call_chatgpt(messages: list[dict], model: str = "gpt-5-6") -> str:
@@ -1453,22 +1510,16 @@ def generate_ai_image(
     job_id: str = "",
     poster_name: str = "",
     allow_edits: bool | None = None,
+    fallback_generations: bool | None = None,
 ) -> bytes | None:
-    """Gọi Aurora trên Pi 5 để sinh ảnh Thumbnail 16:9 chất lượng cao:
-    - Bước 1: Thử gửi ảnh gốc tham chiếu (Poster + Frame trong phim) lên `/v1/images/edits`
-      (`model="gpt-image-2"`) và kiểm tra chặt xem Aurora có thực sự sinh ảnh mới hay chỉ trả ngược lại ảnh gốc.
-    - Bước 2 (Fallback chủ lực): Nếu `/v1/images/edits` trả ngược lại ảnh gốc hoặc lỗi (phổ biến trên pool Free),
-      tự động chuyển sang `/v1/images/generations` với kích thước 16:9 (`1792x1024` / `1672x941`) và tự xoay account khi gặp lỗi 400/500.
+    """Gọi Aurora để sinh thumbnail 16:9:
+    - Có ảnh gốc: **bắt buộc** `/images/edits` (multipart ref) — image gen từ poster.
+      Echo/fail → roll acc (nhiều lần). **Không** Pillow. **Không** generations (tránh bịa nhân vật).
+    - Không có ref: `/images/generations` (text-only), trừ khi ``fallback_generations=False``.
     """
     import base64
     import time
     import requests
-
-    if allow_edits is None:
-        # Mặc định TẮT edits ("0") vì Aurora pool Free không hỗ trợ image-to-image edit (chỉ echo ngược lại file gốc).
-        # Đi thẳng sang /images/generations siêu tốc (30-45s) tích hợp nhân vật + typography 3D.
-        val = str(_cfg("META_AI_IMAGE_EDITS", "0") or "0").strip().lower()
-        allow_edits = val in ("1", "true", "yes", "on")
 
     token = _get_chatgpt_token()
     candidate_urls = _chatgpt_candidate_bases()
@@ -1497,14 +1548,25 @@ def generate_ai_image(
                     ref_list.append(norm)
 
     if not ref_list and (job_id or poster_name):
-        ref_list = get_job_reference_images(job_id=job_id, poster_name=poster_name)
+        # Thumb/edits: mặc định poster-only (frame video dễ lệch cast)
+        ref_list = get_job_reference_images(
+            job_id=job_id, poster_name=poster_name, include_video_frame=False
+        )
+
+    # Có ảnh gốc → luôn edits (img2img). Config META_AI_IMAGE_EDITS chỉ áp khi caller không truyền và không có ref.
+    if allow_edits is None:
+        if ref_list:
+            allow_edits = True
+        else:
+            val = str(_cfg("META_AI_IMAGE_EDITS", "0") or "0").strip().lower()
+            allow_edits = val in ("1", "true", "yes", "on")
 
     # Ưu tiên gọi pool nội bộ Aurora ({}) trước, sau đó mới thử Bearer token nếu có
     auth_headers_list: list[dict] = [{}]
     if token:
         auth_headers_list.append({"Authorization": f"Bearer {token}"})
 
-    # 1. NẾU CÓ ẢNH THAM CHIẾU -> THỬ /v1/images/edits (chỉ nhận khi ảnh trả về KHÁC ảnh tham chiếu đầu vào)
+    # 1. Có ảnh gốc → /images/edits (chỉ nhận ảnh KHÁC ref; echo → roll acc tiếp)
     if allow_edits and ref_list:
         ref_prefix = (
             "REFERENCE IMAGE MANDATE: Strictly use the attached reference image(s) for the main character's "
@@ -1514,15 +1576,14 @@ def generate_ai_image(
         )
         edit_prompt = prompt if "REFERENCE IMAGE" in prompt.upper() else (ref_prefix + prompt)
 
-        # Phép gọi /images/edits có đính kèm multipart file, Aurora xử lý qua ChatGPT web session
-        # có thể mất từ 1.5 đến 2.5 phút (vd: 2m10s). Tuyệt đối không kẹp 90s vì sẽ gây timeout sớm,
-        # ngắt socket máy chủ (wsasend: An established connection was aborted).
+        # Multipart edits có thể 1.5–2.5 phút — không kẹp 90s (wsasend abort).
         edit_timeout = max(timeout, 240)
+        edit_attempts = 6  # roll acc pool khi echo/4xx
 
         for base_url in candidate_urls:
             edit_url = f"{base_url}/images/edits"
             for hdrs in auth_headers_list:
-                for attempt in range(2):
+                for attempt in range(edit_attempts):
                     try:
                         files_payload = [
                             ("image", (f"ref_{idx}.jpg", img_b, "image/jpeg"))
@@ -1535,28 +1596,68 @@ def generate_ai_image(
                             "size": req_size,
                             "response_format": "b64_json",
                         }
-                        print(f"[meta_studio] Gửi {len(files_payload)} ảnh gốc tham chiếu lên {edit_url} (multipart, timeout={edit_timeout}s, lần {attempt+1}/2)...", flush=True)
-                        r = requests.post(edit_url, headers=hdrs, data=form_data, files=files_payload, timeout=edit_timeout)
+                        print(
+                            f"[meta_studio] Gửi {len(files_payload)} ảnh gốc lên {edit_url} "
+                            f"(multipart, timeout={edit_timeout}s, lần {attempt+1}/{edit_attempts})...",
+                            flush=True,
+                        )
+                        r = requests.post(
+                            edit_url, headers=hdrs, data=form_data, files=files_payload, timeout=edit_timeout
+                        )
                         if r.status_code == 200:
-                            out_bytes = _decode_aurora_image_response(r.json(), timeout=timeout, reject_list=ref_list)
+                            out_bytes = _decode_aurora_image_response(
+                                r.json(), timeout=timeout, reject_list=ref_list
+                            )
                             if out_bytes:
-                                print(f"[meta_studio] ✅ Sinh ảnh mới từ Reference Image (/images/edits) thành công ({len(out_bytes)//1024} KB)!", flush=True)
+                                print(
+                                    f"[meta_studio] ✅ /images/edits OK ({len(out_bytes)//1024} KB) "
+                                    f"— ảnh mới từ ref!",
+                                    flush=True,
+                                )
                                 return out_bytes
-                            print(f"[meta_studio] ⚠️ {edit_url} trả ngược lại ảnh tham chiếu gốc (pool Free không hỗ trợ edit file) -> chuyển sang /images/generations", flush=True)
-                            break
-                        print(f"[meta_studio] /images/edits status={r.status_code} ({base_url}) lần {attempt+1}/2: {r.text[:160]}", flush=True)
+                            print(
+                                f"[meta_studio] ⚠️ {edit_url} echo ảnh gốc (acc Free?) "
+                                f"— roll acc lần {attempt+1}/{edit_attempts}…",
+                                flush=True,
+                            )
+                            time.sleep(1.5)
+                            continue
+                        print(
+                            f"[meta_studio] /images/edits status={r.status_code} ({base_url}) "
+                            f"lần {attempt+1}/{edit_attempts}: {r.text[:160]}",
+                            flush=True,
+                        )
                         time.sleep(1.0)
                     except requests.Timeout as e_to:
-                        print(f"[meta_studio] ⚠️ /images/edits timeout ({base_url}) sau {edit_timeout}s -> chuyển sang /images/generations: {e_to}", flush=True)
+                        print(
+                            f"[meta_studio] ⚠️ /images/edits timeout ({base_url}) sau {edit_timeout}s: {e_to}",
+                            flush=True,
+                        )
                         break
                     except requests.ConnectionError as e_conn:
-                        print(f"[meta_studio] /images/edits lỗi kết nối ({base_url}) lần {attempt+1}/2: {e_conn}", flush=True)
+                        print(
+                            f"[meta_studio] /images/edits lỗi kết nối ({base_url}) "
+                            f"lần {attempt+1}/{edit_attempts}: {e_conn}",
+                            flush=True,
+                        )
                         time.sleep(1.0)
                     except Exception as e_mp:
                         print(f"[meta_studio] /images/edits multipart warning ({base_url}): {e_mp}", flush=True)
                         time.sleep(1.0)
 
-    # 2. GỌI /v1/images/generations (Hỗ trợ đầy đủ trên Aurora pool, xoay account khi gặp lỗi 400/500)
+    # Có ref mà edits không ra ảnh mới → KHÔNG generations (không Pillow). Caller để YouTube mặc định.
+    if fallback_generations is None:
+        fallback_generations = not bool(ref_list)
+    if not fallback_generations:
+        if ref_list:
+            print(
+                "[meta_studio] Có ảnh gốc nhưng /images/edits fail/echo sau roll — "
+                "không generations (tránh bịa nhân vật), không Pillow.",
+                flush=True,
+            )
+        return None
+
+    # 2. GỌI /v1/images/generations (chỉ khi không có ref / được phép fallback)
     gen_prompt = prompt
     if "16:9" not in gen_prompt:
         gen_prompt = f"16:9 widescreen horizontal YouTube thumbnail (1792x1024). {gen_prompt}"

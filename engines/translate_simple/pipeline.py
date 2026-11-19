@@ -203,14 +203,14 @@ def _mark_junk(store: ScriptStore) -> int:
 
 
 def _review_missing(store: ScriptStore, pv: PlanView, plan: dict, flags: dict, *, model, stop_check=None,
-                    progress=None) -> tuple[dict | None, dict]:
+                    progress=None, backup_model=None) -> tuple[dict | None, dict]:
     """Trước khi park: 1 lượt review CHỈ các câu còn chưa rv (lô nhỏ SIMPLE_MISSING_BATCH) → hậu kỳ + kiểm lại
     đúng các câu vừa soát. Trả (thống kê | None, cờ cập nhật)."""
     left = {int(r["i"]) for r in store.rows if not r.get("rv") and not r.get("junk") and r.get("i") is not None}
     if not left:
         return None, flags
     st = stage_review.run(store, pv, model=model, stop_check=stop_check, progress=progress,
-                          batch=cfg.missing_batch_for(len(left)))
+                          batch=cfg.missing_batch_for(len(left)), backup_model=backup_model)
     got = [r for r in store.rows if r.get("i") is not None and int(r["i"]) in left and r.get("rv")]
     if got:
         post.apply(store, plan, got)
@@ -326,6 +326,9 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
     n_junk = _mark_junk(store)
     store.note("start", None, f"simple run force={force} rereview={rereview} n_asr={len(segments)}")
     model = cfg.review_model(wd)
+    bmodel = cfg.backup_model(wd) if hasattr(cfg, "backup_model") else None   # 2026-11-18: Aurora dự phòng
+    if bmodel:
+        print(f"[simple] soát chính {model} · dự phòng {bmodel} (chỉ lô lỗi)", flush=True)
     try:
         # 2) plan ∥ NMT
         plan, dinfo = stage_draft.run(store, segments, target, force=force, progress=prog)
@@ -346,7 +349,7 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
         # 3) review theo lô
         pair_raw: list[dict] = []
         rstats = stage_review.run(store, pv, model=model, stop_check=stop_check, progress=prog,
-                                  rereview=rereview or force,
+                                  rereview=rereview or force, backup_model=bmodel,
                                   pair_sink=pair_raw if cfg.suggest_pairs() else None)
         if cfg.pair_fill():
             from . import pair_fill
@@ -390,6 +393,7 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
         miss_info = None
         if store.n_unreviewed() > 0 and not cloud_dead:
             miss_info, flags = _review_missing(store, pv, plan, flags, model=model, stop_check=stop_check,
+                                               backup_model=bmodel,
                                                progress=prog)
         accepted, unrev_tol = _accept_unreviewed(store)
         if n_junk or miss_info or accepted:

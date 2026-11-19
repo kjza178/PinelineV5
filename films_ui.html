@@ -250,6 +250,15 @@ small{color:#888}
     </div>
   </div>
 
+  <div id="alert-orphan-work" class="alert-box hide" style="border-color:#f59e0b;background:#1c1408">
+    <div>💾 <b id="orphan-count">0</b> thư mục <code>work/</code> orphan trên ổ (không còn trong DB) · ~<b id="orphan-mb">0</b> MB · part <b id="orphan-parts">0</b></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="b danger sm" onclick="purgeOrphanWork(false)" title="Xoá thư mục work không còn trong films.db">🧹 Xoá orphan trên đĩa</button>
+      <button class="b sm" onclick="purgeOrphanWork(true)">Dry-run</button>
+      <button class="b sm" onclick="$('alert-orphan-work').classList.add('hide')">✕</button>
+    </div>
+  </div>
+
   <div class="filter-bar">
     <input id="f-q" placeholder="Tìm tên / bộ / job_id…" size="26">
     <select id="f-status">
@@ -673,6 +682,10 @@ small{color:#888}
         <input type="checkbox" id="del-work-cb" checked>
         <span>Xoá luôn cả thư mục video/audio trên ổ đĩa (thư mục <code>work/</code>)</span>
       </label>
+      <label style="cursor:pointer;display:flex;align-items:center;gap:7px;margin-top:8px;color:#fde68a">
+        <input type="checkbox" id="del-parts-cb" checked>
+        <span>Kèm các part <code>_p01/_p02…</code> khi xoá job Full (tránh bỏ sót vài GB trên đĩa)</span>
+      </label>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px">
       <button class="b" onclick="closeDelModal()">Huỷ</button>
@@ -981,6 +994,12 @@ small{color:#888}
             <label>Dòng phụ (Subtext)</label>
             <input id="t-sub" placeholder="VD: Siêu phẩm Tu Tiên Đô Thị">
           </div>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+            <input type="file" id="m-ref-file" accept="image/jpeg,image/png,image/webp,image/*" style="display:none" onchange="onMetaRefPicked(this)">
+            <button class="b" style="flex:1;min-width:120px;background:#1e293b;border-color:#475569;color:#e2e8f0" id="btn-up-ref" onclick="$('m-ref-file').click()" title="Chọn poster/ảnh gốc làm nền Render Local và reference cho AI">📁 Up ảnh gốc</button>
+            <button class="b sm" id="btn-clear-ref" onclick="clearMetaRef()" title="Bỏ ảnh gốc đã chọn" style="display:none">✕</button>
+            <span id="m-ref-status" style="font-size:11px;color:#94a3b8;flex:1;min-width:120px"></span>
+          </div>
           <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
             <button class="b pri" style="flex:1;min-width:140px;background:#7c3aed;border-color:#8b5cf6;color:#fff" id="btn-gen-ai-thumb" onclick="doGenerateAuroraAiThumb()" title="Gọi GPT local :3377 / Aurora sinh Master Thumbnail 16:9">✨ Sinh ảnh AI Aurora</button>
             <button class="b warning" style="flex:1;min-width:120px" id="btn-render-thumb" onclick="doRenderThumbnail()">🎨 Render Local 16:9</button>
@@ -988,7 +1007,7 @@ small{color:#888}
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11.5px">
             <a href="https://chatgpt.com" target="_blank" style="color:#10a37f;text-decoration:none;display:inline-flex;align-items:center;gap:4px">↗️ Mở chatgpt.com để tạo ảnh</a>
-            <span style="color:#64748b">Aurora = AI vẽ sẵn chữ · Local = Pillow đè chữ</span>
+            <span style="color:#64748b">Up ảnh gốc → Local/AI · Aurora = chữ sẵn · Local = Pillow</span>
           </div>
           <div id="m-strat-box" class="hide" style="margin-top:10px;background:#151c24;border:1px solid #243b55;border-radius:6px;padding:8px 10px;font-size:11.5px;color:#cbd5e1">
             <div style="font-weight:600;color:#74c0fc;margin-bottom:4px">🎯 Phân tích & Bố cục Thumbnail:</div>
@@ -1077,6 +1096,47 @@ const jq=s=>JSON.stringify(String(s??'')).replace(/&/g,'&amp;').replace(/"/g,'&q
 const POSTER_BASE='http://127.0.0.1:8801/api/hg/poster?name=';
 const dur=s=>{if(!s)return'';const m=Math.round(s/60);return m>=60?Math.floor(m/60)+'h'+String(m%60).padStart(2,'0'):m+'m'};
 const POSTER=POSTER_BASE;
+/** Films DB JSON sống trên sidecar :8802; :8801 có sau khi nạp routes_films.
+ *  Khi UI mở trên :8801 mà server chưa restart → fallback :8802 (CORS OK). */
+function filmsApiUrl(qs){
+  const q = String(qs||'').replace(/^\?/,'');
+  const p = String(location.port || '');
+  if(p === '8801') return 'http://127.0.0.1:8802/films?' + q;
+  return '/films?' + q;
+}
+function filmsCsvUrl(qs){
+  const q = String(qs||'').replace(/^\?/,'');
+  const p = String(location.port || '');
+  if(p === '8801') return 'http://127.0.0.1:8802/films.csv?' + q;
+  return '/films.csv?' + q;
+}
+async function fetchFilmsJson(qs){
+  const q = String(qs||'').replace(/^\?/,'');
+  const tried = [];
+  // Ưu tiên relative /api/films (8801 sau restart) → /films → sidecar :8802
+  const bases = [];
+  if(String(location.port||'') === '8801'){
+    bases.push('/api/films?', '/films?', 'http://127.0.0.1:8802/films?');
+  } else {
+    bases.push('/films?', '/api/films?');
+  }
+  let lastErr = null;
+  for(const b of bases){
+    const url = b + q;
+    tried.push(url);
+    try{
+      const r = await fetch(url);
+      const ct = (r.headers.get('content-type')||'').toLowerCase();
+      if(!r.ok){ lastErr = 'HTTP '+r.status; continue; }
+      if(ct.indexOf('json') < 0){ lastErr = 'not-json'; continue; }
+      const d = await r.json();
+      if(d && d.ok === false){ lastErr = d.error || 'ok=false'; continue; }
+      if(d && (Array.isArray(d.films) || d.stats)) return d;
+      lastErr = 'bad-shape';
+    }catch(e){ lastErr = e; }
+  }
+  throw new Error(lastErr || ('films API fail: '+tried.join(' | ')));
+}
 /** Bỏ hg_name = job_id / downloads / …_p01 — dùng title series Lib. */
 function resolveFilmPosterName(f){
   const jid = String(f.job_id||'').trim();
@@ -1251,7 +1311,7 @@ async function snApplyTitleVi(){
     });
   }catch(e){ console.warn('snApplyTitleVi library', e); }
   try{
-    const films=await (await fetch('/films?limit=5000&order=recent')).json();
+    const films=await fetchFilmsJson('limit=5000&order=recent');
     (films.films||films.items||[]).forEach(f=>{
       const vi=String(f.title_vi||'').trim();
       if(!vi) return;
@@ -2784,6 +2844,76 @@ function closeCombineJobsModal(){
   COMBINE_PRESERVE_ORDER = false;
 }
 
+// 2026-11-19: gộp job chạy NỀN (:8802 films_combine) — khung log + % (work/logs/films_combine.log).
+let COMBINE_TIMER = null, COMBINE_HIDDEN = false, COMBINE_LOG_OPEN = true, COMBINE_SEEN_PHASE = '';
+function combineBox(){
+  let el = document.getElementById('combineBox');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'combineBox';
+    el.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:10000;width:480px;max-width:92vw;max-height:58vh;'
+      + 'overflow:auto;background:#0b1220;border:1px solid #f59e0b;border-radius:8px;padding:8px 10px;font-size:12px;'
+      + 'color:#e2e8f0;box-shadow:0 4px 18px rgba(0,0,0,.55);display:none';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function combineRender(st){
+  const el = combineBox();
+  if(!st || COMBINE_HIDDEN){ el.style.display = 'none'; return; }
+  const running = !!(st.running || st.worker);
+  const phase = st.phase || 'idle';
+  if(phase === 'idle' && !running && !(st.log||[]).length){ el.style.display = 'none'; return; }
+  const pct = Math.max(0, Math.min(100, Number(st.pct) || 0));
+  const color = {done:'#86efac', failed:'#fca5a5', idle:'#94a3b8'}[phase] || '#fde68a';
+  const head = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+      <b style="color:#fbbf24">🔗 Gộp job</b>
+      <span style="color:${color}">${esc(phase)}</span>
+      <span style="color:#94a3b8">${pct}%</span>
+      <span style="flex:1"></span>
+      <button class="b sm" style="padding:1px 6px;font-size:10px" onclick="COMBINE_LOG_OPEN=!COMBINE_LOG_OPEN;combineTick()">${COMBINE_LOG_OPEN?'Ẩn log':'Log'}</button>
+      <button class="b sm" style="padding:1px 6px;font-size:10px" onclick="COMBINE_HIDDEN=true;combineBox().style.display='none'">✕</button>
+    </div>
+    <div style="height:6px;background:#1e293b;border-radius:3px;overflow:hidden;margin-bottom:6px">
+      <div style="height:100%;width:${pct}%;background:${phase==='failed'?'#f87171':'#f59e0b'};transition:width .3s"></div>
+    </div>
+    <div style="color:#cbd5e1;white-space:pre-wrap">${esc(st.text||'')}</div>
+    ${(st.job_ids&&st.job_ids.length)?`<div style="color:#64748b;margin-top:4px;font-size:11px">${esc(st.job_ids.join(' · '))}</div>`:''}`;
+  const log = COMBINE_LOG_OPEN
+    ? `<pre style="margin:6px 0 0;max-height:28vh;overflow:auto;background:#020617;padding:6px;font-size:11px;color:#94a3b8;white-space:pre-wrap">${esc((st.log||[]).slice(-80).join('\n'))}</pre>`
+    : '';
+  el.innerHTML = head + log;
+  el.style.display = 'block';
+}
+async function combineTick(){
+  clearTimeout(COMBINE_TIMER);
+  let st = null;
+  try { st = await (await fetch('/films/combine/status')).json(); } catch(e){}
+  if(st && st.ok){
+    const phase = st.phase || '';
+    if(COMBINE_SEEN_PHASE && COMBINE_SEEN_PHASE !== phase){
+      if(phase === 'done' && st.result && st.result.ok){
+        const r = st.result;
+        let msg = `✅ Đã tạo job gộp «${r.title_vi || r.title || r.job_id}»\nID: ${r.job_id}`;
+        if(r.size_mb) msg += `\nDung lượng: ${r.size_mb} MB`;
+        if(r.duration_sec) msg += ` · ${Math.round(r.duration_sec/60)} phút`;
+        if(r.publish) msg += r.publish.ok ? '\nĐã xếp auto-publish.' : ('\nPublish: ' + (r.publish.error||'?'));
+        toast(msg);
+        try { clearPickAll(); await load(); } catch(e){}
+      }
+      if(phase === 'failed') toast('Lỗi gộp: ' + (st.error || (st.result&&st.result.error) || 'thất bại'));
+    }
+    COMBINE_SEEN_PHASE = phase;
+    if(st.running || st.worker || phase === 'done' || phase === 'failed') COMBINE_HIDDEN = false;
+    combineRender(st);
+    const active = !!(st.running || st.worker);
+    COMBINE_TIMER = setTimeout(combineTick, active ? 1500 : 20000);
+  } else {
+    COMBINE_TIMER = setTimeout(combineTick, 15000);
+  }
+}
+try { setTimeout(combineTick, 2500); } catch(e){}
+
 async function execCombineJobs(){
   const ids = PENDING_COMBINE_IDS.slice();
   if(ids.length < 2){ toast('Cần ≥2 job'); return; }
@@ -2803,7 +2933,11 @@ async function execCombineJobs(){
     }
   }
   closeCombineJobsModal();
-  toast(`Đang gộp ${ids.length} job đã làm (có thể mất vài phút)…`);
+  COMBINE_HIDDEN = false;
+  COMBINE_LOG_OPEN = true;
+  COMBINE_SEEN_PHASE = '';
+  combineTick();
+  toast(`Đã xếp gộp ${ids.length} job — xem khung log góc phải…`);
   try{
     const res = await (await fetch('/films/combine', {
       method: 'POST',
@@ -2817,16 +2951,16 @@ async function execCombineJobs(){
         explicit_order: preserveOrder
       })
     })).json();
-    if(res.ok){
-      let msg = `✅ Đã tạo job gộp «${res.title_vi || res.title || res.job_id}»\nID: ${res.job_id}`;
-      if(res.size_mb) msg += `\nDung lượng: ${res.size_mb} MB`;
-      if(res.duration_sec) msg += ` · ${Math.round(res.duration_sec/60)} phút`;
-      if(res.publish) msg += res.publish.ok ? '\nĐã xếp auto-publish.' : ('\nPublish: ' + (res.publish.error||'?'));
-      toast(msg);
-      clearPickAll();
-      await load();
+    if(res.ok && (res.started || res.job_id)){
+      toast(res.started
+        ? `⏳ Đang gộp ${ids.length} job (nền) — tiến độ ở khung 🔗`
+        : `✅ Đã tạo job gộp «${res.title_vi || res.title || res.job_id}»`);
+      COMBINE_HIDDEN = false;
+      combineTick();
+      if(res.job_id && !res.started){ clearPickAll(); await load(); }
     } else {
       toast('Lỗi gộp: ' + (res.error || 'thất bại'));
+      combineTick();
     }
   }catch(e){
     toast('Lỗi kết nối: ' + e);
@@ -2931,11 +3065,11 @@ async function load(){
     workFilter = '1';
   }
   const p=new URLSearchParams({q:q.value.trim(), status:fstatus.value, block_status:(fblock?fblock.value:''), order:order.value, work_exists:workFilter});
-  csv.href='/films.csv?'+p;
+  csv.href=filmsCsvUrl(p.toString());
   let d;
-  try{ d=await (await fetch('/films?'+p)).json(); }
+  try{ d=await fetchFilmsJson(p.toString()); }
   catch(e){ st.textContent='Không đọc được dữ liệu: '+e; return; }
-  if(!d.ok){ st.textContent='Lỗi: '+(d.error||'Không đọc được dữ liệu'); return; }
+  if(!d || d.ok === false){ st.textContent='Lỗi: '+((d&&d.error)||'Không đọc được dữ liệu'); return; }
 
   LAST_FILMS = d.films || [];
   const s=d.stats||{}, b=s.by_status||{}, bb=s.by_block||{};
@@ -2958,6 +3092,7 @@ async function load(){
   } else {
     alertBox.classList.add('hide');
   }
+  try { refreshOrphanWork(); } catch(e){}
 
   await loadMergeable();
 
@@ -3116,15 +3251,12 @@ let PENDING_DELETE = null;
 
 function promptDeleteSingle(jobId, title, workExists){
   PENDING_DELETE = { job_ids: [jobId], count: 1, workExists: !!workExists };
-  $('del-desc').innerHTML = `Bạn có chắc muốn xoá phim <b>«${title}»</b><br>Job ID: <code>${jobId}</code>?`;
+  $('del-desc').innerHTML = `Bạn có chắc muốn xoá phim <b>«${title}»</b><br>Job ID: <code>${jobId}</code>?`
+    + `<div style="margin-top:8px;font-size:12px;color:#94a3b8">Luôn thử xoá thư mục trên đĩa nếu tick bên dưới (kể cả khi DB báo đã mất folder).</div>`;
   const opt = $('del-work-opt');
-  if (workExists) {
-    opt.classList.remove('hide');
-    $('del-work-cb').checked = true;
-  } else {
-    opt.classList.add('hide');
-    $('del-work-cb').checked = false;
-  }
+  opt.classList.remove('hide');
+  $('del-work-cb').checked = true;
+  if($('del-parts-cb')) $('del-parts-cb').checked = true;
   $('del-modal').classList.remove('hide');
 }
 
@@ -3134,15 +3266,12 @@ function batchDeletePrompt(){
   const ids = picks.map(p=>p.value);
   const anyWork = picks.some(p=>p.dataset.work === '1');
   PENDING_DELETE = { job_ids: ids, count: ids.length, workExists: anyWork };
-  $('del-desc').innerHTML = `Bạn có chắc muốn xoá <b>${ids.length}</b> phim đã chọn khỏi database?`;
+  $('del-desc').innerHTML = `Bạn có chắc muốn xoá <b>${ids.length}</b> phim đã chọn khỏi database?`
+    + `<div style="margin-top:8px;font-size:12px;color:#fde68a">Parent Full sẽ kèm xoá các part <code>_pNN</code> (nếu tick).</div>`;
   const opt = $('del-work-opt');
-  if (anyWork) {
-    opt.classList.remove('hide');
-    $('del-work-cb').checked = true;
-  } else {
-    opt.classList.add('hide');
-    $('del-work-cb').checked = false;
-  }
+  opt.classList.remove('hide');
+  $('del-work-cb').checked = true;
+  if($('del-parts-cb')) $('del-parts-cb').checked = true;
   $('del-modal').classList.remove('hide');
 }
 
@@ -3153,28 +3282,78 @@ function closeDelModal(){
 
 async function execDeleteModal(){
   if(!PENDING_DELETE) return;
-  const deleteWork = $('del-work-cb').checked && PENDING_DELETE.workExists;
+  // 2026-11-19: luôn tôn trọng checkbox đĩa (trước: && workExists → nhiều part còn vài GB sau khi xoá DB).
+  const deleteWork = !!($('del-work-cb') && $('del-work-cb').checked);
+  const includeParts = !!($('del-parts-cb') && $('del-parts-cb').checked);
   const ids = PENDING_DELETE.job_ids;
   closeDelModal();
-  toast(`Đang xoá ${ids.length} phim…`);
+  toast(`Đang xoá ${ids.length} phim` + (includeParts ? ' (+ part liên quan)' : '') + '…');
   try {
     const res = await (await fetch('/films/delete', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({job_ids: ids, delete_work: deleteWork})
+      body: JSON.stringify({job_ids: ids, delete_work: deleteWork, include_parts: includeParts})
     })).json();
     if(res.ok){
       let msg = `Đã xoá ${res.deleted_count} phim khỏi database.`;
-      if(res.work_deleted_count) msg += `\n(Đã xoá ${res.work_deleted_count} thư mục trên ổ đĩa).`;
+      if((res.expanded_parts||[]).length) msg += `\n(+${res.expanded_parts.length} part kèm theo)`;
+      if(res.work_deleted_count) msg += `\nĐã xoá ${res.work_deleted_count} thư mục trên ổ đĩa.`;
+      else if(deleteWork) msg += `\n⚠ Không xoá được thư mục nào trên đĩa.`;
+      if(res.work_failed_count){
+        const errs = (res.work_failed||[]).slice(0,3).map(x=>`${x.job_id}: ${x.error}`).join('\n');
+        msg += `\n❌ Lỗi xoá đĩa ${res.work_failed_count}:\n${errs}`;
+      }
       toast(msg);
       load();
       if(typeof loadLib === 'function') loadLib();
+      refreshOrphanWork();
     } else {
       toast('Lỗi: ' + (res.error || 'Không xoá được'));
     }
   } catch(e) {
     toast('Lỗi kết nối: ' + e);
   }
+}
+
+async function refreshOrphanWork(){
+  const box = $('alert-orphan-work');
+  if(!box) return;
+  try{
+    const res = await (await fetch('/films/orphan-work?limit=500')).json();
+    if(!res.ok){ box.classList.add('hide'); return; }
+    const n = Number(res.count)||0;
+    if(n <= 0){ box.classList.add('hide'); return; }
+    if($('orphan-count')) $('orphan-count').textContent = String(n);
+    if($('orphan-mb')) $('orphan-mb').textContent = String(res.total_mb||0);
+    if($('orphan-parts')) $('orphan-parts').textContent = String(res.parts||0);
+    box.classList.remove('hide');
+  }catch(e){ /* sidecar cũ */ }
+}
+
+async function purgeOrphanWork(dry){
+  let st = null;
+  try{ st = await (await fetch('/films/orphan-work?limit=500')).json(); }catch(e){}
+  const n = st && st.ok ? (st.count||0) : 0;
+  const mb = st && st.ok ? (st.total_mb||0) : '?';
+  if(!n){ toast('Không có thư mục orphan.'); refreshOrphanWork(); return; }
+  if(dry){
+    toast(`Dry-run: sẽ xoá ${n} thư mục (~${mb} MB) khỏi work/ (không đụng DB).`);
+    return;
+  }
+  if(!confirm(`Xoá ${n} thư mục orphan trên đĩa (~${mb} MB)?\n\nChỉ xoá work/<id> KHÔNG còn trong films.db (gồm part _pNN sót).\nKhông phục hồi được.`)) return;
+  toast(`Đang xoá ${n} orphan trên đĩa…`);
+  try{
+    const res = await (await fetch('/films/purge-orphan-work', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({})
+    })).json();
+    if(res.ok){
+      let msg = `Đã xoá ${res.deleted_count||0} thư mục orphan.`;
+      if(res.failed_count) msg += `\nLỗi ${res.failed_count}: ${(res.failed||[]).slice(0,2).map(x=>x.job_id).join(', ')}`;
+      toast(msg);
+      refreshOrphanWork();
+    } else toast('Lỗi: ' + (res.error||'?'));
+  }catch(e){ toast('Lỗi: '+e); }
 }
 
 async function promptPurge(){
@@ -3249,15 +3428,58 @@ function updateBatchBar(){
 
 let CURRENT_META_JOB = null;
 let CURRENT_THUMB_URL = null;
+let CURRENT_META_REF_B64 = null;
+let CURRENT_META_REF_DATAURL = null;
+
+function clearMetaRef(){
+  CURRENT_META_REF_B64 = null;
+  CURRENT_META_REF_DATAURL = null;
+  if(CURRENT_META_JOB) CURRENT_META_JOB.posterB64 = '';
+  const inp = $('m-ref-file'); if(inp) inp.value = '';
+  const st = $('m-ref-status'); if(st) st.textContent = '';
+  const clr = $('btn-clear-ref'); if(clr) clr.style.display = 'none';
+  if(CURRENT_META_JOB && CURRENT_META_JOB.posterName){
+    $('thumb-box').innerHTML = `<img src="${POSTER+encodeURIComponent(CURRENT_META_JOB.posterName)}" style="width:40%;height:100%;object-fit:contain;margin:auto" alt="">`;
+  } else if($('thumb-box')){
+    $('thumb-box').innerHTML = '<span style="color:#666">Chưa có poster — bấm «Up ảnh gốc» hoặc chọn phim có poster Lib</span>';
+  }
+}
+
+function onMetaRefPicked(inp){
+  const f = inp && inp.files && inp.files[0];
+  if(!f){ toast('Chưa chọn file ảnh'); return; }
+  if(f.size > 12 * 1024 * 1024){ toast('Ảnh quá lớn (>12MB) — chọn file nhỏ hơn'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = String(reader.result || '');
+    const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+    if(!b64 || b64.length < 80){ toast('Không đọc được ảnh'); return; }
+    CURRENT_META_REF_B64 = b64;
+    CURRENT_META_REF_DATAURL = dataUrl;
+    if(CURRENT_META_JOB) CURRENT_META_JOB.posterB64 = b64;
+    $('thumb-box').innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:contain;border-radius:4px" alt="Ảnh gốc">`;
+    if($('m-ref-status')) $('m-ref-status').textContent = '✓ ' + (f.name || 'ảnh gốc') + ' (' + Math.round(f.size/1024) + ' KB)';
+    if($('btn-clear-ref')) $('btn-clear-ref').style.display = '';
+    $('thumb-actions').classList.add('hide');
+    toast('Đã nạp ảnh gốc — dùng cho Render Local / AI Aurora');
+  };
+  reader.onerror = () => toast('Lỗi đọc file ảnh');
+  reader.readAsDataURL(f);
+}
 
 function openMetaModal(jobId, titleVi, titleZh, posterName){
-  CURRENT_META_JOB = { jobId, titleVi, titleZh, posterName };
+  CURRENT_META_JOB = { jobId, titleVi, titleZh, posterName, posterB64: '' };
+  CURRENT_META_REF_B64 = null;
+  CURRENT_META_REF_DATAURL = null;
+  const inp = $('m-ref-file'); if(inp) inp.value = '';
+  if($('m-ref-status')) $('m-ref-status').textContent = posterName ? ('Poster Lib: ' + posterName) : 'Chưa có poster Lib — hãy Up ảnh gốc';
+  if($('btn-clear-ref')) $('btn-clear-ref').style.display = 'none';
   $('m-title-vi').value = titleVi || '';
   $('m-title-zh').value = titleZh || '';
   $('t-sub').value = titleVi || '';
   $('thumb-box').innerHTML = posterName
     ? `<img src="${POSTER+encodeURIComponent(posterName)}" style="width:40%;height:100%;object-fit:contain;margin:auto" alt="">`
-    : '<span style="color:#666">Chưa có poster</span>';
+    : '<span style="color:#666">Chưa có poster — bấm «Up ảnh gốc»</span>';
   $('thumb-actions').classList.add('hide');
   if ($('m-series-banner')) $('m-series-banner').classList.add('hide');
   $('meta-modal').classList.remove('hide');
@@ -3594,6 +3816,11 @@ async function doGenerateMeta(){
 
 async function doRenderThumbnail(){
   if(!CURRENT_META_JOB){ toast('Chưa chọn phim'); return; }
+  const posterB64 = CURRENT_META_REF_B64 || (CURRENT_META_JOB.posterB64 || '');
+  if(!posterB64 && !CURRENT_META_JOB.posterName){
+    toast('Thiếu ảnh gốc — bấm «Up ảnh gốc» hoặc chọn phim có poster Lib');
+    return;
+  }
   const btn = $('btn-render-thumb');
   btn.disabled = true;
   btn.textContent = '⏳ Đang render…';
@@ -3603,7 +3830,8 @@ async function doRenderThumbnail(){
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        poster_name: CURRENT_META_JOB.posterName,
+        poster_name: CURRENT_META_JOB.posterName || '',
+        poster_b64: posterB64 || undefined,
         hook_text_1: $('t-hook-1').value.trim(),
         hook_text_2: $('t-hook-2').value.trim(),
         badge_text: $('t-badge').value.trim(),
@@ -3613,7 +3841,7 @@ async function doRenderThumbnail(){
       })
     })).json();
     if(res.ok && res.url){
-      CURRENT_THUMB_URL = res.url + '&_t=' + Date.now();
+      CURRENT_THUMB_URL = res.url + (res.url.indexOf('?')>=0 ? '&' : '?') + '_t=' + Date.now();
       $('thumb-box').innerHTML = `<img src="${CURRENT_THUMB_URL}" alt="Thumbnail 16:9">`;
       $('btn-thumb-dl').href = res.url;
       $('btn-thumb-dl').download = `thumb_${CURRENT_META_JOB.jobId}.jpg`;
@@ -4156,8 +4384,8 @@ async function openPickFilmModal(){
   $('pick-film-search').value = '';
   $('pick-film-list').innerHTML = '<div style="padding:16px;text-align:center;color:#888">Đang tải danh sách phim đã xong...</div>';
   try {
-    const res = await (await fetch('/films?status=done&limit=100')).json();
-    if(res.ok && res.films){
+    const res = await fetchFilmsJson('status=done&limit=100');
+    if(res && res.films){
       CACHED_COMPLETED_FILMS = res.films;
       renderPickFilmList();
     } else {
@@ -4569,26 +4797,34 @@ async function doGenerateAuroraAiThumb(){
     toast('Chưa có thông tin phim hoặc prompt.');
     return;
   }
+  const posterB64 = CURRENT_META_REF_B64 || (CURRENT_META_JOB.posterB64 || '');
   const btn = $('btn-gen-ai-thumb');
   if(btn){
     btn.disabled = true;
     btn.textContent = '⏳ Đang vẽ…';
   }
-  toast('Đang gọi AI sinh Master Thumbnail 16:9 tích hợp Typography 3D Lửa...');
+  toast(posterB64
+    ? 'Đang upload ảnh gốc + gọi AI sinh Master Thumbnail 16:9…'
+    : 'Đang gọi AI sinh Master Thumbnail 16:9 tích hợp Typography 3D…');
   try {
+    const payload = {
+      prompt: prompt,
+      job_id: CURRENT_META_JOB.jobId,
+      poster_name: CURRENT_META_JOB.posterName || '',
+      hook_1: $('t-hook-1') ? $('t-hook-1').value.trim() : '',
+      hook_2: $('t-hook-2') ? $('t-hook-2').value.trim() : '',
+      badge: $('t-badge') ? $('t-badge').value.trim() : '',
+      sub: $('t-sub') ? $('t-sub').value.trim() : '',
+      style: $('t-style') ? $('t-style').value : 'fire_gold'
+    };
+    if(posterB64){
+      payload.poster_b64 = posterB64;
+      payload.allow_edits = true; // user chọn ảnh gốc → thử /images/edits
+    }
     const r = await fetch(metaAiImageUrl(), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        prompt: prompt,
-        job_id: CURRENT_META_JOB.jobId,
-        poster_name: CURRENT_META_JOB.posterName || '',
-        hook_1: $('t-hook-1') ? $('t-hook-1').value.trim() : '',
-        hook_2: $('t-hook-2') ? $('t-hook-2').value.trim() : '',
-        badge: $('t-badge') ? $('t-badge').value.trim() : '',
-        sub: $('t-sub') ? $('t-sub').value.trim() : '',
-        style: $('t-style') ? $('t-style').value : 'fire_gold'
-      })
+      body: JSON.stringify(payload)
     });
     let aiRes = {};
     try { aiRes = await r.json(); } catch(_){ aiRes = {}; }

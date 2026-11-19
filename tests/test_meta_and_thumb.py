@@ -82,6 +82,9 @@ def test_hooks_from_title_and_sanitize():
         hook_texts=["CỘNG ĐIỂM VÕ ĐẠO", "LÃO LỤC THÀNH THÁNH"],
     )
     assert "INTEGRATED 3D LATIN TYPOGRAPHY" in prompt
+    assert "POSTER TEXT CLEANUP" in prompt
+    assert "APPEARANCE SOURCE OF TRUTH" in prompt or "ONLY source" in prompt
+    assert "POSE / ACTION / ENERGY" in prompt
     assert "LAO LUC THANH THANH" in prompt  # không dấu — tránh AI vỡ chữ
     assert "LÃO LỤC" not in prompt or "diacritic" in prompt.lower()
     assert meta_studio.vi_to_image_latin("Võ Đạo Cộng Điểm") == "VO DAO CONG DIEM"
@@ -105,11 +108,8 @@ def test_hooks_from_title_and_sanitize():
     assert "NHAN DAN" in fin["master_image_prompt"] or "NHÃN" in "".join(fin["hook_texts"])
 
 
-def test_auto_publisher_no_fallback_thumb_on_ai_failure(tmp_path):
-    """
-    Test requirement 2: If thumb cannot be created because AI image fails,
-    DO NOT generate ugly Pillow thumbnail fallback! Instead set thumb_path = None.
-    """
+def test_auto_publisher_no_fallback_thumb_without_poster(tmp_path):
+    """Không AI + không poster → không bịa Pillow; thumb_path=None."""
     dummy_video = tmp_path / "output.mp4"
     dummy_video.write_bytes(b"dummy video content")
 
@@ -137,6 +137,7 @@ def test_auto_publisher_no_fallback_thumb_on_ai_failure(tmp_path):
          patch("agents.meta_studio.get_series_thumbnail", return_value=None), \
          patch("agents.meta_studio.generate_metadata", return_value={"ok": True, "titles": ["Phim Test - Tình Huống Kịch Tính"], "ai_image_prompt": "prompt", "description": "desc", "tags": [], "hook_texts": ["PHIM TEST", "CAO TRÀO"]}), \
          patch("agents.meta_studio.generate_ai_image", return_value=None), \
+         patch("agents.meta_studio.get_job_reference_images", return_value=[]), \
          patch("agents.meta_studio.create_thumbnail") as mock_create_thumb, \
          patch("agents.meta_studio.save_series_thumbnail") as mock_save_thumb, \
          patch("agents.meta_studio.save_series_meta"), \
@@ -145,13 +146,58 @@ def test_auto_publisher_no_fallback_thumb_on_ai_failure(tmp_path):
 
         res = auto_publisher._publish_job_internal("test_job_meta_thumb", privacy="unlisted", force=True)
 
-        # mock_create_thumb should NOT be called to create fallback
         mock_create_thumb.assert_not_called()
-        # mock_save_thumb should NOT be called since no AI image was generated
         mock_save_thumb.assert_not_called()
-
-        # mock_upload should have been called with thumb_path=None
         assert mock_upload.called
-        call_kwargs = mock_upload.call_args[1]
-        assert call_kwargs.get("thumb_path") is None
+        assert mock_upload.call_args[1].get("thumb_path") is None
         assert res.get("ok") is True
+
+
+def test_auto_publisher_no_pillow_when_edits_fail(tmp_path):
+    """Có poster + edits fail → không Pillow, không generations; upload vẫn OK (YouTube mặc định)."""
+    dummy_video = tmp_path / "output.mp4"
+    dummy_video.write_bytes(b"dummy video content")
+    poster = b"\xff\xd8\xff\xe0" + b"JPEGFAKE" * 80
+
+    row = {
+        "job_id": "test_job_poster_fb",
+        "output_path": str(dummy_video),
+        "status": "ready_to_upload",
+        "title_vi": "Thời Đình Khởi Thủ",
+        "title": "时停起手",
+        "hg_name": "时停起手第四季",
+    }
+    mock_db_con = MagicMock()
+    mock_db_con.__enter__.return_value = MagicMock()
+
+    with patch("agents.auto_publisher.load_config", return_value={"enabled": True, "privacy": "unlisted", "generate_ai_thumb": True}), \
+         patch("agents.auto_publisher.film_db.get", return_value=row), \
+         patch("agents.auto_publisher.film_db.query", return_value=[row]), \
+         patch("agents.auto_publisher.film_db.sync_one"), \
+         patch("agents.auto_publisher.film_db.connect", return_value=mock_db_con), \
+         patch("agents.auto_publisher.update_auto_state"), \
+         patch("agents.auto_publisher._sync_queue_state_badge"), \
+         patch("agents.auto_publisher.touch_active_locks"), \
+         patch("agents.meta_studio.get_series_key", return_value=("thoi_dinh", "Thời Đình")), \
+         patch("agents.meta_studio.get_series_meta", return_value=None), \
+         patch("agents.meta_studio.get_series_thumbnail", return_value=None), \
+         patch("agents.meta_studio.generate_metadata", return_value={
+             "ok": True, "titles": ["T"], "best_title": "T", "description": "d", "tags": ["a"],
+             "hook_texts": ["THOI DINH", "KHOI THU"], "badge_text": "HOT", "sub_text": "Thời Đình",
+             "master_image_prompt": "INTEGRATED 3D LATIN TYPOGRAPHY x",
+         }), \
+         patch("agents.meta_studio.get_job_reference_images", return_value=[poster]), \
+         patch("agents.meta_studio.generate_ai_image", return_value=None) as mock_ai, \
+         patch("agents.meta_studio.create_thumbnail") as mock_pil, \
+         patch("agents.meta_studio.save_series_thumbnail") as mock_save_thumb, \
+         patch("agents.meta_studio.save_series_meta"), \
+         patch("agents.agent_tele_cmd._fetch_poster_bytes", return_value=poster), \
+         patch("agents.auto_publisher.upload_to_youtube", return_value={"ok": True, "yt_url": "https://youtu.be/x", "video_id": "x"}) as mock_upload:
+
+        res = auto_publisher._publish_job_internal("test_job_poster_fb", privacy="unlisted", force=True)
+        assert res.get("ok") is True
+        assert mock_ai.call_args.kwargs.get("allow_edits") is True
+        assert mock_ai.call_args.kwargs.get("fallback_generations") is False
+        mock_pil.assert_not_called()
+        mock_save_thumb.assert_not_called()
+        assert mock_upload.call_args[1].get("thumb_path") is None

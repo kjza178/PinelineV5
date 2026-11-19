@@ -944,11 +944,20 @@ def meta_ai_image(body: dict):
         allow_edits = body.get("allow_edits")
         if allow_edits is None and body.get("skip_edits"):
             allow_edits = False
+        ref_images = None
+        poster_bytes = meta_studio.decode_poster_b64(
+            body.get("poster_b64") or body.get("reference_b64") or body.get("image_b64")
+        )
+        if poster_bytes:
+            ref_images = [poster_bytes]
+            if allow_edits is None:
+                allow_edits = True
         img_bytes = meta_studio.generate_ai_image(
             prompt,
             timeout=300,
             job_id=job_id,
             poster_name=poster_name,
+            ref_images=ref_images,
             allow_edits=allow_edits,
         )
         if not img_bytes:
@@ -997,6 +1006,12 @@ def meta_thumbnail(body: dict):
     import agents.meta_studio as meta_studio
     try:
         poster_src = body.get("poster_url") or body.get("poster_path")
+        if not poster_src:
+            pb = meta_studio.decode_poster_b64(
+                body.get("poster_b64") or body.get("reference_b64") or body.get("image_b64")
+            )
+            if pb:
+                poster_src = pb
         if not poster_src and body.get("poster_name"):
             try:
                 import agents.hongguo_bridge as hg
@@ -1006,7 +1021,7 @@ def meta_thumbnail(body: dict):
             except Exception:
                 pass
         if not poster_src:
-            return JSONResponse({"ok": False, "error": "Thiếu nguồn ảnh poster hoặc không tìm thấy poster"}, status_code=400)
+            return JSONResponse({"ok": False, "error": "Thiếu nguồn ảnh poster hoặc không tìm thấy poster — Up ảnh gốc trong Meta Studio"}, status_code=400)
         out = meta_studio.create_thumbnail(
             poster_source=poster_src,
             hook_text_1=str(body.get("hook_text_1") or ""),

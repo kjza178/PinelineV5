@@ -4,7 +4,7 @@ import pytest
 try:
     import agents.agent_core as ac  # V5
 except ImportError:
-    import agent_core as ac
+    import agents.agent_core as ac
 
 
 def _setup(monkeypatch, errors):

@@ -62,7 +62,7 @@ LABELS: dict[str, str] = {
     "voice_vol": "Âm lượng giọng Việt",
     "orig_vol": "Tiếng gốc nền (khi ducking)",
     "translate_mode": "Dịch",
-    "review_backup": "REVIEW backup (Aurora parallel)",
+    "review_backup": "REVIEW dự phòng: Aurora khi DeepSeek lỗi (aurora_parallel)",
     "ocr": "OCR",
     "fit": "Fit",
     "resolution": "Độ phân giải",
@@ -285,7 +285,8 @@ def describe(opts: dict[str, Any] | None = None) -> str:
 
 
 def review_backup_mode(opts: dict | None = None) -> str:
-    """off | aurora_parallel — Aurora GPT làm REVIEW (qua REVIEW_MODEL / AURORA_REVIEW_MODEL).
+    """off | aurora_parallel — 2026-11-18 luồng simple: aurora_parallel = DỰ PHÒNG (DeepSeek soát chính, lô nào
+    lỗi mới làm lại bằng AURORA_REVIEW_MODEL — translate_simple.cfg.backup_model). Luồng cũ (legacy) giữ nghĩa cũ:
 
     aurora_parallel: ép model chatgpt + `translate.run_review` fan-out
     `REVIEW_PARALLEL` worker (mặc định 6). Cloud lỗi → fallback local REVIEW_PRESET.

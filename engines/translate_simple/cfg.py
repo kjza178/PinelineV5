@@ -42,7 +42,8 @@ Cờ thử nghiệm 2026-11-12 «next» (docs/fixes/2026-11-12-translate-simple-
   SIMPLE_ZH_OCR_PASS_B     1 = chạy lượt B sau review (1)
   SIMPLE_UNREVIEWED_TOLERANCE  số câu CHƯA SOÁT tối đa được nhận bản nháp (cờ unreviewed_accepted) thay vì park
                            (trống = max(3, 0.2% số câu); 0 = tắt, park như cũ) — fix 2026-11-13 agentM
-  SIMPLE_MISSING_BATCH     cỡ lô của lượt review bổ sung CHỈ câu chưa soát trước khi park (4)
+  SIMPLE_MISSING_BATCH     cỡ lô của lượt review bổ sung CHỈ câu chưa soát trước khi park (4) — chỉ khi còn
+                           ≤ SIMPLE_MISSING_SMALL_MAX (5) câu; nhiều hơn → lô thường SIMPLE_BATCH (2026-11-18)
 """
 from __future__ import annotations
 
@@ -380,11 +381,39 @@ def plan_model(work_dir=None) -> str | None:
 
 
 def review_model(work_dir=None) -> str | None:
+    """Model soát CHÍNH của luồng simple. 2026-11-18: KHÔNG còn bị `review_backup=aurora_parallel` ép sang Aurora
+    (trước: bật «backup» = Aurora soát toàn bộ, DeepSeek không chạy) — Aurora giờ là DỰ PHÒNG (backup_model)."""
     m = str(get("SIMPLE_MODEL", "") or "").strip()
     if m:
         return m
     try:
         import engines.translate as T
-        return T._resolve_review_model(work_dir, None)
+        return T._resolve_review_model(None, None)      # = REVIEW_MODEL (không đọc queue_opts)
     except Exception:  # noqa: BLE001
         return get("REVIEW_MODEL") or get("TRANSLATE_MODEL") or None
+
+
+def _queue_review_backup(work_dir) -> str:
+    if work_dir is None:
+        return "off"
+    try:
+        d = json.loads((Path(work_dir) / "manifest.json").read_text(encoding="utf-8"))
+        v = str(((d.get("queue_opts") or {}) if isinstance(d, dict) else {}).get("review_backup") or "off")
+        return v.strip().lower()
+    except Exception:  # noqa: BLE001
+        return "off"
+
+
+def backup_model(work_dir=None) -> str | None:
+    """2026-11-18: model DỰ PHÒNG khi model chính (DeepSeek) lỗi — chỉ khi job bật `review_backup=aurora_parallel`
+    (Config Batch «REVIEW dự phòng: Aurora»). Lô chính lỗi (hết retry / rỗng / 5xx kéo dài) → làm lại lô đó bằng
+    AURORA_REVIEW_MODEL. None = không dự phòng (lô lỗi thử lại bằng model chính như cũ)."""
+    if _queue_review_backup(work_dir) != "aurora_parallel":
+        return None
+    m = str(get("AURORA_REVIEW_MODEL", "") or "").strip() or "chatgpt/gpt-6"
+    return None if m == (review_model(work_dir) or "") else m
+
+
+def backup_batch() -> int:
+    """Cỡ lô khi làm lại bằng model dự phòng (Aurora chịu lô vừa) — SIMPLE_BACKUP_BATCH (30)."""
+    return _int("SIMPLE_BACKUP_BATCH", 30, 4, 120)

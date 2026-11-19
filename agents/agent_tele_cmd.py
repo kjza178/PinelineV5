@@ -985,6 +985,17 @@ def _fetch_poster_bytes(name: str) -> bytes | None:
     return None
 
 
+def _decode_poster_b64(raw) -> bytes | None:
+    """Decode poster_b64 — delegate meta_studio (sidecar reload meta mỗi request)."""
+    try:
+        import agents.meta_studio as meta_studio
+        import importlib
+        meta_studio = importlib.reload(meta_studio)
+        return meta_studio.decode_poster_b64(raw)
+    except Exception:
+        return None
+
+
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
@@ -1093,6 +1104,24 @@ class CtrlHandler(BaseHTTPRequestHandler):
             if path in ("/films/mergeable",):
                 self._json(500, {"ok": False, "error": f"films_merge: {e}"})
                 return
+        if path == "/films/combine/status":
+            try:
+                import importlib
+                import engines.films_combine as films_combine
+                films_combine = importlib.reload(films_combine)
+                self._json(200, films_combine.status())
+            except Exception as e:  # noqa: BLE001
+                self._json(500, {"ok": False, "error": str(e)})
+            return
+        if path == "/films/orphan-work":
+            try:
+                from urllib.parse import parse_qs, urlsplit
+                qs = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+                r = film_db.list_orphan_work_dirs(limit=int(qs.get("limit") or 500))
+            except Exception as e:  # noqa: BLE001
+                r = {"ok": False, "error": str(e)}
+            self._json(200 if r.get("ok") else 500, r)
+            return
         if path.startswith("/films/") and path != "/films/ui":
             d = film_db.get(path.rsplit("/", 1)[1])
             self._json(200 if d else 404, {"ok": bool(d), "film": d})
@@ -1694,14 +1723,41 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             job_ids = body.get("job_ids")
             if not job_ids and body.get("job_id"):
                 job_ids = [body.get("job_id")]
-            delete_work = bool(body.get("delete_work", False))
+            # Mặc định True: khớp film_db + UI (trước đây False → nhiều job mất DB nhưng còn vài GB trên đĩa).
+            if "delete_work" in body:
+                delete_work = bool(body.get("delete_work"))
+            else:
+                delete_work = True
+            include_parts = bool(body.get("include_parts", True))
             if job_ids:
                 try:
-                    feeder._post(BASE, "/api/queue/jobs/remove", {"job_ids": job_ids}, timeout=10)
+                    # Gỡ cả parent + part đã expand khỏi queue :8801
+                    expand_ids = film_db.expand_delete_ids(job_ids, include_parts=include_parts)
+                    feeder._post(BASE, "/api/queue/jobs/remove", {"job_ids": expand_ids}, timeout=10)
                 except Exception:
                     pass
-            r = film_db.delete_films(job_ids or [], delete_work=delete_work)
+            r = film_db.delete_films(
+                job_ids or [],
+                delete_work=delete_work,
+                include_parts=include_parts,
+            )
             self._json(200, r)
+            return
+        if path == "/films/orphan-work":
+            try:
+                r = film_db.list_orphan_work_dirs(limit=int(body.get("limit") or 500))
+            except Exception as e:  # noqa: BLE001
+                r = {"ok": False, "error": str(e)}
+            self._json(200 if r.get("ok") else 500, r)
+            return
+        if path == "/films/purge-orphan-work":
+            dry = bool(body.get("dry_run") or body.get("dry"))
+            ids = body.get("job_ids")
+            try:
+                r = film_db.purge_orphan_work_dirs(ids, dry_run=dry)
+            except Exception as e:  # noqa: BLE001
+                r = {"ok": False, "error": str(e)}
+            self._json(200 if r.get("ok") else 500, r)
             return
         if path == "/films/purge-missing":
             only_pf = bool(body.get("only_pending_failed", False))
@@ -1715,7 +1771,8 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
         if path == "/films/combine":
             try:
                 import importlib
-                feeder_mod = importlib.reload(feeder)
+                import engines.films_combine as films_combine
+                films_combine = importlib.reload(films_combine)
                 job_ids = body.get("job_ids") or []
                 custom_title_vi = body.get("title_vi")
                 auto_publish = bool(body.get("auto_publish", False))
@@ -1724,7 +1781,8 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                     or body.get("allow_huge")
                     or body.get("confirm_huge")
                 )
-                r = feeder_mod.combine_rendered_jobs(
+                # Chạy nền + log/status (GET /films/combine/status) — không block HTTP vài phút.
+                r = films_combine.start(
                     BASE,
                     job_ids=job_ids,
                     custom_title_vi=custom_title_vi,
@@ -1813,10 +1871,14 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             meta_studio = importlib.reload(meta_studio)
             try:
                 poster_src = body.get("poster_url") or body.get("poster_path")
+                if not poster_src:
+                    poster_src = _decode_poster_b64(
+                        body.get("poster_b64") or body.get("reference_b64") or body.get("image_b64")
+                    )
                 if not poster_src and body.get("poster_name"):
                     poster_src = _fetch_poster_bytes(str(body["poster_name"]))
                 if not poster_src:
-                    self._json(400, {"ok": False, "error": "Thiếu nguồn ảnh poster hoặc không tìm thấy poster"})
+                    self._json(400, {"ok": False, "error": "Thiếu nguồn ảnh poster hoặc không tìm thấy poster — Up ảnh gốc trong Meta Studio"})
                     return
                 bg_src = body.get("bg_frame_path")
                 if not bg_src and body.get("bg_filename"):
@@ -1966,11 +2028,20 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             allow_edits = body.get("allow_edits")
             if allow_edits is None and body.get("skip_edits"):
                 allow_edits = False
+            ref_images = None
+            poster_bytes = _decode_poster_b64(
+                body.get("poster_b64") or body.get("reference_b64") or body.get("image_b64")
+            )
+            if poster_bytes:
+                ref_images = [poster_bytes]
+                if allow_edits is None:
+                    allow_edits = True
             img_bytes = meta_studio.generate_ai_image(
                 prompt,
                 timeout=300,
                 job_id=job_id,
                 poster_name=poster_name,
+                ref_images=ref_images,
                 allow_edits=allow_edits,
             )
             if not img_bytes:

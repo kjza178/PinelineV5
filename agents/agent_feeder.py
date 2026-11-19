@@ -723,7 +723,7 @@ def _probe_stream_meta(path: Path) -> dict:
     return meta
 
 
-def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
+def _concat_videos_smart(inputs: list[Path], out_mp4: Path, on_progress=None) -> dict:
     """Nối danh sách file MP4 thành 1 file out_mp4 duy nhất.
     - Nếu tất cả cùng độ phân giải (width, height) và codec h264:
       Remux qua MPEG-TS tạm (-c:v copy -bsf:v h264_mp4toannexb -c:a aac -b:a 192k -ar 48000 -ac 2)
@@ -733,15 +733,29 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
     - Nếu các phần lệch độ phân giải (vd 720p lẫn 1080p, hoặc 1882x1080 lẫn 1920x1080):
       Chỉ encode lại phần lệch khung; phần đã đúng W×H + h264 giữ -c:v copy (chỉ chỉnh audio),
       rồi concat -c copy. Tránh encode lại cả loạt khi chỉ 1 file lệch vài pixel.
+    on_progress(dict): phase/text/pct — Films UI log gộp.
     """
     import shutil
     import subprocess
     import tempfile
 
+    def _p(text: str, pct: int | None = None) -> None:
+        if not on_progress:
+            return
+        try:
+            info = {"phase": "concat", "text": text}
+            if pct is not None:
+                info["pct"] = pct
+            on_progress(info)
+        except Exception:  # noqa: BLE001
+            pass
+
     valid = [Path(p) for p in inputs if p and Path(p).is_file()]
     if len(valid) < 2:
         return {"ok": False, "error": "Cần ít nhất 2 file video hợp lệ để gộp"}
 
+    n = len(valid)
+    _p(f"Probe {n} file…", 12)
     metas = [_probe_stream_meta(p) for p in valid]
     wh_set = {(m["width"], m["height"]) for m in metas if m["width"] > 0 and m["height"] > 0}
     all_h264 = all(m["vcodec"] == "h264" for m in metas)
@@ -760,8 +774,10 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
 
     try:
         if uniform:
+            _p(f"Remux lossless TS ({n} phần, {tw}×{th})…", 18)
             ts_parts: list[Path] = []
             for idx, src in enumerate(valid):
+                _p(f"TS copy {idx+1}/{n}: {src.name}", 18 + int(40 * (idx / max(1, n))))
                 ts_p = tmp_root / f"part_{idx:04d}.ts"
                 cmd = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
@@ -773,6 +789,7 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
                 r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=flags)
                 if r.returncode != 0 or not ts_p.is_file() or ts_p.stat().st_size < 1024:
                     uniform = False
+                    _p("TS remux lệch — chuyển sang chuẩn hoá khung", 25)
                     break
                 ts_parts.append(ts_p)
 
@@ -783,6 +800,7 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
                         esc = p.as_posix().replace("'", "'\\''")
                         f.write(f"file '{esc}'\n")
                 partial_mp4 = out_mp4.with_suffix(".partial.mp4")
+                _p("Nối TS → MP4 (copy)…", 62)
                 cmd = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                     "-f", "concat", "-safe", "0", "-i", str(list_txt),
@@ -796,6 +814,7 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
                         out_mp4.unlink(missing_ok=True)
                     partial_mp4.replace(out_mp4)
                     out_meta = _probe_stream_meta(out_mp4)
+                    _p(f"Concat xong (lossless) · {round(out_mp4.stat().st_size / (1024 * 1024), 1)} MB", 72)
                     return {
                         "ok": True,
                         "path": str(out_mp4),
@@ -814,11 +833,17 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
         norm_parts: list[Path] = []
         reencoded = 0
         copied = 0
+        _p(f"Chuẩn hoá khung {tw}×{th} ({n} phần)…", 28)
         for idx, src in enumerate(valid):
             part_p = tmp_root / f"norm_{idx:04d}.mp4"
             m = metas[idx] if idx < len(metas) else {}
             same_wh = int(m.get("width") or 0) == tw and int(m.get("height") or 0) == th
             can_copy = same_wh and (m.get("vcodec") == "h264")
+            mode_hint = "copy" if can_copy else "reencode"
+            _p(
+                f"{mode_hint} {idx+1}/{n}: {src.name}",
+                28 + int(40 * (idx / max(1, n))),
+            )
             if can_copy:
                 cmd = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
@@ -843,6 +868,7 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
             if r.returncode != 0 or not part_p.is_file() or part_p.stat().st_size < 1024:
                 # Copy fail (timebase/bitstream) → encode phần đó
                 if mode_i == "copy":
+                    _p(f"copy fail → reencode {idx+1}/{n}: {src.name}", 28 + int(40 * ((idx + 0.5) / max(1, n))))
                     cmd = [
                         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                         "-i", str(src),
@@ -868,6 +894,7 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
                 esc = p.as_posix().replace("'", "'\\''")
                 f.write(f"file '{esc}'\n")
         partial_mp4 = out_mp4.with_suffix(".partial.mp4")
+        _p("Nối các phần đã chuẩn hoá…", 70)
         cmd = [
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-f", "concat", "-safe", "0", "-i", str(list_txt),
@@ -882,6 +909,10 @@ def _concat_videos_smart(inputs: list[Path], out_mp4: Path) -> dict:
             out_mp4.unlink(missing_ok=True)
         partial_mp4.replace(out_mp4)
         out_meta = _probe_stream_meta(out_mp4)
+        _p(
+            f"Concat xong · copy={copied} reencode={reencoded} · {round(out_mp4.stat().st_size / (1024 * 1024), 1)} MB",
+            75,
+        )
         return {
             "ok": True,
             "path": str(out_mp4),
@@ -1152,20 +1183,34 @@ def combine_rendered_jobs(
     auto_publish: bool = False,
     preserve_order: bool = False,
     allow_oversized: bool = False,
+    on_progress=None,
 ) -> dict:
     """Nối các Job ĐÃ RENDER xong (work/<jid>/output.mp4) thành 1 Job video dài hoàn chỉnh
     để tạo Thumbnail/Meta và đăng YouTube (Trọn Bộ / Gộp Nhiều Phần).
     Mặc định sắp theo Phần 1→N (không tin thứ tự tick UI). preserve_order=True giữ thứ tự client (↑↓).
+    on_progress(dict): phase/text/pct — Films UI khung log.
     """
     import hashlib
     import shutil
+
+    def _p(phase: str, text: str, pct: int | None = None) -> None:
+        if not on_progress:
+            return
+        try:
+            info = {"phase": phase, "text": text}
+            if pct is not None:
+                info["pct"] = pct
+            on_progress(info)
+        except Exception:  # noqa: BLE001
+            pass
 
     clean_ids = [str(x).strip() for x in (job_ids or []) if str(x).strip()]
     if len(clean_ids) < 2:
         return {"ok": False, "error": "Cần chọn ít nhất 2 job đã xong để gộp"}
 
+    _p("validate", f"Kiểm {len(clean_ids)} job…", 5)
     job_records: list[dict] = []
-    for jid in clean_ids:
+    for i, jid in enumerate(clean_ids):
         wdir = WORK / jid
         mf_path = wdir / "manifest.json"
         if not mf_path.is_file():
@@ -1181,23 +1226,33 @@ def combine_rendered_jobs(
         if not out_p.is_file():
             return {"ok": False, "error": f"Job {jid} chưa có file video hoàn chỉnh (output.mp4)"}
         job_records.append({"job_id": jid, "work_dir": wdir, "manifest": m, "output_mp4": out_p})
+        _p("validate", f"OK {i+1}/{len(clean_ids)}: {jid}", 5 + int(5 * ((i + 1) / max(1, len(clean_ids)))))
 
     if not preserve_order:
         job_records.sort(key=lambda r: _part_sort_key(r["job_id"], r["manifest"]))
         clean_ids = [r["job_id"] for r in job_records]
+        _p("validate", f"Thứ tự Phần 1→N: {', '.join(clean_ids[:6])}{'…' if len(clean_ids)>6 else ''}", 11)
+    else:
+        _p("validate", "Giữ thứ tự client (↑↓)", 11)
 
     merged_jid = hashlib.sha1(f"merged_jobs:{','.join(clean_ids)}:{int(time.time())}".encode("utf-8")).hexdigest()[:12]
     merged_dir = WORK / merged_jid
     merged_dir.mkdir(parents=True, exist_ok=True)
     merged_mp4 = merged_dir / "output.mp4"
+    _p("concat", f"Nối video → job {merged_jid}…", 12)
 
-    concat_res = _concat_videos_smart([r["output_mp4"] for r in job_records], merged_mp4)
+    concat_res = _concat_videos_smart(
+        [r["output_mp4"] for r in job_records],
+        merged_mp4,
+        on_progress=on_progress,
+    )
     if not concat_res.get("ok"):
         shutil.rmtree(merged_dir, ignore_errors=True)
         return {"ok": False, "error": concat_res.get("error") or "Lỗi nối video"}
 
     part_durs = concat_res.get("part_durations") or []
     # Gộp script.json và sub.vi.srt (cộng dồn offset thời gian của từng phần)
+    _p("scripts", "Gộp script.json + sub.vi.srt…", 78)
     merged_segments: list[dict] = []
     srt_Blocks: list[str] = []
     cum_offset = 0.0
@@ -1235,8 +1290,10 @@ def combine_rendered_jobs(
         (merged_dir / "script.json").write_text(json.dumps(script_out, ensure_ascii=False, indent=2), encoding="utf-8")
     if srt_Blocks:
         (merged_dir / "sub.vi.srt").write_text("\n".join(srt_Blocks), encoding="utf-8")
+    _p("scripts", f"Segments={len(merged_segments)} · SRT blocks={len(srt_Blocks)}", 82)
 
     # Tạo manifest.json cho job gộp
+    _p("manifest", "Ghi manifest + sync DB…", 88)
     first_m = job_records[0]["manifest"]
     first_req = dict(first_m.get("request") or {})
     first_dl = dict(((first_m.get("stages") or {}).get("download")) or {})
@@ -1309,6 +1366,7 @@ def combine_rendered_jobs(
 
     pub_res = None
     if auto_publish:
+        _p("publish", "Auto-publish…", 92)
         try:
             import agents.auto_publisher as auto_publisher
             # File gộp >11.5h: từ chối trừ khi UI đã confirm (allow_oversized).
@@ -1333,6 +1391,13 @@ def combine_rendered_jobs(
                     )
         except Exception as e:  # noqa: BLE001
             pub_res = {"ok": False, "error": str(e)}
+        _p(
+            "publish",
+            ("Publish OK" if (pub_res or {}).get("ok") else f"Publish: {(pub_res or {}).get('error') or '?'}"),
+            96,
+        )
+    else:
+        _p("finalize", f"Xong job gộp {merged_jid}", 96)
 
     return {
         "ok": True,
