@@ -39,10 +39,10 @@ def _now() -> str:
 def _manifest_update(work_dir: Path, fn) -> bool:
     """Mọi ghi manifest qua Manifest.update (đọc lại đĩa → sửa → ghi trong khoá).
     Chưa có manifest.json → tạo khung tối thiểu rồi update."""
-    from core.manifest import Manifest
+    from manifest import Manifest
     mp = work_dir / "manifest.json"
     if not mp.exists():
-        from core.fileio import atomic_write_json
+        from fileio import atomic_write_json
         atomic_write_json(mp, {"created_at": _now(), "stages": {}}, fsync=False)
     try:
         return bool(Manifest(work_dir).update(fn))
@@ -61,8 +61,8 @@ def _set_stage(work_dir: Path, **kv) -> None:
 
 
 def _write_outputs(work_dir: Path, rows: list[dict]) -> None:
-    from core.fileio import atomic_write_json
-    from engines.subs import split_bilingual_rows, sub_split_cfg, to_srt
+    from fileio import atomic_write_json
+    from subs import split_bilingual_rows, sub_split_cfg, to_srt
     max_zh, max_vi, max_dur = sub_split_cfg()
     display = split_bilingual_rows([dict(r) for r in rows], max_zh=max_zh, max_vi=max_vi, max_dur=max_dur)
     atomic_write_json(work_dir / "script.display.json", display, fsync=False)
@@ -78,7 +78,7 @@ def _load_prev_fill(wd: Path) -> list[dict]:
 
 
 def _write_inferred(wd: Path, pv: PlanView, info: dict) -> None:
-    from core.fileio import atomic_write_json
+    from fileio import atomic_write_json
     atomic_write_json(wd / INFERRED, {
         "generated": _now(),
         "note": ("Cặp xưng hô do luồng simple TỰ SUY (src rule = bảng quan hệ, llm_fill = model bổ sung). KHÔNG có trong "
@@ -89,7 +89,7 @@ def _write_inferred(wd: Path, pv: PlanView, info: dict) -> None:
 
 def _learn_inferred(wd: Path, pv: PlanView) -> int:
     """Cổng done + SIMPLE_LEARN_INFERRED=1: thêm cặp suy luận vào glossary.json (không đè cặp có sẵn)."""
-    from core.fileio import atomic_write_json
+    from fileio import atomic_write_json
     from .plan_view import norm_name
     gp = wd / "glossary.json"
     try:
@@ -118,7 +118,7 @@ def _learn_inferred(wd: Path, pv: PlanView) -> int:
 def _asr_stutter_i(segments: list[dict]) -> set:
     """i của câu mà chữ ASR gốc có lặp tất định (để post.apply chỉ gỡ lặp VI ở đúng các câu đó — review agent D)."""
     try:
-        from engines.translate import heal_obvious_internal_stutter
+        from translate import heal_obvious_internal_stutter
         from .script_store import _clean_zh
     except Exception:  # noqa: BLE001
         return set()
@@ -141,7 +141,7 @@ def _heal_zh_stutter(store: ScriptStore) -> int:
     Áp CÙNG hàm translate.heal_obvious_internal_stutter cho zh của câu KHÔNG manual, CHƯA rv (câu đã soát giữ nguyên
     để zh/vi không lệch nhau). vi được gỡ lặp ở post.apply. Mỗi câu đổi → 1 dòng trace (note, không đụng old/new vi)."""
     try:
-        from engines.translate import heal_obvious_internal_stutter
+        from translate import heal_obvious_internal_stutter
     except Exception:  # noqa: BLE001
         return 0
     n = 0
@@ -171,7 +171,7 @@ def _mark_junk(store: ScriptStore) -> int:
     Không đếm «chưa soát», không gửi review/repair, bộ kiểm không đánh cờ. Câu manual giữ nguyên.
     Hàng từng junk mà zh nay hết rác (vd nguồn ZH OCR sync) → gỡ cờ để dịch bình thường."""
     try:
-        from engines.text_junk import is_junk_text
+        from text_junk import is_junk_text
     except Exception:  # noqa: BLE001
         return 0
     n = 0
@@ -388,6 +388,26 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
                 store.note("zh_ocr_b", None, f"lỗi: {str(e_ob)[:200]}")
         if flags and not cloud_dead:
             flags, rlog = repair.run(store, pv, flags, model=model, stop_check=stop_check, progress=prog)
+            # 2026-11-20: backup thật cho cờ cứng (cjk/empty) — DeepSeek hay để sót 1 chữ Hán (投影/C位)
+            # rồi cổng park; review-backup cũ chỉ đụng câu chưa rv, không đụng câu đã rv còn CJK.
+            if flags and bmodel and bmodel != model:
+                hard = {i: fl for i, fl in flags.items()
+                        if any((f.get("code") or "") in ("cjk", "empty") for f in fl)}
+                if hard:
+                    print(f"[simple] {len(hard)} câu cjk/empty sau vá {model} → dự phòng {bmodel}",
+                          flush=True)
+                    soft = {i: fl for i, fl in flags.items() if i not in hard}
+                    hard_left, blog = repair.run(
+                        store, pv, hard, model=bmodel, stop_check=stop_check, progress=prog, rounds=1,
+                    )
+                    for e in blog:
+                        e["backup"] = bmodel
+                    rlog.extend(blog)
+                    flags = {**soft, **hard_left}
+                    rstats["repair_backup"] = {
+                        "model": bmodel, "n": len(hard), "left": len(hard_left),
+                        "fixed": len(hard) - len(hard_left),
+                    }
         store.save()
         # 5b) fix 2026-11-13: còn câu chưa soát → 1 lượt review CHỈ các câu đó (lô nhỏ); rồi ≤ ngưỡng → nhận nháp
         miss_info = None
@@ -420,7 +440,7 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
                 print(f"[simple] plan_inferred lỗi: {e_pi}", flush=True)
         # 6) cổng
         try:
-            from engines.translate import translate_coverage_gap
+            from translate import translate_coverage_gap
             gap = max(0, int(translate_coverage_gap(wd)))
         except Exception:  # noqa: BLE001
             gap = 0
@@ -488,7 +508,7 @@ def run(work_dir: str | Path, target: str = "Tiếng Việt", *, force: bool = F
                 print(f"[simple] learn_inferred lỗi: {e_li}", flush=True)
         # như run_review cũ: soát xong → gộp plan tập này vào bảng bộ (best-effort)
         try:
-            import engines.series_glossary as series_glossary
+            import series_glossary
             series_glossary.save_from(wd, reason="hoàn thành rà soát (simple)")
         except Exception as e_sg:  # noqa: BLE001
             print(f"[simple] bảng bộ: {e_sg}", flush=True)

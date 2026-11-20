@@ -1,6 +1,28 @@
 # Quyáº¿t Äá»nh cá»§a user
 
+- **11-20 (LLM = luôn main + backup)** User: mọi bước cloud (plan + soát) phải có model chính và dự phòng. Plan: `PLAN_MODEL` → `PLAN_MODEL_BACKUP` (mặc định `chatgpt/gpt-6` / Aurora). Soát: DeepSeek chính → Aurora khi lỗi; `review_backup` thiếu key = bật; chỉ `off` mới tắt. Không coi backup soát là failover cả pipeline khi chỉ bật aurora_parallel.
+- **11-20 (Publish = cmd Telegram từng phần)** User: phần 1 = `/publish` + hỏi trước up; bỏ `/lib`; merge = gộp job cùng series (Trọn Bộ), không phải parts (parts đã auto). Fix `docs/fixes/2026-11-20-publish-ask-telegram.md`.
+- **11-20 (Prompt thumb = đơn giản)** User: bỏ prompt khóa 3D/UE5; dùng prompt ngắn — ảnh tham chiếu + ribbon + 2 dòng title (có dấu) + typo theo nền ref. Auto-publish vẫn poster-only + hook từ title. Fix `docs/fixes/2026-11-20-thumb-prompt-simple.md`.
+
+- **11-19 (Films UI = 1 bảng Nhật ký)** User: gom log merge / chuẩn hóa / test block… thành một bảng, không nhiều khung. Chốt: `#opsLogBox` góc phải (filter + status + bảng); banner test chỉ giữ hành động nhanh.
+
+- **11-19 (Meta form typography = tự do concept/LLM)** User: typo bị gắn cứng vào form. Chốt: **Films Meta UI** giữ hook/`text_exact`/prompt LLM (không neo tên phim, không đè template lửa vàng). **Auto-publish** vẫn poster-only + hook neo title (quyết 11-18). Fix follow-up `docs/fixes/2026-11-19-meta-typo-free-form.md`.
+
+- **11-18 (Auto-publish thumb = ref ảnh gốc + typo title)** User: không hiểu là «bỏ ảnh gốc». Đúng: (1) dùng ảnh gốc làm **ảnh tham chiếu** nhân vật; (2) add text theo **title** linh hoạt, phù hợp, đẹp, đa dạng — không để thumb = poster thô / chữ Trung season. Fix `docs/fixes/2026-11-18-autopub-ref-typo.md`.
+- **11-18 (Thumb = ảnh gốc + image gen; bỏ Pillow)** User bác Pillow. Có poster → chỉ `/images/edits` (đính kèm ảnh). Echo → roll acc. **Không** Pillow. **Không** generations khi có ref (tránh bịa). Fail → không thumb / YouTube mặc định. Fix `docs/fixes/2026-11-18-thumb-ai-edits-no-pillow.md`.
+- **11-18 (Thumb ref = poster only; hook = title)** User duyệt sau `c7367a659c46`: (1) không gửi frame video kèm poster; (2) chữ thumb neo `hooks_from_series_title`, không hook/subplot LLM — **chỉ auto-publish**; Meta form xem 11-19. Fix `docs/fixes/2026-11-18-thumb-poster-only-title-hooks.md`.
+
+- **11-18 (Aurora = dự phòng, không phải soát chính)** User: luồng simple soát bằng DeepSeek flash; Config Batch `REVIEW_BACKUP=aurora_parallel` nghĩa là CHỈ lô DeepSeek lỗi mới làm lại bằng Aurora (chatgpt/gpt-6). Không bật → không dự phòng.
+
+- **11-18 (DeepSeek thinking TẮT)** User: tắt thinking cho mọi lần gọi DeepSeek (plan/dịch/review) — nhanh + rẻ, hết content rỗng do suy nghĩ ăn max_tokens. Bật lại bằng `DEEPSEEK_THINKING=enabled`. Nên A/B golden xưng hô khi có dịp.
+
+- **11-17 (HOLD QA = hỏi người, không chặn hàng đợi)** User: tin HOLD phải ghi số câu, loại lỗi, ZH, VI, đề xuất + lý do; nút ✅ Áp đề xuất / ⏭ Cờ sai – bỏ qua / ▶️ Chạy tiếp nguyên trạng; reply câu VI = ghi + chạy tiếp. Quá `QA_HOLD_MAX_MIN` (**10'** — user đổi từ 60' ngày 17/11): mềm tự áp đề xuất; cứng mà LLM chắc → áp + báo; cứng còn lại → **gác job** (rời hàng đợi, job sau chạy), Telegram vẫn nhắc. **Ngoại lệ có chủ đích** cho luật park 11-10/11-11 (1 job/ghế): chỉ áp cho HOLD QA cờ cứng quá hạn. Fix `docs/fixes/2026-11-17-qa-hold-ask-telegram.md`.
+
+- **11-12 (translate_simple = luồng dịch MẶC ĐỊNH)** Chủ dự án chốt sau A/B golden: xưng hô simple 92 % (base 35 %), held-out 98,2 % (= nmt_hint 98,5 %), nhanh 2–3×. Cờ con giữ TẮT: `SIMPLE_PAIR_RULES=0`, `SIMPLE_PAIR_FILL=0`, `SIMPLE_ZH_SOURCE=0`, `SIMPLE_LEARN_INFERRED=0`, `SIMPLE_LEXICON_EXCLUDE_GOLDEN=0`. Rollback: `TRANSLATE_PIPELINE=legacy` (hoặc old/off/0/false/no) qua env / `pineline.config.json` → job MỚI đi luồng cũ. Job đã bắt đầu luồng cũ hoàn tất bằng luồng cũ (đóng dấu `manifest.translate_pipeline`); «Dịch LẠI» từ đầu dùng mặc định hiện tại. Cùng quy ước V4/V5. Fix `docs/fixes/2026-11-12-translate-simple-default.md`.
+
 - **11-11 (V6 = một codebase thay V2/V4/V5)** User chốt: V6 dựng trên **V5 package** (đã có hotfix B1–B10) + phần riêng V4; mục tiêu **thay cả V2/V4/V5** (1 codebase, nhiều instance theo config: cổng/work/desktop); hot-reload render → **render chạy subprocess mỗi job**. Lộ trình F0 (tạo cây :8806 + job thật) → F1 B9 (Manifest.update qua hàm trạng thái) → F2 A (opts một nguồn) → F3 D (runtime + Stage/Gate, server chỉ app) → F4 C (sidecar client thuần) → F5 E (render subprocess) → F6 B11 + chuyển production. Mỗi pha: tree_audit 0, pytest, /review, 1 job thật so output với V2.
+
+- **11-11 (Pass1 = GPT đọc full file, không chat mẫu)** User: không cần fallback chat; cần GPT đọc full. → Upload full SRT; fail/quá lớn → chunk upload hết cue rồi merge; `ALLOW_CHAT_FALLBACK=0`. Fix `docs/fixes/2026-11-11-pass1-upload-size.md`.
 
 - **11-11 (Studio SOP = 1 job / ghế tới Done)** User khóa vận hành: **1 job một lần** → ASR OK → NMT dịch → REVIEW (Aurora∥, fail → local) → TTS → mux → **Done** → next job. Không CLI soát ngoài queue; không nhảy job giữa chừng. → `_auto_gpu` chạy hết REVIEW trong ghế; `run_review` fan-out `REVIEW_PARALLEL`; queue park chỉ HOLD/soát fail. Fix `docs/fixes/2026-11-11-studio-1job-pipeline.md`.
 

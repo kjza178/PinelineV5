@@ -1,11 +1,12 @@
 """Cấu hình luồng simple — mọi khoá prefix SIMPLE_ đọc qua config.get (env > pineline.config.json > mặc định).
 
 Không sửa config.json. Khoá:
-  TRANSLATE_PIPELINE       trống/simple = luồng này (MẶC ĐỊNH — V5 F5; job-stamping port P5 từ V2 F2); legacy/old/off/0/false/no
+  TRANSLATE_PIPELINE       trống/simple = luồng này (MẶC ĐỊNH từ 2026-11-12 F2); legacy/old/off/0/false/no
                            = luồng cũ run_translate + run_review. Job đã bắt đầu luồng nào thì giữ luồng đó
                            (manifest.translate_pipeline) — xem job_pipeline().
   SIMPLE_MODEL             model REVIEW cloud (trống = REVIEW model như luồng cũ: _resolve_review_model)
   SIMPLE_PLAN_MODEL        model lập plan A7 (trống = PLAN_MODEL trong config -> SIMPLE_MODEL)
+  PLAN_MODEL_BACKUP        model dự phòng khi plan chính lỗi (trống = AURORA_REVIEW_MODEL → chatgpt/gpt-6)
   SIMPLE_FULL_PLAN         1 = A7 lập plan đọc toàn bộ phim ASR bằng context lớn LLM (1)
   SIMPLE_OVERLAP_CUES      số câu chồng lấn liền trước cho lô review A8 (3)
   SIMPLE_BATCH             số câu / lô review (30)
@@ -55,7 +56,7 @@ from pathlib import Path
 
 def get(key: str, default: str | None = None) -> str | None:
     try:
-        from core.config import get as _g
+        from config import get as _g
         return _g(key, default)
     except Exception:  # noqa: BLE001
         return os.getenv(key, default)
@@ -168,7 +169,7 @@ def job_pipeline(work_dir, *, fresh: bool = False, stamp: bool = True) -> str:
             dd[JOB_PIPELINE_KEY + "_why"] = why
             dd[JOB_PIPELINE_KEY + "_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         try:
-            from core.manifest import Manifest
+            from manifest import Manifest
             Manifest(wd).update(_fn)
         except Exception as e:  # noqa: BLE001
             print(f"[simple] đóng dấu translate_pipeline={p} lỗi: {e}", flush=True)
@@ -370,7 +371,7 @@ def overlap_cues() -> int:
 
 
 def plan_model(work_dir=None) -> str | None:
-    """Model LLM dùng cho bước lập plan A7."""
+    """Model LLM CHÍNH cho bước lập plan A7."""
     m = str(get("SIMPLE_PLAN_MODEL", "") or "").strip()
     if m:
         return m
@@ -380,6 +381,28 @@ def plan_model(work_dir=None) -> str | None:
     return review_model(work_dir)
 
 
+def plan_backup_model(work_dir=None) -> str | None:
+    """2026-11-20: model DỰ PHÒNG khi plan chính lỗi (DS hết token / 429 / rỗng).
+
+    `PLAN_MODEL_BACKUP` (hoặc `SIMPLE_PLAN_BACKUP`) → không set thì `AURORA_REVIEW_MODEL` → `chatgpt/gpt-6`.
+    None nếu trùng model chính (không có lớp dự phòng thật).
+    """
+    m = str(get("PLAN_MODEL_BACKUP", "") or get("SIMPLE_PLAN_BACKUP", "") or "").strip()
+    if not m:
+        m = str(get("AURORA_REVIEW_MODEL", "") or "").strip() or "chatgpt/gpt-6"
+    primary = plan_model(work_dir) or ""
+    return None if (not m or m == primary) else m
+
+
+def plan_models(work_dir=None) -> list[str | None]:
+    """Danh sách model plan theo thứ tự: main → backup (bỏ trùng)."""
+    out: list[str | None] = []
+    for m in (plan_model(work_dir), plan_backup_model(work_dir)):
+        if m and m not in out:
+            out.append(m)
+    return out or [None]
+
+
 def review_model(work_dir=None) -> str | None:
     """Model soát CHÍNH của luồng simple. 2026-11-18: KHÔNG còn bị `review_backup=aurora_parallel` ép sang Aurora
     (trước: bật «backup» = Aurora soát toàn bộ, DeepSeek không chạy) — Aurora giờ là DỰ PHÒNG (backup_model)."""
@@ -387,27 +410,30 @@ def review_model(work_dir=None) -> str | None:
     if m:
         return m
     try:
-        import engines.translate as T
+        import translate as T
         return T._resolve_review_model(None, None)      # = REVIEW_MODEL (không đọc queue_opts)
     except Exception:  # noqa: BLE001
         return get("REVIEW_MODEL") or get("TRANSLATE_MODEL") or None
 
 
 def _queue_review_backup(work_dir) -> str:
+    """off | aurora_parallel. 2026-11-20: thiếu key / work_dir=None → aurora_parallel (luôn có backup)."""
     if work_dir is None:
-        return "off"
+        return "aurora_parallel"
     try:
         d = json.loads((Path(work_dir) / "manifest.json").read_text(encoding="utf-8"))
-        v = str(((d.get("queue_opts") or {}) if isinstance(d, dict) else {}).get("review_backup") or "off")
-        return v.strip().lower()
+        raw = ((d.get("queue_opts") or {}) if isinstance(d, dict) else {}).get("review_backup")
+        if raw is None or str(raw).strip() == "":
+            return "aurora_parallel"
+        v = str(raw).strip().lower()
+        return v if v in ("off", "aurora_parallel") else "aurora_parallel"
     except Exception:  # noqa: BLE001
-        return "off"
+        return "aurora_parallel"
 
 
 def backup_model(work_dir=None) -> str | None:
-    """2026-11-18: model DỰ PHÒNG khi model chính (DeepSeek) lỗi — chỉ khi job bật `review_backup=aurora_parallel`
-    (Config Batch «REVIEW dự phòng: Aurora»). Lô chính lỗi (hết retry / rỗng / 5xx kéo dài) → làm lại lô đó bằng
-    AURORA_REVIEW_MODEL. None = không dự phòng (lô lỗi thử lại bằng model chính như cũ)."""
+    """Model DỰ PHÒNG soát (DeepSeek lỗi → Aurora). 2026-11-20: mặc định BẬT (aurora_parallel);
+    chỉ tắt khi job/`review_backup=off`. None nếu trùng model chính."""
     if _queue_review_backup(work_dir) != "aurora_parallel":
         return None
     m = str(get("AURORA_REVIEW_MODEL", "") or "").strip() or "chatgpt/gpt-6"

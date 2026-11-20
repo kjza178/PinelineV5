@@ -22,14 +22,39 @@ Bug s?a sau 2026-09-26 (ch?a c? file ri?ng) ???c ghi trong `docs/CHANGELOG.md` +
 
 
 
-| Date | File | Tri?u ch?ng |
+| Date | File | Triệu chứng |
+| 2026-11-20 | [2026-11-20-cjk-backup-repair.md](./2026-11-20-cjk-backup-repair.md) | Park «còn 1 câu chữ Hán» — Aurora không vá CJK đã rv |
+| 2026-11-20 | [2026-11-20-agent-resolve-short-job-id.md](./2026-11-20-agent-resolve-short-job-id.md) | Agent `/qa` báo thiếu script vì id `9aa089_p01` |
+| 2026-11-20 | [2026-11-20-publish-ask-telegram.md](./2026-11-20-publish-ask-telegram.md) | Auto-publish hỏi Telegram trước khi upload |
+| 2026-11-20 | [2026-11-20-thumb-prompt-simple.md](./2026-11-20-thumb-prompt-simple.md) | Prompt thumb AI quá dài / khóa 3D → lệch typo ảnh gốc |
+| 2026-11-20 | [2026-11-20-ops-log-no-auto-show.md](./2026-11-20-ops-log-no-auto-show.md) | Nhật ký Films UI tự hiện lại sau khi bấm ✕ |
+| 2026-11-20 | [2026-11-20-queue-stop-gpu-wait.md](./2026-11-20-queue-stop-gpu-wait.md) | Queue Stop treo ghế khi job xếp sau TTS trên `_gpu` |
+| 2026-11-19 | [2026-11-19-meta-typo-free-form.md](./2026-11-19-meta-typo-free-form.md) | Meta form: typo gắn cứng tên phim / lửa vàng |
+| 2026-11-19 | [2026-11-19-films-delete-orphan-work.md](./2026-11-19-films-delete-orphan-work.md) | Xoá job/part: DB mất nhưng work/ còn vài GB |
+| 2026-11-19 | [2026-11-19-films-combine-progress-log.md](./2026-11-19-films-combine-progress-log.md) | Gộp job Films UI không có log/tiến độ giữa chừng |
+| 2026-11-18 | [2026-11-18-thumb-poster-only-title-hooks.md](./2026-11-18-thumb-poster-only-title-hooks.md) | Thumb: poster-only + hook neo title (c7367 frame/hook lệch) |
+| 2026-11-18 | [2026-11-18-thumb-ai-edits-no-pillow.md](./2026-11-18-thumb-ai-edits-no-pillow.md) | Thumb = ảnh gốc + /images/edits; bỏ Pillow; không generations khi có ref |
+| 2026-11-18 | [2026-11-18-thumb-poster-faithful-fallback.md](./2026-11-18-thumb-poster-faithful-fallback.md) | (thu hồi) Pillow fallback — thay bằng thumb-ai-edits-no-pillow |
+| 2026-11-18 | [2026-11-18-autopub-ref-typo.md](./2026-11-18-autopub-ref-typo.md) | Auto-publish thumb = ref ảnh gốc + typo title (không echo poster) |
+| 2026-11-18 | [2026-11-18-meta-thumb-upload-ref.md](./2026-11-18-meta-thumb-upload-ref.md) | Meta thumb + Up ảnh gốc; /films HTML đè JSON trên :8801 |
+| 2026-11-16 | [aurora-meta-timeout-roll-3377.md](./2026-11-16-aurora-meta-timeout-roll-3377.md) | Khắc phục lỗi abort kết nối Aurora (/images/edits wsasend abort) & Bỏ backup 192 (retry trên 3377 roll acc) |
+| 2026-11-16 | [dynamic-concurrency-and-batch.md](./2026-11-16-dynamic-concurrency-and-batch.md) | Tự chọn cỡ lô dịch theo mức song song (DEEPSEEK_CONCURRENCY) & Khóa DeepSeek-Flash (bỏ NMT) |
+| 2026-11-16 | [fix-pair-fill-json-escape.md](./2026-11-16-fix-pair-fill-json-escape.md) | Sửa lỗi JSON decode trong pair_fill (thẻ </escape> & schema "pairs") |
+| 2026-11-15 | [simple-a7-a8-full-plan-overlap.md](./2026-11-15-simple-a7-a8-full-plan-overlap.md) | A7 Plan đọc cả phim bằng LLM context lớn & A8 Soát trượt có chồng lấn (Sliding Window Overlap) |
+| 2026-11-15 | [aurora-retry-alibaba-ai-image.md](./2026-11-15-aurora-retry-alibaba-ai-image.md) | Retry Aurora account pool 400, fallback ngay khi :3377 đóng, thêm Alibaba DashScope & sửa sinh ảnh Aurora |
+| 2026-11-14 | [simple-r1-bugs.md](./2026-11-14-simple-r1-bugs.md) | G1.1 simple R1.1–R1.5 (soát/plan/code/TZ/KIN) |
+| 2026-11-14 | [seat-lock-translate-fill.md](./2026-11-14-seat-lock-translate-fill.md) | Ghost cam: Brain fill ngoài ghế queue |
+| 2026-11-14 | [nmt-ct2-cuda13.md](./2026-11-14-nmt-ct2-cuda13.md) | NMT CT2 treo sau torch cu130 — ctranslate2-reborn CUDA 13 |
 
 
 |------|------|-------------|
 
 
-| 2026-11-11 | [v5-package-sync.md](./2026-11-11-v5-package-sync.md) | V5 không khởi động → bố cục package (sync_from_v2) |
+| 2026-11-13 | [lib-merge-local-fallback.md](./2026-11-13-lib-merge-local-fallback.md) | Lib đĩa không hiện / Hongguo «need ≥2» |
+| 2026-11-13 | [meta-ai-image-8801.md](./2026-11-13-meta-ai-image-8801.md) | Meta thumb GPT 404 khi Films UI mở :8801 |
+| 2026-11-11 | [optimize-b5-b6-b8-b10.md](./2026-11-11-optimize-b5-b6-b8-b10.md) | Dừng REVIEW chậm · audio mux lệch · restart treo · ghi plan |
 | 2026-11-11 | [review-fail-park-port.md](./2026-11-11-review-fail-park-port.md) | REVIEW lỗi coi là đã soát · park treo hàng đợi |
+| 2026-11-11 | [pass1-upload-size.md](./2026-11-11-pass1-upload-size.md) | Pass1 413 — chặn upload theo số cue |
 | 2026-11-11 | [studio-1job-pipeline.md](./2026-11-11-studio-1job-pipeline.md) | SOP 1job ASR→NMT→Aurora∥→TTS→mux |
 | 2026-11-10 | [queue-park-held.md](./2026-11-10-queue-park-held.md) | HOLD/soát dở → nhảy job kế (mất 1→output) |
 | 2026-11-10 | [review-voice-loosen.md](./2026-11-10-review-voice-loosen.md) | Nới REVIEW Aurora — văn phong khi vá |
@@ -301,8 +326,12 @@ Bug s?a sau 2026-09-26 (ch?a c? file ri?ng) ???c ghi trong `docs/CHANGELOG.md` +
 
 - 2026-11-10-firered-root-path.md — FIRERED_ROOT path + _check_stopped
 - 2026-11-10-firered-bf16-align.md — BF16 torchaudio forced_align
-
-- 2026-11-12-port-simple-demucs.md — [V5] port translate_simple (mặc định) + Demucs trước ASR từ V2
-- 2026-11-12-port-brain-hold-pipeline.md — [V5] port Second Brain (Telegram events, gỡ HOLD chạy tay kể cả lệnh Telegram I2, heal delay) + đóng dấu luồng dịch theo job từ V2
-- 2026-11-13-port-preflight-slice-junk.md — [V5] port preflight/chuẩn hoá video nguồn + extract_pcm bền + FireRed slice khoảng lặng + câu rác «None.»/parent chờ part từ V2
-- 2026-11-13-port-brain-finished-hold.md — [V5] port brain: job đã xong không heal + park tự động (⏸) tách HOLD cần người (⛔) từ V2 (agent N)
+- 2026-11-12-translate-simple.md — luồng dịch simple (TRANSLATE_PIPELINE=simple, mặc định tắt)
+- 2026-11-12-translate-simple-next.md — simple «next»: lexicon src, quy tắc xưng hô, bổ sung cặp, học lại, nguồn ZH, gỡ lặp ASR (cờ mặc định tắt)
+- 2026-11-12-aac-extract-rematrix.md — ASR/Demucs chết rematrix 21ch (AAC hỏng merged) → extract_pcm salvage+chunk+silence
+- 2026-11-12-asr-demucs-default.md — ASR mặc định trên vocals Demucs (ASR_USE_DEMUCS=1, fallback audio gốc) + separate chia khúc tại khoảng lặng, cắt/ghép đúng từng mẫu
+- 2026-11-12-brain-telegram-hold.md — Second Brain: Telegram theo sự kiện (events, gộp 1 tin/tick), digest ≥10', DECISION lọc + khử trùng lặp, gỡ HOLD cũ job đã xong, heal plan rỗng có note; chẩn đoán ASR 2937ffd7989f
+- 2026-11-13-firered-slice-silence.md — FireRed ASR chia slice tại khoảng lặng (±60 s) + đệm 2 s lọc theo tâm câu, cắt đúng mẫu; FIRERED_SLICE_SEC=0 = cả file; tools/asr_boundary_scan.py
+- 2026-11-13-brain-finished-hold.md — Brain: một `job_finished` (output/đã đăng/ghép Full/part) → heal/watch/brain/LLM bỏ qua; park tự động (⏸ tự thử lại) ≠ HOLD cần người (⛔); bảng vòng đời HOLD
+- (2026-11-18) chuẩn hóa thư viện: xem CHANGELOG 18/11 — `lib_normalize` hàng đợi + kiểm đã chuẩn, Films UI «📐 Chuẩn hóa đã tick»
+- 2026-11-17-qa-hold-ask-telegram.md — HOLD QA hỏi người qua Telegram (ZH/VI/đề xuất/lý do + nút ✅⏭▶️ + reply câu VI); quá 60' mềm tự áp, cứng chắc áp, cứng còn lại gác job để hàng đợi chạy tiếp

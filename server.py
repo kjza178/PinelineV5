@@ -5106,9 +5106,31 @@ def _queue_run_one(job_id: str, opts: dict) -> tuple[str, str]:
                 _release_stage(job_id, "__all__")
                 done_event.set()
 
-        _gpu.submit(_gpu_job)
+        # fix 2026-11-20: không block vô hạn trên done_event — nếu Stop mà future
+        # còn xếp sau job khác trên _gpu (JOB_WORKERS=1), cancel để nhường ghế queue.
+        fut = _gpu.submit(_gpu_job)
         submitted = True
-        done_event.wait()
+        while not done_event.wait(timeout=1.0):
+            if job_id not in _STOP_JOBS:
+                continue
+            cancelled = False
+            if fut is not None and hasattr(fut, "cancel"):
+                try:
+                    cancelled = bool(fut.cancel())
+                except Exception:  # noqa: BLE001
+                    cancelled = False
+            if cancelled:
+                try:
+                    _release_stage(job_id, "__all__")
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    _heal_stale_running(work_dir)
+                except Exception:  # noqa: BLE001
+                    pass
+                done_event.set()
+                break
+            # Future đã chạy: stop_hook kill subprocess; chờ _gpu_job finally.
         if job_id in _STOP_JOBS:
             return "stopped", "đã dừng"
         if error:

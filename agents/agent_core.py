@@ -60,6 +60,9 @@ Quy tắc:
    Báo config theo field "text" của config_get (đủ mọi dòng, đúng nhãn). orig_vol = âm lượng TIẾNG GỐC
    nền khi ducking (không phải nhạc nền); voice_vol = âm lượng giọng Việt; brand_* = watermark tên kênh.
 8. «job đang chạy tới đâu / có treo không» → running_check (trả nguyên văn text).
+8b. Job id rút gọn OK: «9aa089_p01» / ≥4 ký tự đầu — tool tự resolve thành id đủ.
+   HOLD / «câu lỗi / chữ Hán còn» → pineline_job hoặc pineline_script_peek (trả hold_reason + cjk_in_vi_sample
+   có đủ zh/vi, không đoán). Không bảo «chưa có script» nếu chỉ vì cắt ngắn id.
 9. TỰ THÊM JOB khi hết hàng chờ (feeder, chạy trong sidecar Auto-pilot):
    user mô tả muốn thêm gì/bao nhiêu/từ đâu («hết job thì làm 2 bộ hot điểm >8.5», «làm hết phim đã ghép»,
    «tải thêm phim người đóng từ Hongguo») → feed action=set, request=NGUYÊN VĂN câu user (sidecar tự hiểu).
@@ -113,10 +116,18 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "pineline_job",
-            "description": "Chi tiết 1 job (stages + progress + hold flag).",
+            "description": (
+                "Chi tiết 1 job (stages + progress + hold_reason + mẫu câu VI còn chữ Hán). "
+                "job_id nhận id đủ hoặc rút gọn «9aa089_p01»."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"job_id": {"type": "string"}},
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "id đủ, ≥4 ký tự đầu, hoặc «prefix_pNN» (vd 9aa089_p01)",
+                    },
+                },
                 "required": ["job_id"],
             },
         },
@@ -199,11 +210,18 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "pineline_script_peek",
-            "description": "Tóm tắt script.json: số câu, thiếu vi, mẫu đầu/giữa/cuối, cờ hold.",
+            "description": (
+                "Xem script: head/mid/tail + HOLD + danh sách câu VI còn chữ Hán (CJK). "
+                "Dùng khi job HOLD / review_failed / user hỏi câu lỗi. "
+                "job_id: id đủ hoặc «9aa089_p01»."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "job_id": {"type": "string"},
+                    "job_id": {
+                        "type": "string",
+                        "description": "id đủ, ≥4 ký tự đầu, hoặc «prefix_pNN»",
+                    },
                     "sample": {"type": "integer", "description": "số câu mẫu mỗi vùng (mặc định 5)"},
                 },
                 "required": ["job_id"],
@@ -1135,16 +1153,53 @@ def summarize_job(j: dict, work_root: Path) -> dict:
         "group_title": j.get("group_title"),
         "hold_after_translate": hold.get("hold_after_translate"),
         "held_at": hold.get("held_at"),
+        "hold_reason": hold.get("hold_reason"),
         "qa_gate": hold.get("qa_gate"),
         "qa_blocked": hold.get("qa_blocked"),
         "qa_last": hold.get("qa_last"),
     }
 
 
+def resolve_job_id(work_root: Path, job_id: str) -> str:
+    """Chuẩn hoá job_id agent đưa vào (prefix / ``9aa089_p01`` → id đầy đủ)."""
+    raw = str(job_id or "").strip()
+    if not raw:
+        raise FileNotFoundError("thiếu job_id")
+    try:
+        import agents.agent_qa_ask as qa
+        jid = qa.resolve_job(Path(work_root), raw)
+        if jid:
+            return jid
+        cands = qa.resolve_job_candidates(Path(work_root), raw)
+    except Exception:  # noqa: BLE001
+        jid, cands = None, []
+    if (Path(work_root) / raw / "manifest.json").is_file():
+        return raw
+    hint = f" · ứng viên: {', '.join(cands[:5])}" if cands else ""
+    raise FileNotFoundError(
+        f"không thấy job «{raw}» (dùng id đủ hoặc ≥4 ký tự đầu; "
+        f"part: «9aa089_p01» → «9aa0891fbfd1_p01»){hint}"
+    )
+
+
 def _load_script(work_root: Path, job_id: str) -> list[dict]:
-    sp = work_root / job_id / "script.json"
+    jid = resolve_job_id(work_root, job_id)
+    sp = work_root / jid / "script.json"
     if not sp.is_file():
-        raise FileNotFoundError(f"chưa có script.json cho {job_id}")
+        # Phân biệt: job có nhưng chưa dịch vs sai id
+        mf = work_root / jid / "manifest.json"
+        if mf.is_file():
+            hold = _read_hold(work_root, jid)
+            tr = {}
+            try:
+                tr = (json.loads(mf.read_text(encoding="utf-8")).get("stages") or {}).get("translate") or {}
+            except Exception:  # noqa: BLE001
+                pass
+            raise FileNotFoundError(
+                f"job {jid} chưa có script.json (translate={tr.get('status')}, "
+                f"held_at={hold.get('held_at')}, reason={hold.get('hold_reason') or '—'})"
+            )
+        raise FileNotFoundError(f"chưa có script.json cho {jid}")
     rows = json.loads(sp.read_text(encoding="utf-8"))
     if not isinstance(rows, list):
         raise ValueError("script.json không phải list")
@@ -1180,7 +1235,8 @@ def _read_hold(work_root: Path, job_id: str) -> dict:
 
 
 def script_peek(work_root: Path, job_id: str, sample: int = 5) -> dict:
-    rows = _load_script(work_root, job_id)
+    jid = resolve_job_id(work_root, job_id)
+    rows = _load_script(work_root, jid)
     n = len(rows)
     missing = [int(r.get("i", i)) for i, r in enumerate(rows) if not (r.get("vi") or "").strip()]
     sample = max(1, min(int(sample or 5), 20))
@@ -1188,13 +1244,21 @@ def script_peek(work_root: Path, job_id: str, sample: int = 5) -> dict:
     mid0 = max(0, n // 2 - sample // 2)
     mid = [_line_brief(r) for r in rows[mid0: mid0 + sample]]
     tail = [_line_brief(r) for r in rows[-sample:]] if n else []
-    hold = _read_hold(work_root, job_id)
+    hold = _read_hold(work_root, jid)
+    # Câu VI còn chữ Hán — thường là lý do HOLD review_failed / simple park
+    import re
+    _cjk = re.compile(r"[\u4e00-\u9fff]")
+    cjk_rows = [r for r in rows if _cjk.search(str(r.get("vi") or ""))]
     return {
-        "job_id": job_id,
+        "job_id": jid,
+        "job_id_requested": job_id,
         "n_lines": n,
         "n_missing_vi": len(missing),
         "missing_i_sample": missing[:30],
         "hold": hold,
+        "hold_reason": hold.get("hold_reason"),
+        "n_cjk_in_vi": len(cjk_rows),
+        "cjk_in_vi_sample": [_line_brief(r) for r in cjk_rows[:15]],
         "head": head,
         "mid": mid,
         "tail": tail,
@@ -1208,7 +1272,8 @@ def script_search(
     missing_only: bool = False,
     limit: int = 20,
 ) -> dict:
-    rows = _load_script(work_root, job_id)
+    jid = resolve_job_id(work_root, job_id)
+    rows = _load_script(work_root, jid)
     limit = max(1, min(int(limit or 20), 50))
     q = (query or "").strip().lower()
     hits = []
@@ -1225,7 +1290,8 @@ def script_search(
         hits.append(_line_brief(r))
         if len(hits) >= limit:
             break
-    return {"job_id": job_id, "query": query, "missing_only": missing_only, "hits": hits, "n_hits": len(hits)}
+    return {"job_id": jid, "job_id_requested": job_id, "query": query,
+            "missing_only": missing_only, "hits": hits, "n_hits": len(hits)}
 
 
 def _edit_ok(res) -> bool:
@@ -1248,7 +1314,8 @@ def _qa_after_edit(rt, job_id: str, nums: list[int]) -> dict:
 
 
 def script_get_lines(work_root: Path, job_id: str, i_from: int, i_to: int) -> dict:
-    rows = _load_script(work_root, job_id)
+    jid = resolve_job_id(work_root, job_id)
+    rows = _load_script(work_root, jid)
     lo, hi = int(i_from), int(i_to)
     if hi < lo:
         lo, hi = hi, lo
@@ -1260,7 +1327,7 @@ def script_get_lines(work_root: Path, job_id: str, i_from: int, i_to: int) -> di
         r = by_i.get(i)
         if r:
             out.append(_line_brief(r))
-    return {"job_id": job_id, "i_from": lo, "i_to": hi, "lines": out}
+    return {"job_id": jid, "job_id_requested": job_id, "i_from": lo, "i_to": hi, "lines": out}
 
 
 def classify_jobs(jobs: list[dict], work_root: Path) -> dict:
@@ -1331,6 +1398,16 @@ def default_yt_draft(work_root: Path, job_id: str, max_lines: int = 12) -> dict:
     }
 
 
+def _normalize_tool_job_args(work_root: Path, args: dict) -> dict:
+    """Agent hay cắt id (`9aa089_p01`) — resolve trước khi gọi get_job / edit / stage."""
+    out = dict(args or {})
+    if "job_id" in out and out.get("job_id") is not None:
+        out["job_id"] = resolve_job_id(work_root, str(out["job_id"]))
+    if "job_ids" in out and isinstance(out.get("job_ids"), list):
+        out["job_ids"] = [resolve_job_id(work_root, str(x)) for x in out["job_ids"] if str(x).strip()]
+    return out
+
+
 def _dispatch(name: str, args: dict, allow_mutate: bool) -> str:
     rt = _require_rt()
     if name in MUTATE_TOOLS and not allow_mutate:
@@ -1340,16 +1417,31 @@ def _dispatch(name: str, args: dict, allow_mutate: bool) -> str:
         }, ensure_ascii=False)
 
     try:
+        # Chuẩn hoá job_id / job_ids cho mọi tool (trừ status thuần)
+        if name not in ("pineline_status", "pineline_queue_status", "pineline_config_get",
+                        "pineline_config_set", "pineline_running_check", "pineline_voices",
+                        "pineline_films", "pineline_library", "pineline_feed"):
+            if isinstance(args, dict) and ("job_id" in args or "job_ids" in args):
+                args = _normalize_tool_job_args(rt.work_root, args)
+
         if name == "pineline_status":
             return json.dumps(
                 classify_jobs(rt.list_jobs(), rt.work_root),
                 ensure_ascii=False, indent=2,
             )
         if name == "pineline_job":
-            return json.dumps(
-                summarize_job(rt.get_job(args["job_id"]), rt.work_root),
-                ensure_ascii=False, indent=2,
-            )
+            j = rt.get_job(args["job_id"])
+            s = summarize_job(j, rt.work_root)
+            # HOLD / CJK — agent cần xem lý do park mà không đoán
+            try:
+                peek = script_peek(rt.work_root, args["job_id"], sample=2)
+                s["hold_reason"] = peek.get("hold_reason") or (peek.get("hold") or {}).get("hold_reason")
+                s["n_cjk_in_vi"] = peek.get("n_cjk_in_vi")
+                s["cjk_in_vi_sample"] = peek.get("cjk_in_vi_sample")
+                s["n_lines"] = peek.get("n_lines")
+            except FileNotFoundError as e:
+                s["script_error"] = str(e)[:240]
+            return json.dumps(s, ensure_ascii=False, indent=2)
         if name == "pineline_queue_status":
             return json.dumps(rt.queue_state(), ensure_ascii=False, indent=2)
         if name == "pineline_queue_add":

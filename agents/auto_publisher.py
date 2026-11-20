@@ -33,6 +33,9 @@ SCAN_LOCK_FILE = DATA_DIR / ".auto_publish_scan"
 GLOBAL_PUBLISH_LOCK_FILE = DATA_DIR / ".auto_publish_global.lock"
 PUBLISH_QUEUE_FILE = DATA_DIR / "auto_publish_queue.json"
 QUEUE_LOCK_FILE = DATA_DIR / ".auto_publish_queue"
+ASK_FILE = DATA_DIR / "auto_publish_asks.json"
+ASK_TTL_SEC = int(os.getenv("PUBLISH_ASK_TTL_SEC") or "3600")  # 60' → skip
+_ask_notify_hook = None  # sidecar gắn Telegram notify
 
 # YouTube thường từ chối video >~12h; 11.5h + 64GiB = soft refuse (auto) / confirm (manual).
 YT_MAX_DURATION_SEC = 41400
@@ -454,6 +457,7 @@ def load_config() -> dict[str, Any]:
     """Tải cấu hình tự động upload."""
     default_cfg = {
         "enabled": True,                 # Bật/tắt tự động upload sau render
+        "ask_before_upload": False,      # True = Telegram hỏi trước khi xếp upload
         "privacy": "unlisted",           # "unlisted", "public", "private"
         "schedule_hours": 0.0,           # 0 = đăng ngay theo privacy; >0 = hẹn giờ sau N tiếng (tự chuyển private + publishAt)
         "generate_ai_thumb": True,       # Dùng Aurora sinh ảnh 16:9 điện ảnh
@@ -728,15 +732,188 @@ def _oversized_youtube_reasons(row: dict | None, out_path: str | Path | None) ->
     return reasons
 
 
+def set_ask_notify_hook(fn) -> None:
+    """Sidecar Telegram gắn hook gửi tin hỏi upload."""
+    global _ask_notify_hook
+    _ask_notify_hook = fn
+
+
+def _read_asks() -> dict[str, Any]:
+    if not ASK_FILE.is_file():
+        return {}
+    try:
+        data = json.loads(ASK_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_asks(data: dict[str, Any]) -> None:
+    ASK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ASK_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def purge_expired_asks(*, now: float | None = None) -> list[str]:
+    """Hết TTL → bỏ hỏi (không upload). Trả job_id đã skip."""
+    now = time.time() if now is None else float(now)
+    asks = _read_asks()
+    skipped: list[str] = []
+    keep: dict[str, Any] = {}
+    for jid, info in asks.items():
+        if not isinstance(info, dict):
+            continue
+        exp = float(info.get("expires_at") or 0)
+        if exp and now >= exp:
+            skipped.append(jid)
+            print(f"[auto-publish] ask hết hạn → skip upload {jid}", flush=True)
+        else:
+            keep[jid] = info
+    if len(keep) != len(asks):
+        _write_asks(keep)
+    return skipped
+
+
+def list_publish_asks() -> list[dict[str, Any]]:
+    purge_expired_asks()
+    out = []
+    for jid, info in _read_asks().items():
+        if not isinstance(info, dict):
+            continue
+        row = dict(info)
+        row["job_id"] = jid
+        out.append(row)
+    out.sort(key=lambda x: float(x.get("asked_at") or 0))
+    return out
+
+
+def _job_ask_info(job_id: str, privacy: str | None = None) -> dict[str, Any]:
+    cfg = load_config()
+    priv = (privacy or cfg.get("privacy") or "unlisted").strip() or "unlisted"
+    row = {}
+    try:
+        film_db.sync_one(job_id)
+        row = film_db.get(job_id) or {}
+    except Exception:
+        row = {}
+    title = str(row.get("title_vi") or row.get("title") or row.get("title_zh") or job_id)
+    dur = 0.0
+    try:
+        dur = float(row.get("duration_sec") or row.get("dur") or 0)
+    except (TypeError, ValueError):
+        dur = 0.0
+    if dur <= 0:
+        try:
+            outp = row.get("output_path") or str(ROOT / "work" / job_id / "output.mp4")
+            # film_db đôi khi có duration; không probe ffmpeg ở đây
+            dur = float(row.get("duration") or 0)
+        except Exception:
+            dur = 0.0
+    return {
+        "job_id": job_id,
+        "title": title,
+        "privacy": priv,
+        "duration_sec": dur,
+    }
+
+
+def offer_publish_ask(
+    job_id: str,
+    privacy: str | None = None,
+    *,
+    renotify: bool = False,
+) -> dict[str, Any]:
+    """Ghi pending ask + gửi Telegram (nếu hook). Không xếp hàng upload."""
+    job_id = str(job_id or "").strip()
+    if not job_id:
+        return {"ok": False, "error": "missing job_id"}
+    if is_auto_split_part(job_id):
+        return {
+            "ok": False,
+            "error": "skip_split_part",
+            "skipped_split_part": True,
+            "job_id": job_id,
+        }
+    purge_expired_asks()
+    info = _job_ask_info(job_id, privacy)
+    now = time.time()
+    asks = _read_asks()
+    prev = asks.get(job_id) if isinstance(asks.get(job_id), dict) else None
+    if prev and not renotify and float(prev.get("expires_at") or 0) > now:
+        return {
+            "ok": True,
+            "asked": True,
+            "already": True,
+            "job_id": job_id,
+            "title": prev.get("title") or info["title"],
+            "expires_at": prev.get("expires_at"),
+        }
+    rec = {
+        **info,
+        "asked_at": now,
+        "expires_at": now + max(60, ASK_TTL_SEC),
+    }
+    asks[job_id] = rec
+    _write_asks(asks)
+    print(
+        f"[auto-publish] ASK trước upload «{info['title']}» ({job_id}) "
+        f"privacy={info['privacy']} — chờ Telegram",
+        flush=True,
+    )
+    if callable(_ask_notify_hook):
+        try:
+            _ask_notify_hook(job_id, rec)
+        except Exception as e_n:  # noqa: BLE001
+            print(f"[auto-publish] ask notify lỗi: {e_n}", flush=True)
+    return {"ok": True, "asked": True, "job_id": job_id, "title": info["title"], "expires_at": rec["expires_at"]}
+
+
+def confirm_publish_ask(
+    job_id: str,
+    *,
+    action: str = "upload",
+    privacy: str | None = None,
+    allow_oversized: bool = False,
+) -> dict[str, Any]:
+    """Xử lý trả lời hỏi: upload|skip|private|public."""
+    job_id = str(job_id or "").strip()
+    act = (action or "upload").strip().lower()
+    asks = _read_asks()
+    asks.pop(job_id, None)
+    _write_asks(asks)
+    if act in ("skip", "no", "n", "cancel"):
+        print(f"[auto-publish] user skip upload {job_id}", flush=True)
+        return {"ok": True, "skipped": True, "job_id": job_id}
+    priv = privacy
+    if act in ("private", "p"):
+        priv = "private"
+    elif act in ("public", "u", "pub"):
+        priv = "public"
+    elif act in ("unlisted", "ul"):
+        priv = "unlisted"
+    # upload / yes → dùng privacy đã chọn hoặc mặc định config
+    return enqueue_publish(
+        job_id,
+        privacy=priv,
+        force=True,
+        allow_oversized=allow_oversized,
+        respect_ask=False,
+    )
+
+
 def enqueue_publish(
     job_id: str,
     privacy: str | None = None,
     schedule_hours: float | None = None,
     force: bool = False,
     allow_oversized: bool = False,
+    *,
+    respect_ask: bool = True,
 ) -> dict[str, Any]:
     """
     Đưa job vừa hoàn thành vào hàng đợi xuất bản tuần tự (không làm đứt quãng job đang upload).
+
+    ``respect_ask=True`` (mặc định): nếu config ``ask_before_upload`` và không ``force``
+    → gửi hỏi Telegram, chưa xếp hàng.
     """
     job_id = str(job_id or "").strip()
     if not job_id:
@@ -749,6 +926,14 @@ def enqueue_publish(
             "job_id": job_id,
             "message": "Part auto-split (Phần N/N) không đưa vào upload — chờ merge Full.",
         }
+
+    cfg = load_config()
+    if not cfg.get("enabled", True) and not force:
+        print(f"[auto-publish] enabled=off — bỏ qua enqueue {job_id}", flush=True)
+        return {"ok": False, "skipped": True, "reason": "auto_publish disabled", "job_id": job_id}
+
+    if respect_ask and not force and bool(cfg.get("ask_before_upload")):
+        return offer_publish_ask(job_id, privacy=privacy)
 
     try:
         film_db.sync_one(job_id)
@@ -774,6 +959,15 @@ def enqueue_publish(
                 "warnings": reasons,
                 "job_id": job_id,
             }
+
+    # Đã confirm / auto → gỡ ask treo nếu có
+    try:
+        asks = _read_asks()
+        if job_id in asks:
+            asks.pop(job_id, None)
+            _write_asks(asks)
+    except Exception:
+        pass
 
     items = _enqueue_job_record(
         job_id,
@@ -1465,10 +1659,20 @@ def _collect_and_enqueue_done_jobs() -> list[dict[str, Any]]:
     except Exception:
         pass
 
+    cfg = load_config()
+    ask_mode = bool(cfg.get("ask_before_upload")) and bool(cfg.get("enabled", True))
     for f in pending_upload:
         jid = f.get("job_id")
-        if jid:
-            _enqueue_job_record(jid)
+        if not jid:
+            continue
+        try:
+            if ask_mode:
+                # hỏi Telegram — không xếp hàng thầm (scan cũng không publish giúp)
+                enqueue_publish(jid, respect_ask=True)
+            else:
+                _enqueue_job_record(jid)
+        except Exception as e_enq:  # noqa: BLE001
+            print(f"[auto-publish] enqueue/ask {jid}: {e_enq}", flush=True)
 
     # Gỡ part auto-split đã lọt queue cũ (…_pNN / «Phần N/N»)
     try:
@@ -1551,6 +1755,10 @@ def _scan_and_publish_impl() -> int:
 
     pending_upload = _collect_and_enqueue_done_jobs()
     queue_items = _read_publish_queue()
+    ask_mode = bool(cfg.get("ask_before_upload"))
+    if ask_mode:
+        # ask: collect chỉ gửi hỏi; chỉ publish job đã có trong queue (user bấm Upload)
+        pending_upload = []
     if not pending_upload and not queue_items:
         _sync_queue_state_badge()
         return 0

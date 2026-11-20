@@ -33,8 +33,11 @@ def run(store: ScriptStore, pv: PlanView, flags: dict[int, list[dict]], *, model
             want = {int(r["i"]) for r in lot}
             system, user = stage_review.build_prompt(lot, j["before"], j["after"], pv, repair_flags=flags)
             try:
-                res = stage_review.call_llm(system, user, want, model=model, stop_check=stop_check,
-                                            label="[simple-repair]")
+                res = stage_review.call_llm(
+                    system, user, want, model=model, stop_check=stop_check,
+                    label=("[simple-repair-backup]" if model and "chatgpt" in str(model).lower()
+                           else "[simple-repair]"),
+                )
             except Exception as e:  # noqa: BLE001
                 if "stopped by user" in str(e).lower():
                     raise

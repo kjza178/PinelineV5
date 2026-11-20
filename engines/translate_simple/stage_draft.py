@@ -30,7 +30,7 @@ def _load_json(p: Path):
 
 def _series_plan(work_dir: Path) -> dict | None:
     try:
-        import engines.series_glossary as series_glossary
+        import series_glossary
         return series_glossary.load(series_glossary.series_key(work_dir))
     except Exception as e:  # noqa: BLE001
         print(f"[simple-plan] bảng bộ: {e}", flush=True)
@@ -94,7 +94,7 @@ def build_full_movie_plan(
             cur_chars += len(t) + 1
         full_text = " ".join(sampled)
 
-    import engines.translate as T
+    import translate as T
     seed = T._plan_seed_blocks(name_hints, series_plan, soft_ocr=True)
 
     sys_prompt = (
@@ -145,8 +145,8 @@ def build_full_movie_plan(
     )
 
     from .stage_review import _decode
-    import engines.cloud_retry as cloud_retry
-    from engines.llm import chat
+    import cloud_retry
+    from llm import chat
 
     mt = {"v": cfg.max_tokens()}
 
@@ -154,7 +154,7 @@ def build_full_movie_plan(
         # 2026-11-18: DeepSeek trả rỗng vì hết max_tokens (finish_reason=length) → thử lại 1 lần với gấp đôi
         # (≤32768). Rỗng vì lý do khác → LLMEmptyResponse lên luôn: cloud_retry không lặp, build_plan rơi
         # xuống file/sample (trước: «thất bại …: None» bị coi là 5xx → gửi lại cả phim tới 16 lần).
-        from engines.llm import LLMEmptyResponse
+        from llm import LLMEmptyResponse
         for _ in range(2):
             try:
                 out = chat(
@@ -191,8 +191,8 @@ def build_full_movie_plan(
 
 
 def build_plan(work_dir: Path, segments: list[dict], target: str, *, force: bool = False) -> dict:
-    import engines.translate as T
-    from core.fileio import atomic_write_json
+    import translate as T
+    from fileio import atomic_write_json
 
     plan_path = work_dir / "glossary.json"
     skip_plan = bool((_load_json(work_dir / "context_pack.json") or {}).get("skip_plan"))
@@ -204,7 +204,7 @@ def build_plan(work_dir: Path, segments: list[dict], target: str, *, force: bool
             print("[simple-plan] dùng lại glossary.json có sẵn", flush=True)
             if skip_plan:
                 try:
-                    from tools.context_studio.schema import apply_style_lock_from_genre
+                    from context_studio.schema import apply_style_lock_from_genre
                     plan = apply_style_lock_from_genre(plan)
                 except Exception:  # noqa: BLE001
                     pass
@@ -236,7 +236,7 @@ def build_plan(work_dir: Path, segments: list[dict], target: str, *, force: bool
             except Exception:  # noqa: BLE001
                 pass
     try:
-        import engines.series_glossary as series_glossary
+        import series_glossary
         plan = series_glossary.apply(work_dir, plan)
         if _plan_usable(plan):
             series_glossary.save_from(work_dir, reason="cập nhật plan tập mới (simple)")
@@ -245,7 +245,7 @@ def build_plan(work_dir: Path, segments: list[dict], target: str, *, force: bool
     plan = T.ensure_hard_terms(plan)
     if cfg.pronoun_analyze() and _plan_usable(plan):
         try:
-            from engines.pronoun_consistency import ensure_analyze_before_translate
+            from pronoun_consistency import ensure_analyze_before_translate
             plan, _pa = ensure_analyze_before_translate(work_dir, plan, segments=segments, force=False)
             plan = T.ensure_hard_terms(plan)
         except Exception as e:  # noqa: BLE001
@@ -266,7 +266,7 @@ def nmt_drafts(rows: list[dict], hint_plan: dict | None) -> dict[int, str]:
     if not todo:
         return {}
     try:
-        import engines.mt_zh_vi as mt_zh_vi
+        import mt_zh_vi
         if not mt_zh_vi.enabled():
             print("[simple-nmt] MT_ZH_VI tắt → review dịch mới mọi câu", flush=True)
             return {}
@@ -297,7 +297,7 @@ def run(store: ScriptStore, segments: list[dict], target: str, *, force: bool = 
     rows_snapshot = [dict(r) for r in store.rows]
     info: dict = {"parallel": not cfg.nmt_wait_plan()}
     t0 = time.time()
-    import engines.mt_zh_vi as mt_zh_vi
+    import mt_zh_vi
     nmt_active = mt_zh_vi.enabled()
     if not nmt_active:
         print("[simple-draft] NMT tắt → DeepSeek dịch trực tiếp 100% từ tiếng Trung (zh)", flush=True)

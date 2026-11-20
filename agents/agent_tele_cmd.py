@@ -569,6 +569,162 @@ def _send_confirm_buttons(uid: str, confirms: list[dict]) -> None:
         })
 
 
+def _fmt_dur_h(sec: float) -> str:
+    try:
+        s = float(sec or 0)
+    except (TypeError, ValueError):
+        return "?"
+    if s <= 0:
+        return "?"
+    return f"{s/3600:.1f}h"
+
+
+def notify_publish_ask(job_id: str, info: dict | None = None) -> None:
+    """Gửi tin hỏi upload tới mọi uid được phép (hook từ auto_publisher)."""
+    import agents.auto_publisher as auto_publisher
+    info = info or {}
+    title = str(info.get("title") or job_id)
+    priv = str(info.get("privacy") or "unlisted")
+    dur = _fmt_dur_h(info.get("duration_sec"))
+    exp = float(info.get("expires_at") or 0)
+    left_m = max(1, int((exp - time.time()) / 60)) if exp else 60
+    text = (
+        f"📤 Sẵn sàng đăng?\n"
+        f"«{title}» · {job_id} · ~{dur} · {priv}\n"
+        f"Hết hạn ~{left_m}' → bỏ qua (không up).\n"
+        f"/publish status"
+    )
+    buttons = [
+        [("✅ Upload", f"pub:y:{job_id}"), ("⏭ Bỏ qua", f"pub:s:{job_id}")],
+        [("🔒 Private", f"pub:p:{job_id}"), ("🌐 Public", f"pub:u:{job_id}")],
+    ]
+    uids = allowed_uids()
+    if not uids:
+        print(f"[publish-ask] không có TELEGRAM uid — job {job_id}", flush=True)
+        return
+    for uid in uids:
+        tg_api("sendMessage", {
+            "chat_id": uid,
+            "text": text[:3500],
+            "reply_markup": _inline_kb(buttons),
+            "disable_web_page_preview": "1",
+        })
+
+
+def _publish_callback(uid: str, cq: dict, data: str) -> None:
+    """callback_data: pub:y|s|p|u:<job_id>"""
+    import agents.auto_publisher as auto_publisher
+    parts = (data or "").split(":", 2)
+    if len(parts) < 3:
+        tg_api("sendMessage", {"chat_id": uid, "text": "Lệnh pub không hợp lệ."})
+        return
+    act_code, job_id = parts[1], parts[2].strip()
+    action_map = {"y": "upload", "s": "skip", "p": "private", "u": "public"}
+    action = action_map.get(act_code)
+    if not action or not job_id:
+        tg_api("sendMessage", {"chat_id": uid, "text": f"Không hiểu: {data}"})
+        return
+    res = auto_publisher.confirm_publish_ask(job_id, action=action)
+    if res.get("skipped"):
+        msg = f"⏭ Đã bỏ qua upload {job_id}."
+    elif res.get("queued") or res.get("ok"):
+        priv = "unlisted"
+        if action == "private":
+            priv = "private"
+        elif action == "public":
+            priv = "public"
+        msg = f"✅ Đã xếp upload {job_id}" + (f" ({priv})" if action != "upload" else "") + "."
+        if res.get("refused_oversized"):
+            msg = f"⚠️ File quá dài/nặng — cần confirm oversized:\n{res.get('error')}"
+    else:
+        msg = f"❌ Upload {job_id}: {res.get('error') or res.get('reason') or res}"
+    # bỏ nút trên tin cũ
+    try:
+        mid = (cq.get("message") or {}).get("message_id")
+        if mid:
+            tg_api("editMessageReplyMarkup", {
+                "chat_id": uid, "message_id": str(mid),
+                "reply_markup": json.dumps({"inline_keyboard": []}),
+            })
+    except Exception:
+        pass
+    tg_api("sendMessage", {"chat_id": uid, "text": str(msg)[:3500], "disable_web_page_preview": "1"})
+
+
+def _publish_command(arg: str, uid: str = "") -> str:
+    """ /publish [status|on|off|ask|auto|privacy <p>|queue|thumb on|off] """
+    import agents.auto_publisher as auto_publisher
+    rest = (arg or "").strip()
+    sub = rest.split(maxsplit=1)[0].lower() if rest else "status"
+    tail = rest.split(maxsplit=1)[1].strip() if rest and " " in rest else ""
+
+    if sub in ("", "status", "show", "st"):
+        cfg = auto_publisher.load_config()
+        st = auto_publisher.get_auto_state()
+        asks = auto_publisher.list_publish_asks()
+        mode = "ask (hỏi Telegram)" if cfg.get("ask_before_upload") else "auto (up ngay)"
+        lines = [
+            "📤 Auto-publish",
+            f"· enabled: {'ON' if cfg.get('enabled') else 'OFF'}",
+            f"· mode: {mode}",
+            f"· privacy: {cfg.get('privacy') or 'unlisted'}",
+            f"· AI thumb: {'ON' if cfg.get('generate_ai_thumb') else 'OFF'}",
+            f"· queue: {st.get('queue_count') or 0} · đang: {st.get('current_job_id') or '—'}",
+        ]
+        if asks:
+            lines.append(f"· chờ hỏi: {len(asks)}")
+            for a in asks[:8]:
+                lines.append(
+                    f"  – {a.get('job_id')} «{a.get('title') or '?'}» ~{_fmt_dur_h(a.get('duration_sec'))}"
+                )
+        lines.append("\nLệnh: /publish on|off|ask|auto|privacy unlisted|private|public|thumb on|off|queue")
+        return "\n".join(lines)
+
+    if sub == "on":
+        cfg = auto_publisher.save_config({"enabled": True})
+        return f"✅ Auto-publish ON · mode={'ask' if cfg.get('ask_before_upload') else 'auto'}"
+    if sub == "off":
+        auto_publisher.save_config({"enabled": False})
+        return "⏸ Auto-publish OFF — mux xong không xếp/hỏi upload."
+    if sub == "ask":
+        cfg = auto_publisher.save_config({"ask_before_upload": True, "enabled": True})
+        return "✅ Chế độ ASK — mux xong hỏi Telegram trước khi up. (/publish auto để up ngay)"
+    if sub == "auto":
+        cfg = auto_publisher.save_config({"ask_before_upload": False})
+        en = "ON" if cfg.get("enabled") else "OFF"
+        return f"✅ Chế độ AUTO — mux xong xếp upload ngay (nếu enabled={en})."
+    if sub == "privacy":
+        p = (tail or "").strip().lower()
+        if p not in ("unlisted", "private", "public"):
+            return "Dùng: /publish privacy unlisted|private|public"
+        auto_publisher.save_config({"privacy": p})
+        return f"✅ privacy mặc định = {p}"
+    if sub == "thumb":
+        t = (tail or "").strip().lower()
+        if t in ("on", "1", "true", "yes"):
+            auto_publisher.save_config({"generate_ai_thumb": True})
+            return "✅ AI thumb ON"
+        if t in ("off", "0", "false", "no"):
+            auto_publisher.save_config({"generate_ai_thumb": False})
+            return "⏸ AI thumb OFF"
+        return "Dùng: /publish thumb on|off"
+    if sub == "queue":
+        st = auto_publisher.get_auto_state()
+        q = st.get("queued_jobs") or []
+        asks = auto_publisher.list_publish_asks()
+        lines = [f"Hàng upload: {len(q)} · đang: {st.get('current_job_id') or '—'}"]
+        for j in q[:15]:
+            lines.append(f"· {j}")
+        if asks:
+            lines.append(f"Chờ hỏi: {len(asks)}")
+            for a in asks[:10]:
+                lines.append(f"· ask {a.get('job_id')} «{a.get('title') or ''}»")
+        return "\n".join(lines) if len(lines) > 1 else "Hàng trống."
+    return (
+        "Không hiểu. /publish status|on|off|ask|auto|privacy <p>|thumb on|off|queue"
+    )
+
+
 def _agent_ask(msg: str, uid: str = "") -> dict:
     """Chat agent; có uid (Telegram) thì tool phá huỷ đỗ lại và gửi nút ✅/❌."""
     hist = get_user_history(uid) if uid else []
@@ -753,6 +909,7 @@ def handle_command(text: str, uid: str = "") -> str:
             "/film <job_id> — Chi tiết + lịch sử 1 phim\n"
             "/feed — Tự động chọn và thêm job theo tiêu chí\n"
             "/config /set /reset — Cấu hình batch xử lý video\n"
+            "/publish — Auto-publish: status|on|off|ask|auto|privacy …\n"
             "/agent <câu hỏi> — AI Agent điều khiển toàn bộ pipeline\n"
             "💡 Mẹo: Bạn có thể chat tự nhiên trực tiếp (vd: 'Xem top 5 phim hot trên hongguo', 'Gộp bộ số 2')"
         )
@@ -815,6 +972,9 @@ def handle_command(text: str, uid: str = "") -> str:
                 msg += " (Đã xoá cả thư mục work)."
             return msg
         return f"Không tìm thấy job {jid} trong database."
+
+    if cmd in ("/publish", "publish", "/autopub", "autopub"):
+        return _publish_command(arg, uid=uid)
 
     if cmd in ("/running", "running", "/jobs"):
         return feeder.running_text(BASE)
@@ -1106,9 +1266,9 @@ class CtrlHandler(BaseHTTPRequestHandler):
                 return
         if path == "/films/combine/status":
             try:
-                import importlib
+                # Không reload: reload xoá _state/_worker trong RAM → F5/poll mất khung log
+                # trong khi ffmpeg vẫn chạy. State/log bền trên đĩa trong films_combine.
                 import engines.films_combine as films_combine
-                films_combine = importlib.reload(films_combine)
                 self._json(200, films_combine.status())
             except Exception as e:  # noqa: BLE001
                 self._json(500, {"ok": False, "error": str(e)})
@@ -1770,9 +1930,8 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             return
         if path == "/films/combine":
             try:
-                import importlib
+                # Không reload khi đang/đã import — tránh mất thread state giữa chừng.
                 import engines.films_combine as films_combine
-                films_combine = importlib.reload(films_combine)
                 job_ids = body.get("job_ids") or []
                 custom_title_vi = body.get("title_vi")
                 auto_publish = bool(body.get("auto_publish", False))
@@ -1890,10 +2049,10 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                     poster_source=poster_src,
                     hook_text_1=str(body.get("hook_text_1") or ""),
                     hook_text_2=str(body.get("hook_text_2") or ""),
-                    badge_text=str(body.get("badge_text") or "TRỌN BỘ THUYẾT MINH"),
+                    badge_text=str(body.get("badge_text") or "NEW"),
                     sub_text=str(body.get("sub_text") or ""),
                     bg_frame_source=bg_src,
-                    style=str(body.get("style") or "fire_gold"),
+                    style=str(body.get("style") or "neon_cyan"),
                     out_filename=str(body.get("out_filename") or ""),
                     include_poster=include_p,
                 )
@@ -1942,9 +2101,9 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
                 try:
                     h1 = str(body.get("hook_text_1") or "NGHỊCH THIÊN").strip()
                     h2 = str(body.get("hook_text_2") or "ĐỒ THẦN").strip()
-                    b_badge = str(body.get("badge_text") or "TRỌN BỘ THUYẾT MINH").strip()
+                    b_badge = str(body.get("badge_text") or "NEW").strip()
                     s_sub = str(body.get("sub_text") or title).strip()
-                    st = str(body.get("style") or "fire_gold").strip()
+                    st = str(body.get("style") or "neon_cyan").strip()
                     out_p = meta_studio.create_thumbnail(
                         poster_source=poster_bytes,
                         hook_text_1=h1,
@@ -2017,9 +2176,9 @@ button{{background:#7d2ae8;color:#fff;border:none;padding:10px 20px;border-radiu
             job_id = str(body.get("job_id") or f"gen_{int(time.time())}").strip()
             hook_1 = str(body.get("hook_1") or body.get("hook_text_1") or "").strip()
             hook_2 = str(body.get("hook_2") or body.get("hook_text_2") or "").strip()
-            badge = str(body.get("badge") or body.get("badge_text") or "TRỌN BỘ THUYẾT MINH").strip()
+            badge = str(body.get("badge") or body.get("badge_text") or "NEW").strip()
             sub = str(body.get("sub") or body.get("sub_text") or "").strip()
-            style = str(body.get("style") or "fire_gold").strip()
+            style = str(body.get("style") or "neon_cyan").strip()
             poster_name = str(body.get("poster_name") or "").strip()
 
             if not prompt:
@@ -2281,6 +2440,10 @@ def _on_callback(cq: dict, allow: set[str]) -> None:
             threading.Thread(target=_confirm_callback, args=(uid, cq, data), name="agent-confirm",
                              daemon=True).start()
             return
+        if data.startswith("pub:"):
+            threading.Thread(target=_publish_callback, args=(uid, cq, data), name="publish-ask",
+                             daemon=True).start()
+            return
         if data.startswith("lib:"):
             reply = feeder.lib_callback(BASE, data)
             tg_api("sendMessage", {"chat_id": uid, "text": reply[:3500], "disable_web_page_preview": "1"})
@@ -2514,6 +2677,7 @@ def main() -> None:
     threading.Thread(target=filmdb_loop, args=(stop,), name="film-db", daemon=True).start()
     try:
         import agents.auto_publisher as auto_publisher
+        auto_publisher.set_ask_notify_hook(notify_publish_ask)
         auto_publisher.start_worker()
     except Exception as e_start_pub:
         print(f"[auto-publish] Không khởi động được worker: {e_start_pub}", flush=True)

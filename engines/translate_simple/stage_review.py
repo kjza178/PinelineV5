@@ -207,8 +207,8 @@ def call_llm(system: str, user: str, want: set[int], *, model: str | None, stop_
              label: str = "[simple]", pair_sink: list | None = None) -> dict[int, dict]:
     """1 lần gọi (qua cloud_retry) + parse chặt. Ném lỗi khi lô hỏng.
     pair_sink: list nhận đề xuất "new_pairs" của lần gọi THÀNH CÔNG (không ảnh hưởng rv)."""
-    import engines.cloud_retry as cloud_retry
-    from engines.llm import chat
+    import cloud_retry
+    from llm import chat
 
     def _once():
         out = chat([{"role": "system", "content": system}, {"role": "user", "content": user}],

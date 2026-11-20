@@ -80,6 +80,7 @@ def hooks_from_series_title(title_vi: str, title_zh: str = "") -> list[str]:
 
     VD: «Võ Đạo Cộng Điểm: Lão Lục Thời Loạn Thành Thánh»
         → [\"VÕ ĐẠO CỘNG ĐIỂM\", \"LÃO LỤC THÀNH THÁNH\"].
+    «A - B - Ta …» → premise (A - B) / câu Ta.
     """
     # Giữ nguyên dấu : để tách 2 vế — KHÔNG qua clean_series_name (hàm đó cắt mất vế sau)
     raw = (title_vi or "").strip()
@@ -91,26 +92,44 @@ def hooks_from_series_title(title_vi: str, title_zh: str = "") -> list[str]:
     if not raw:
         return ["TRỌN BỘ", "THUYẾT MINH"]
 
-    # Tách cả dấu phẩy (vd «Nguyên Anh rồi, bạn lại bảo… nhập học»)
-    parts = [p.strip(" -_()[]") for p in re.split(r"[:：|–—,，]", raw) if p.strip(" -_()[]")]
+    def _cap(s: str, n: int = 56) -> str:
+        return re.sub(r"\s+", " ", (s or "").strip()).upper()[:n]
+
+    # 1) Tách theo « - » / em-dash (title dài nhiều vế)
+    dash_parts = [
+        p.strip(" -_()[]")
+        for p in re.split(r"\s*[–—]\s*|\s+-\s+", raw)
+        if p.strip(" -_()[]")
+    ]
+    if len(dash_parts) >= 2:
+        last = dash_parts[-1]
+        # Vế cuối kiểu «Ta / Tôi / Mình …» → premise | câu Ta
+        if re.match(r"^(?:ta|tôi|toi|mình|minh)\b", last, flags=re.I):
+            premise = " - ".join(dash_parts[:-1])
+            return [_cap(premise, 64), _cap(last, 64)]
+        if len(dash_parts) >= 3:
+            return [_cap(" - ".join(dash_parts[:2]), 64), _cap(" - ".join(dash_parts[2:]), 64)]
+        return [_cap(dash_parts[0]), _cap(dash_parts[1])]
+
+    # 2) Tách dấu : / | / phẩy (vd «Nguyên Anh rồi, bạn lại bảo…»)
+    parts = [p.strip(" -_()[]") for p in re.split(r"[:：|,，]", raw) if p.strip(" -_()[]")]
     if len(parts) >= 2:
         a, b = parts[0], parts[1]
         bw = b.split()
         if len(bw) > 4:
-            # Ưu tiên cụm đầu + cụm cuối (Lão Lục … Thành Thánh)
             b = " ".join(bw[:2] + bw[-2:])
         aw = a.split()
         if len(aw) > 5:
             a = " ".join(aw[:5])
-        return [a.upper(), b.upper()]
+        return [_cap(a), _cap(b)]
 
     words = raw.split()
     if len(words) >= 4:
         mid = max(2, len(words) // 2)
-        return [" ".join(words[:mid]).upper(), " ".join(words[mid:mid + 4]).upper()]
+        return [_cap(" ".join(words[:mid])), _cap(" ".join(words[mid:mid + 5]), 64)]
     if len(words) >= 2:
-        return [words[0].upper(), " ".join(words[1:]).upper()]
-    return [raw.upper()[:28], "THUYẾT MINH"]
+        return [_cap(words[0]), _cap(" ".join(words[1:]), 64)]
+    return [_cap(raw, 28), "THUYẾT MINH"]
 
 
 def _hook_anchored_to_title(hook: str, title_vi: str) -> bool:
@@ -152,25 +171,25 @@ def sanitize_hook_texts(
     return derived[:2]
 
 
-_BADGE_ALLOWED = ("NEW", "HOT")
+_BADGE_ALLOWED = ("NEW", "HOT", "FULL")
 _BADGE_BANNED = frozenset({
-    "TRỌN BỘ THUYẾT MINH", "TRỌN BỘ", "THUYẾT MINH", "FULL", "FULL EPISODE",
+    "TRỌN BỘ THUYẾT MINH", "TRỌN BỘ", "THUYẾT MINH", "FULL EPISODE",
     "TRON BO THUYET MINH",
 })
 
 
 def pick_badge_text(raw: str | None = "", *, job_id: str = "", title_vi: str = "") -> str:
-    """Badge góc trên: chỉ NEW hoặc HOT — không dùng «TRỌN BỘ THUYẾT MINH»."""
+    """Badge góc trên: NEW / HOT / FULL — không «TRỌN BỘ THUYẾT MINH»."""
     s = re.sub(r"\s+", " ", str(raw or "").strip()).upper()
     if s in _BADGE_ALLOWED:
         return s
     if s in _BADGE_BANNED or "THUYẾT MINH" in s or "THUYET MINH" in s or "TRỌN BỘ" in s:
         s = ""
-    if s in ("NEW!", "HOT!", "NEW ", "HOT "):
+    if s in ("NEW!", "HOT!", "FULL!", "NEW ", "HOT ", "FULL "):
         return s.strip("! ")
-    # xen kẽ ổn định theo job/title để không luôn NEW
+    # xen kẽ ổn định theo job/title (NEW/HOT; FULL chỉ khi caller truyền)
     seed = (job_id or title_vi or "x").encode("utf-8", errors="ignore")
-    return _BADGE_ALLOWED[sum(seed) % 2]
+    return ("NEW", "HOT")[sum(seed) % 2]
 
 
 def vi_to_image_latin(text: str) -> str:
@@ -207,103 +226,124 @@ def build_master_image_prompt(
     typo_color: str = "",
     typo_integration: str = "",
 ) -> str:
-    """Prompt ảnh AI: scene + chữ 3D LATIN (không dấu) — giảm gen sai chữ Việt có dấu.
+    """Prompt ảnh thumb NGẮN: ref poster + 2 dòng title + typo theo nền.
 
-    Badge NEW/HOT. Hook/sub đã sanitize; bản nung ảnh = vi_to_image_latin(...).
-    ``trust_hooks=True``: giữ đúng 2 dòng hook đã chốt (concept/UI), không ép neo tên.
-    Typography đa dạng về kiểu dáng/vật liệu và hòa hợp, tương phản nổi bật dựa trên nền ảnh tham chiếu.
+    Bỏ khóa 3D-Latin/UE5/ice-chrome. Giữ chữ Việt có dấu (đúng title).
+    ``trust_hooks=True``: giữ đúng 2 dòng hook đã chốt. Tham số story/palette cũ
+    được bỏ qua (tương thích chữ ký) — ngoại hình 100% từ ảnh tham chiếu.
     """
-    title = clean_series_name(title_vi or "", fallback=title_vi) or title_zh or "donghua"
+    del story_moment, visual_dna, palette, layout, emotional_trigger
+    del font_material, typo_color, typo_integration  # không nhồi vào prompt ngắn
+    title = clean_series_name(title_vi or "", fallback=title_vi) or title_zh or "Donghua"
     if trust_hooks and hook_texts and len([h for h in hook_texts if str(h or "").strip()]) >= 2:
         hooks = [
-            re.sub(r"\s+", " ", str(hook_texts[0] or "").strip()).upper()[:40],
-            re.sub(r"\s+", " ", str(hook_texts[1] or "").strip()).upper()[:40],
+            re.sub(r"\s+", " ", str(hook_texts[0] or "").strip())[:56],
+            re.sub(r"\s+", " ", str(hook_texts[1] or "").strip())[:56],
         ]
     else:
         hooks = sanitize_hook_texts(hook_texts, title_vi=title_vi or title, title_zh=title_zh)
     badge = pick_badge_text(badge_text, title_vi=title_vi)
-    sub = (sub_text or title).strip()[:48]
-    moment = (story_moment or emotional_trigger or "decisive confrontation from the plot").strip()
-    # visual_dna chỉ dùng làm gợi ý TƯ THẾ / KHÍ / HÀNH ĐỘNG — không mô tả lại mặt/áo
-    # (ngoại hình 100% từ ảnh gốc đính kèm). Nếu DNA toàn quần áo/mặt → bỏ, lấy story/emotion.
-    def _pose_only_hint(dna: str, emo: str, mom: str) -> str:
-        raw = (dna or "").strip()
-        low = raw.lower()
-        appearance_marks = (
-            "coat", "armor", "hair", "eyes", "outfit", "wearing", "robe", "dress",
-            "helmet", "face", "male", "female", "girl", "boy", "áo", "tóc", "mắt",
-            "faithful to reference", "reference poster", "reference image",
+    line1 = (hooks[0] or title).strip()
+    line2 = (hooks[1] if len(hooks) > 1 else "").strip()
+    sub = (sub_text or "").strip()[:48]
+    # Phụ đề đáy: bỏ nếu trùng một trong hai dòng title (tránh stamp lặp)
+    sub_use = ""
+    if sub:
+        su = sub.upper()
+        if su not in {line1.upper(), line2.upper(), title.upper()} and su not in {
+            f"{line1} {line2}".upper().strip(),
+        }:
+            sub_use = sub
+
+    parts = [
+        "Use the attached reference image to create the YouTube thumbnail.",
+        "Keep the same character(s), face, outfit, art style, colors, and lighting as the reference.",
+        "Remove Chinese titles, season marks (第X季), and watermarks from the reference — "
+        "no Chinese characters on the final image.",
+        "",
+        f'A breathtaking 16:9 YouTube thumbnail for the Chinese Donghua series «{title}».',
+        "",
+        f'- Top ribbon text: "{badge}"',
+        "- Title needs great typography (exact text, do not invent or misspell letters):",
+        f'  Line 1: "{line1}"',
+    ]
+    if line2:
+        parts.append(f'  Line 2: "{line2}"')
+    if sub_use:
+        parts.append(f'- Small bottom label (optional, keep short): "{sub_use}"')
+    parts += [
+        "",
+        "Typography must be designed from the reference background "
+        "(colors, contrast, mood) — readable on mobile, elegant, not a generic stamp.",
+        "Do not invent a different cast or costume. Do not add HUD/stat bars.",
+    ]
+    return "\n".join(parts)
+
+
+def _patch_prompt_typography(
+    prompt: str,
+    *,
+    hook_1: str = "",
+    hook_2: str = "",
+    badge: str = "NEW",
+    sub: str = "",
+) -> str:
+    """Chỉ sửa badge/hook/sub trong prompt sẵn có — giữ style LLM, không đè template."""
+    p = prompt or ""
+    if not p:
+        return p
+    badge = (badge or "NEW").strip() or "NEW"
+    if badge:
+        p = re.sub(
+            r'Top ribbon text:\s*"[^"]*"',
+            f'Top ribbon text: "{badge}"',
+            p,
+            count=1,
+            flags=re.I,
         )
-        if raw and sum(1 for k in appearance_marks if k in low) >= 2:
-            raw = ""
-        return (raw or emo or mom or "decisive pose matching the story moment").strip()
-
-    pose_hint = _pose_only_hint(visual_dna or "", emotional_trigger or "", story_moment or "")
-    colors = (palette or "palette matching the film's real setting, not generic fire-gold").strip()
-    lay = (layout or "character on the right third, bold 3D text on the left").strip()
-    mat = (font_material or "premium 3D stylized display typography matching the reference atmosphere").strip()
-    color_desc = (typo_color or "high-contrast color scheme tailored to punch out against the reference background").strip()
-    integ = (typo_integration or "deep ambient drop shadow and directional rim lighting reacting to reference scene illumination").strip()
-    line1 = vi_to_image_latin(hooks[0])
-    line2 = vi_to_image_latin(hooks[1])
-    sub_img = vi_to_image_latin(sub)
-    # Spell-out giúp model ít đổi chữ: V O   D A O
-    def _spell(s: str) -> str:
-        return " · ".join(list(s.replace(" ", "  ")))
-
-    return (
-        "REFERENCE IMAGE MANDATE (APPEARANCE SOURCE OF TRUTH): The attached original poster/frame "
-        "is the ONLY source for who the character is. Copy exact facial features, hairstyle, hair color, "
-        "gender, age, outfit, accessories, and 3D/2D art style from the reference. "
-        "Do NOT invent a different costume, armor color, or face from text descriptions.\n\n"
-        "POSTER TEXT CLEANUP (CRITICAL): The reference may contain Chinese titles, season marks "
-        "(第X季), vertical calligraphy, or platform watermarks. You MUST REMOVE / paint out ALL of "
-        "that source text. The final thumbnail must NOT keep Chinese characters from the poster.\n\n"
-        f"Create a high-CTR 16:9 horizontal YouTube thumbnail for the donghua «{title}».\n\n"
-        f"STORY MOMENT (must match real plot, not a generic trope):\n{moment}\n\n"
-        "POSE / ACTION / ENERGY (appearance still 100% from reference — this block is ONLY body language):\n"
-        f"{pose_hint}\n"
-        "Recompose into a dramatic 16:9 pose matching THIS film. "
-        "Do NOT default to open palm shooting fire at camera. "
-        "Do NOT rewrite outfit or face from this pose hint.\n\n"
-        f"ENVIRONMENT & COLOR PALETTE:\n{colors}\n{lay}\n\n"
-        "INTEGRATED 3D LATIN TYPOGRAPHY (LEFT / TOP-LEFT — FROM SERIES TITLE, FLEXIBLE & BEAUTIFUL):\n"
-        "Image models corrupt Vietnamese tone marks (ă â ê ô ơ ư ạ ệ…). "
-        "Therefore ALL on-image text MUST be ASCII uppercase Latin ONLY "
-        "(Vietnamese title stripped of diacritics).\n"
-        "Typography must feel custom for THIS title — not a generic fire-gold stamp reused every film.\n"
-        f"- Top badge ribbon EXACTLY: \"{badge}\" "
-        "(NEW or HOT only — NEVER 'TRỌN BỘ THUYẾT MINH')\n"
-        f"- Main 3D Headline EXACTLY two lines derived from the series title "
-        "(copy character-perfect, do not invent letters):\n"
-        f"  1) \"{line1}\"\n"
-        f"  2) \"{line2}\"\n"
-        f"  Letter check line1: {_spell(line1)}\n"
-        f"  Letter check line2: {_spell(line2)}\n"
-        f"- DIVERSE TYPOGRAPHY STYLING & MATERIAL (Tailored to Reference Background + Title Mood):\n"
-        f"  * Material & Palette: {mat}; Colors: {color_desc}.\n"
-        f"  * Diverse Typography Styles: Pick ONE distinctive treatment that fits this film "
-        "(fractured ice, brushed titanium, engraved jade, molten core, mirror chrome, brush calligraphy 3D, "
-        "neon cyber edge, stone bas-relief) — avoid flat generic gold every time.\n"
-        f"  * Reference Background Integration: {integ}. Letters MUST react to the reference image "
-        "background lighting (directional rim glow, atmospheric mist around letter feet, deep contact "
-        "shadows) so text fuses with the scene yet stays razor-sharp on mobile.\n"
-        f"- Bottom subtitle banner EXACTLY: \"{sub_img}\"\n"
-        "Do NOT add extra words. Do NOT restore diacritics. Do NOT write Chinese characters.\n"
-        "Avoid cluttered HUD/stat bars unless the plot is literally a system/RPG panel moment.\n\n"
-        "QUALITY: 16:9 widescreen, Unreal Engine 5 / premium Chinese 3D donghua key art, "
-        "high contrast, rich depth of field, clear focal hierarchy — character from reference + "
-        "dominant Latin title typography."
-    )
+        p = re.sub(
+            r'Top badge ribbon EXACTLY:\s*"[^"]*"',
+            f'Top ribbon text: "{badge}"',
+            p,
+            count=1,
+            flags=re.I,
+        )
+    if hook_1:
+        h1 = re.sub(r"\s+", " ", str(hook_1).strip())[:56]
+        p = re.sub(r'(Line 1:\s*")[^"]*(")', rf'\g<1>{h1}\g<2>', p, count=1, flags=re.I)
+        p = re.sub(r'(1\)\s*")[^"]*(")', rf'\g<1>{h1}\g<2>', p, count=1)
+    if hook_2:
+        h2 = re.sub(r"\s+", " ", str(hook_2).strip())[:56]
+        p = re.sub(r'(Line 2:\s*")[^"]*(")', rf'\g<1>{h2}\g<2>', p, count=1, flags=re.I)
+        p = re.sub(r'(2\)\s*")[^"]*(")', rf'\g<1>{h2}\g<2>', p, count=1)
+    if sub:
+        su = sub.strip()[:48]
+        p = re.sub(
+            r'Small bottom label[^:\n]*:\s*"[^"]*"',
+            f'Small bottom label (optional, keep short): "{su}"',
+            p,
+            count=1,
+            flags=re.I,
+        )
+        p = re.sub(
+            r'Bottom subtitle banner EXACTLY:\s*"[^"]*"',
+            f'Small bottom label (optional, keep short): "{su}"',
+            p,
+            count=1,
+            flags=re.I,
+        )
+    return p
 
 
 def finalize_thumb_meta_fields(
     data: dict, title_vi: str = "", title_zh: str = "", job_id: str = "",
 ) -> dict:
-    """Sanitize hook + badge NEW/HOT; dựng lại master_image_prompt (AI vẽ chữ, không Pillow).
+    """Sanitize hook + badge NEW/HOT cho form Meta — typography TỰ DO từ concept/LLM.
 
-    Ưu tiên ``typography_direction.text_exact`` từ concept (không ép neo tên phim) —
-    tránh khóa cứng hook = tên series khi AI chọn CTR khác (FATAL TAG…).
+    - Ưu tiên ``typography_direction.text_exact`` / ``hook_texts`` LLM (không neo tên phim).
+    - Giữ ``master_image_prompt`` LLM nếu đã đủ dài; chỉ patch badge/hook/sub.
+    - Chỉ dựng template ``build_master_image_prompt`` khi LLM không trả prompt.
+    Auto-publish vẫn neo title riêng (``hooks_from_series_title``) — không đi qua đây để khoá form.
     """
     if not isinstance(data, dict):
         return data
@@ -314,19 +354,21 @@ def finalize_thumb_meta_fields(
         s = re.sub(r"\s+", " ", str(o or "").strip()).upper()
         if s and s not in _CLICHE_HOOKS:
             exact.append(s[:40])
+    # Meta form: không ép neo tên — chỉ lọc cliché. Title-anchor chỉ còn ở auto-publish.
     if len(exact) >= 2:
         hooks = sanitize_hook_texts(exact, title_vi, title_zh, require_title_anchor=False)
         trust_hooks = True
     else:
-        hooks = sanitize_hook_texts(data.get("hook_texts"), title_vi, title_zh)
-        trust_hooks = False
+        hooks = sanitize_hook_texts(
+            data.get("hook_texts"), title_vi, title_zh, require_title_anchor=False,
+        )
+        trust_hooks = True
     data["hook_texts"] = hooks
     opts = []
     for o in (data.get("thumb_text_options") or []):
         s = re.sub(r"\s+", " ", str(o or "").strip()).upper()
         if s and s not in _CLICHE_HOOKS:
             opts.append(s[:40])
-    # Giữ text_exact / concept pills trước tên series
     for s in exact:
         if s not in opts:
             opts.insert(0, s)
@@ -340,31 +382,49 @@ def finalize_thumb_meta_fields(
         data.get("badge_text"), job_id=job_id, title_vi=title_vi or sub,
     )
 
-    data["master_image_prompt"] = build_master_image_prompt(
-        title_vi=title_vi or sub,
-        title_zh=title_zh,
-        story_moment=str(concept.get("story_moment") or ""),
-        visual_dna=str(concept.get("visual_dna") or ""),
-        palette=str(
-            concept.get("selected_concept")
-            or typo.get("color")
-            or concept.get("visual_conflict")
-            or ""
-        ),
-        layout=str(concept.get("layout") or typo.get("layout") or ""),
-        emotional_trigger=str(concept.get("emotional_trigger") or ""),
-        hook_texts=hooks,
-        badge_text=data["badge_text"],
-        sub_text=data["sub_text"],
-        font_material=str(typo.get("effects") or typo.get("font_style") or ""),
-        trust_hooks=trust_hooks,
-        typo_color=str(typo.get("color") or ""),
-        typo_integration=str(typo.get("graphic_integration") or ""),
+    existing = str(data.get("master_image_prompt") or data.get("ai_image_prompt") or "").strip()
+    # Prompt LLM đủ dài + có chỉ dẫn chữ/ref → giữ; không đè template
+    keep_llm = len(existing) >= 180 and any(
+        k in existing.upper()
+        for k in (
+            "TYPOGRAPHY", "HEADLINE", "REFERENCE", "CALLIGRAPHY", "BANNER",
+            "BADGE", "RIBBON", "LINE 1", "THUMBNAIL",
+        )
     )
+    if keep_llm:
+        data["master_image_prompt"] = _patch_prompt_typography(
+            existing,
+            hook_1=hooks[0],
+            hook_2=hooks[1],
+            badge=data["badge_text"],
+            sub=data["sub_text"],
+        )
+    else:
+        data["master_image_prompt"] = build_master_image_prompt(
+            title_vi=title_vi or sub,
+            title_zh=title_zh,
+            story_moment=str(concept.get("story_moment") or ""),
+            visual_dna=str(concept.get("visual_dna") or ""),
+            palette=str(
+                concept.get("selected_concept")
+                or typo.get("color")
+                or concept.get("visual_conflict")
+                or ""
+            ),
+            layout=str(concept.get("layout") or typo.get("layout") or ""),
+            emotional_trigger=str(concept.get("emotional_trigger") or ""),
+            hook_texts=hooks,
+            badge_text=data["badge_text"],
+            sub_text=data["sub_text"],
+            font_material=str(typo.get("effects") or typo.get("font_style") or ""),
+            trust_hooks=trust_hooks,
+            typo_color=str(typo.get("color") or ""),
+            typo_integration=str(typo.get("graphic_integration") or ""),
+        )
     data["ai_image_prompt"] = data["master_image_prompt"]
     if typo is not None:
         typo = dict(typo)
-        typo["text_exact"] = hooks
+        typo["text_exact"] = list(hooks)
         data["typography_direction"] = typo
     return data
 

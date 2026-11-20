@@ -632,18 +632,60 @@ def context_text(wd: Path, ask: dict | None, nums: list[int], *, radius: int | N
 
 
 def resolve_job(work_root: Path, ref: str) -> str | None:
-    """Job id đầy đủ hoặc tiền tố duy nhất (≥4 ký tự)."""
+    """Job id đầy đủ hoặc tiền tố duy nhất (≥4 ký tự).
+
+    Agent hay cắt id thành ``9aa089_p01`` trong khi folder thật
+    ``9aa0891fbfd1_p01`` — nhận diện dạng ``prefix_pNN``.
+    """
+    import re
     ref = (ref or "").strip()
     if not ref:
         return None
     root = Path(work_root)
+    if not root.is_dir():
+        return None
     if (root / ref / "manifest.json").is_file():
         return ref
     if len(ref) < 4:
         return None
-    hits = [d.name for d in root.iterdir() if d.is_dir() and d.name.startswith(ref)
-            and (d / "manifest.json").is_file()] if root.is_dir() else []
+
+    def _with_mf(names: list[str]) -> list[str]:
+        return [n for n in names if (root / n / "manifest.json").is_file()]
+
+    # «abc123_p01» / «abc123_p1» → job bắt đầu bằng abc123 và kết thúc _p01
+    m = re.match(r"^([0-9a-fA-F]{4,})_p0*(\d+)$", ref)
+    if m:
+        pref, part_n = m.group(1), int(m.group(2))
+        part_re = re.compile(rf"^{re.escape(pref)}[0-9a-fA-F]*_p0*{part_n}$", re.I)
+        hits = _with_mf([d.name for d in root.iterdir() if d.is_dir() and part_re.match(d.name)])
+        if len(hits) == 1:
+            return hits[0]
+        if len(hits) > 1:
+            return None  # mơ hồ — caller báo candidates
+
+    hits = _with_mf([d.name for d in root.iterdir() if d.is_dir() and d.name.startswith(ref)])
     return hits[0] if len(hits) == 1 else None
+
+
+def resolve_job_candidates(work_root: Path, ref: str, *, limit: int = 8) -> list[str]:
+    """Gợi ý khi resolve_job trả None (prefix/_pNN mơ hồ hoặc sai)."""
+    import re
+    ref = (ref or "").strip()
+    root = Path(work_root)
+    if not ref or len(ref) < 3 or not root.is_dir():
+        return []
+    m = re.match(r"^([0-9a-fA-F]{4,})_p0*(\d+)$", ref)
+    if m:
+        pref, part_n = m.group(1), int(m.group(2))
+        part_re = re.compile(rf"^{re.escape(pref)}[0-9a-fA-F]*_p0*{part_n}$", re.I)
+        hits = [d.name for d in root.iterdir()
+                if d.is_dir() and part_re.match(d.name) and (d / "manifest.json").is_file()]
+        if hits:
+            return sorted(hits)[:limit]
+    pref = ref.split("_p")[0] if "_p" in ref.lower() else ref
+    hits = [d.name for d in root.iterdir()
+            if d.is_dir() and d.name.startswith(pref) and (d / "manifest.json").is_file()]
+    return sorted(hits)[:limit]
 
 
 def current_sig(rows: list[dict]) -> str:
@@ -660,7 +702,11 @@ def show(work_root: Path, ref: str) -> dict[str, Any]:
     """/qa <job>: câu hỏi đang mở (hoặc tạo mới từ cờ high hiện tại) → text + nút."""
     jid = resolve_job(work_root, ref)
     if not jid:
-        return {"ok": False, "error": f"không thấy job «{ref}» (gõ id hoặc ≥4 ký tự đầu, duy nhất)"}
+        cands = resolve_job_candidates(work_root, ref)
+        hint = f" · ứng viên: {', '.join(cands[:5])}" if cands else ""
+        return {"ok": False, "error": (
+            f"không thấy job «{ref}» (id đủ / ≥4 ký tự đầu / dạng «9aa089_p01»){hint}"
+        )}
     wd = Path(work_root) / jid
     ask = load_ask(wd)
     if not (ask and ask.get("status") in ("open", "deferred") and open_items(ask)):
@@ -690,7 +736,11 @@ def show(work_root: Path, ref: str) -> dict[str, Any]:
 
 def flags_for_agent(work_root: Path, job_id: str) -> dict[str, Any]:
     """Tool agent: câu đang bị cờ QA high (+ đề xuất nếu đã có câu hỏi). Không gọi LLM."""
-    jid = resolve_job(work_root, job_id) or job_id
+    jid = resolve_job(work_root, job_id)
+    if not jid:
+        cands = resolve_job_candidates(work_root, job_id)
+        return {"ok": False, "job_id": job_id, "error": "không resolve được job",
+                "candidates": cands[:8]}
     wd = Path(work_root) / jid
     ask = load_ask(wd)
     if ask and ask.get("status") in ("open", "deferred") and open_items(ask):

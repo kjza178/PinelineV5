@@ -1193,54 +1193,102 @@ def build_plan(
     run_translate dùng để nạp preset gemma lười khi đã bỏ switch ở đầu bước dịch."""
     mode = _plan_mode()
     data: dict = {}
+    # 2026-11-20: luôn main → backup (PLAN_MODEL rồi PLAN_MODEL_BACKUP / Aurora)
+    try:
+        from translate_simple import cfg as _scfg
+        _plan_ms = list(_scfg.plan_models(work_dir))
+    except Exception:  # noqa: BLE001
+        _plan_ms = []
+    if model and str(model).strip():
+        _m0 = str(model).strip()
+        _plan_ms = [_m0] + [m for m in _plan_ms if m and m != _m0]
+    if not _plan_ms:
+        _plan_ms = [model or _cfg_get("PLAN_MODEL") or None]
+
+    def _plan_ok(d: dict) -> bool:
+        return bool(d and (d.get("characters") or d.get("terms") or d.get("pronouns")))
+
     # A7: Tận dụng context lớn (DeepSeek/Aurora/Qwen) đọc toàn bộ thoại ASR của cả phim
     if mode in ("file", "upload", "srt", "full", "a7"):
         try:
             from translate_simple.cfg import full_plan_enabled
             if full_plan_enabled():
                 from translate_simple.stage_draft import build_full_movie_plan
-                data = build_full_movie_plan(
-                    Path(work_dir) if work_dir else None,
-                    segments,
-                    target,
-                    model=model,
-                    name_hints=name_hints,
-                    series_plan=series_plan,
-                ) or {}
-                if data and (data.get("characters") or data.get("terms") or data.get("pronouns")):
-                    data["_meta"] = {
-                        **(data.get("_meta") if isinstance(data.get("_meta"), dict) else {}),
-                        "plan_mode": "full_asr_context",
-                        "plan_model": model or _cfg_get("PLAN_MODEL") or "cloud",
-                    }
-                    print(
-                        f"[plan] A7 full-movie context OK · chars={len(data.get('characters') or [])} "
-                        f"pairs={len(data.get('pronouns') or [])} terms={len(data.get('terms') or [])}",
-                        flush=True,
-                    )
+                for mi, m_try in enumerate(_plan_ms):
+                    try:
+                        data = build_full_movie_plan(
+                            Path(work_dir) if work_dir else None,
+                            segments,
+                            target,
+                            model=m_try,
+                            name_hints=name_hints,
+                            series_plan=series_plan,
+                        ) or {}
+                    except Exception as e_a7:  # noqa: BLE001
+                        print(f"[plan] A7 model={m_try} lỗi ({e_a7})", flush=True)
+                        data = {}
+                    if _plan_ok(data):
+                        data["_meta"] = {
+                            **(data.get("_meta") if isinstance(data.get("_meta"), dict) else {}),
+                            "plan_mode": "full_asr_context",
+                            "plan_model": m_try or _cfg_get("PLAN_MODEL") or "cloud",
+                            "plan_model_role": "main" if mi == 0 else "backup",
+                        }
+                        print(
+                            f"[plan] A7 full-movie context OK · model={m_try} "
+                            f"({'main' if mi == 0 else 'backup'}) · "
+                            f"chars={len(data.get('characters') or [])} "
+                            f"pairs={len(data.get('pronouns') or [])} "
+                            f"terms={len(data.get('terms') or [])}",
+                            flush=True,
+                        )
+                        break
+                    if mi + 1 < len(_plan_ms):
+                        print(f"[plan] A7 model={m_try} thất bại → thử backup {_plan_ms[mi + 1]}", flush=True)
+                if not _plan_ok(data):
+                    data = {}
         except Exception as e_a7:  # noqa: BLE001
             print(f"[plan] A7 context lỗi ({e_a7}) → fallback file/sample", flush=True)
             data = {}
-    if (not data or not (data.get("characters") or data.get("terms"))) and mode in ("file", "upload", "srt") and work_dir:
-        try:
-            data = _build_plan_from_file(
-                Path(work_dir), segments, target, model, name_hints, series_plan,
-            )
-            print(
-                f"[plan] file-mode OK · chars={len(data.get('characters') or [])} "
-                f"terms={len(data.get('terms') or [])}",
-                flush=True,
-            )
-        except Exception as e_file:  # noqa: BLE001
-            print(f"[plan] file-mode lỗi ({e_file}) → fallback sample", flush=True)
+    if (not _plan_ok(data)) and mode in ("file", "upload", "srt") and work_dir:
+        for mi, m_try in enumerate(_plan_ms):
+            try:
+                data = _build_plan_from_file(
+                    Path(work_dir), segments, target, m_try, name_hints, series_plan,
+                )
+                print(
+                    f"[plan] file-mode OK · model={m_try} ({'main' if mi == 0 else 'backup'}) · "
+                    f"chars={len(data.get('characters') or [])} "
+                    f"terms={len(data.get('terms') or [])}",
+                    flush=True,
+                )
+                break
+            except Exception as e_file:  # noqa: BLE001
+                print(f"[plan] file-mode model={m_try} lỗi ({e_file})", flush=True)
+                data = {}
+                if mi + 1 < len(_plan_ms):
+                    print(f"[plan] file-mode → thử backup {_plan_ms[mi + 1]}", flush=True)
+        if not _plan_ok(data):
+            print("[plan] file-mode hết model → fallback sample", flush=True)
             data = {}
-    if not data or not (data.get("characters") or data.get("terms")):
+    if not _plan_ok(data):
         if callable(before_local_llm):
             try:
                 before_local_llm()
             except Exception as e_bl:  # noqa: BLE001
                 print(f"[plan] before_local_llm lỗi: {e_bl}", flush=True)
-        data = _build_plan_sample(segments, target, model, name_hints, series_plan)
+        for mi, m_try in enumerate(_plan_ms):
+            try:
+                data = _build_plan_sample(segments, target, m_try, name_hints, series_plan)
+                if _plan_ok(data):
+                    if mi > 0:
+                        print(f"[plan] sample-mode OK bằng backup model={m_try}", flush=True)
+                    break
+            except Exception as e_sm:  # noqa: BLE001
+                print(f"[plan] sample-mode model={m_try} lỗi ({e_sm})", flush=True)
+                data = {}
+        if not isinstance(data, dict):
+            data = {}
 
     data = _normalize_plan_data(data)
     try:
